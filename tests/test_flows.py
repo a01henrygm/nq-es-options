@@ -193,3 +193,61 @@ def test_indicator_has_groups_for_the_new_kinds():
     assert ind.count("(") == ind.count(")") and "\t" not in ind
     js = (ROOT / "frontend" / "app.js").read_text()
     assert '"/analytics/activity"' in js and '"/analytics/greeks"' in js and 'c.startsWith("charm") ? "charm"' in js
+
+
+# ---- heatmap indicator export -------------------------------------------------------------------------------------------
+def _arr(code, name):
+    import re as _re
+    m = _re.search(rf"var \w+\[\]\s+{name}\s*= array\.from\((.*)\)\n", code)
+    assert m, name
+    return [x.strip() for x in m.group(1).split(",")]
+
+
+def test_heatmap_indicator_export_carries_every_measure_and_side():
+    c, db = api_client()
+    r = c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "measure": "gex", "side": "put", "window": 0}).json()
+    code = r["code"]
+    assert code.startswith("//@version=6") and 'indicator("Q DATA Activity Heatmap"' in code
+    assert r["mapped"] is False and "oi_change" not in r["measures"] and set(r["measures"]) == {"volume", "oi", "gex", "charm", "vanna", "dex"}
+    n = len(_arr(code, "hmStrike"))
+    assert n == r["strikes"] > 0
+    for suf in ("New", "Vol", "Oi", "Gex", "Charm", "Vanna", "Dex"):              # every measure's call and put profile, aligned to the strikes
+        assert len(_arr(code, "c" + suf)) == n and len(_arr(code, "p" + suf)) == n
+    assert _arr(code, "mAvail") == ["false", "true", "true", "true", "true", "true", "true"]
+    vol = [int(x) for x in _arr(code, "cVol")]
+    assert max(abs(v) for v in vol) <= 10000 and any(vol)
+    keys, sides = _arr(code, "hsKey"), _arr(code, "hsSide")
+    assert '"volume"' in keys and '"gex"' in keys and ('"volume"', '"net"') in set(zip(keys, sides)) and ('"gex"', '"net"') not in set(zip(keys, sides))
+    assert set(_arr(code, "ctSide")) == {'"total"', '"call"', '"put"', '"net"'}
+    assert 'input.string("Modeled GEX", "Heatmap shows"' in code and 'input.string("Puts only", "Side"' in code      # opens on what the page showed
+    strikes = [float(x) for x in _arr(code, "hmStrike")]
+    assert strikes == sorted(strikes)
+    for name in ("measureIn", "sideIn", "offsetPts", "showHeat", "showHot", "showTbl"):                     # each input declared once
+        assert code.count(f"\n{name} ") + code.count(f"\n{name}=") == 1
+    assert c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "measure": "bad"}).status_code == 422
+
+
+def test_heatmap_indicator_export_maps_to_futures_and_adds_new_positions():
+    c, db = api_client()
+    plain = c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "window": 0}).json()
+    c.post("/api/basis", json={"root": "NQ", "basis": 250.0})
+    chain = c.get("/api/options/chain", params={"underlying": "_NDX", "limit": 5000}).json()["contracts"]
+    prev = [[x["ticker"], x["oi"] - 100] for x in chain]
+    db.save_metric(1, "_NDX", "oi_contracts", 0.0, prev, NOW - timedelta(days=1))
+    r = c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "window": 0}).json()
+    assert r["mapped"] and "oi_change" in r["measures"] and "ESTIMATED NQ" in r["code"]
+    a, b = [float(x) for x in _arr(plain["code"], "hmStrike")], [float(x) for x in _arr(r["code"], "hmStrike")]
+    assert b[0] == pytest.approx(a[0] + 250.0)
+    assert _arr(r["code"], "mAvail")[0] == "true"
+
+
+def test_heatmap_pine_builder_handles_empty_and_unsafe_text():
+    from backend.services.heatmap_pine import build_heatmap_pine
+    code = build_heatmap_pine([], {}, 'src "x" \\ y', "units", "all strikes", "next 2")
+    assert _arr(code, "hmStrike") == ["0.00"] and _arr(code, "hsKey") == ['"none"'] and _arr(code, "ctPrice") == ["float(na)"]
+    assert '\\' not in code.split("// ===")[0].split("// ----")[1].split("\n")[1]
+    m = {"volume": {"available": True, "call": [1.0], "put": [2.0], "sides": {"total": {"hot_spots": [
+        {"rank": 1, "price": 100.0, "low": 95.0, "high": 105.0, "share": 0.5, "meaning": 'more "calls"', "value": 3.0, "top_expiry": None}],
+        "center": None, "share_above": None, "share_below": None, "summary": "ok"}}}}
+    code = build_heatmap_pine([100.0], m, "s", "u", "w", "e")
+    assert _arr(code, "hsText") == ['"more calls"'] and _arr(code, "ctPrice") == ["float(na)"] and _arr(code, "cVol") == ["3333"] and _arr(code, "pVol") == ["6667"]
