@@ -84,6 +84,7 @@ jobs:
           for i in $(seq 1 150); do kill -0 $pid 2>/dev/null || break; sleep 1; done
           if kill -0 $pid 2>/dev/null; then kill -9 $pid; echo "App did not quit within 150 s"; code=1; else wait $pid; code=$?; fi
           cat "$NQES_DATA_DIR/smoke.json" 2>/dev/null; echo
+          echo "::notice title=Mac start-up test (${{ matrix.arch }})::exit $code $(cat "$NQES_DATA_DIR/smoke.json" 2>/dev/null)"
           tail -n 40 "$NQES_DATA_DIR"/logs/*.log 2>/dev/null
           exit $code
       - uses: actions/upload-artifact@v4

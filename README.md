@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.4
+
+* **Q DATA for Mac:** Apple Silicon and Intel builds in every release, with a menu bar icon, open at login, and the same automatic
+  updates. See *Desktop app (Mac)* below.
+
 ## New in 1.3
 
 * **Activity heatmap** (replaces the old Heatmap tab): strike by expiry for new positions (open interest change since the last
