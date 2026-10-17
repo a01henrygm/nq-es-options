@@ -33,6 +33,21 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.1
+
+* **0DTE GEX** tab and level types: gamma from today's expiry only, with its call wall, put wall and flip (also in the paste text
+  and the TradingView indicator, with their own colors in the GEX settings group).
+* **Session charts:** net GEX by strike through the day with price on top, price inside the expected-move cone, dealer gamma at
+  the current price, and cumulative call vs put volume.
+* **Before the open:** the gamma curve (all expiries and 0DTE), overnight change in GEX and open interest by strike, and IV / skew
+  across sessions.
+* **Scorecard:** how often each level type held after a touch and by how much, and each day's opening regime against its real range.
+* **Daily bias** now opens with the written case: why the day may go up, why it may go down, the context, and a bullish and a bearish
+  plan (trigger, targets, what proves it wrong).
+* **Journal:** log trades; the app records the nearest level, regime, bias and gamma side, and groups your results by them.
+* **Phone access** tab: turn on password-protected access, with a QR code, and Tailscale for access from anywhere.
+* The Q DATA loading window, your icons on the tabs, and the Q DATA icon on the desktop shortcut, tray and taskbar.
+
 ## Desktop app (Windows)
 
 The same dashboard as a normal Windows program: its own window, an icon in the system tray, optional start with Windows,

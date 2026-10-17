@@ -43,6 +43,9 @@ colorFor(string cat) =>
     switch cat
         "gamma_flip" => #e6b422
         "gex_concentration" => #2f8bf5
+        "gex0_call_wall" => #22d3ee
+        "gex0_put_wall" => #ff4d8d
+        "gex0_flip" => #ffd166
         "open_interest" => #ff7a2e
         "oi_by_expiry" => #ff7a2e
         "oi_mid" => #ff7a2e
@@ -66,6 +69,9 @@ visibleCat(string cat) =>
     switch cat
         "gamma_flip" => showFlip
         "gex_concentration" => showGex
+        "gex0_call_wall" => showGex
+        "gex0_put_wall" => showGex
+        "gex0_flip" => showGex
         "open_interest" => showOi
         "oi_by_expiry" => showOi
         "oi_mid" => showOi

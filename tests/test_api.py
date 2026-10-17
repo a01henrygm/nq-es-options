@@ -120,6 +120,8 @@ def test_frontend_integration_every_api_call_exists():
 
 def test_frontend_contains_no_secrets_or_provider_urls():
     for f in (ROOT / "frontend").iterdir():
+        if not f.is_file() or f.suffix not in (".js", ".html", ".css"):
+            continue
         text = f.read_text()
         assert "massive.com" not in text and "polygon.io" not in text and "apiKey" not in text and "MASSIVE_API_KEY" not in text
     assert "MASSIVE_API_KEY=YOUR_API_KEY_HERE" in (ROOT / ".env.example").read_text()

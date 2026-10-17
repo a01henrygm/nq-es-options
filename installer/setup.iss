@@ -30,19 +30,22 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Name: "autostart"; Description: "Start with Windows (keeps collecting data in the background)"
 
 [InstallDelete]
 ; old program libraries are removed first so nothing stale is left behind. Your settings and data are in a different folder.
 Type: filesandordirs; Name: "{app}\_internal"
+; shortcuts from 1.0.0 had the old name
+Type: files; Name: "{autoprograms}\NQ-ES Options.lnk"
+Type: files; Name: "{autodesktop}\NQ-ES Options.lnk"
 
 [Files]
 Source: "..\dist\NQ-ES Options\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyExe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyExe}"; Tasks: desktopicon
+; the shortcuts carry the Q DATA name and icon; the desktop one is made on every install and update
+Name: "{autoprograms}\Q DATA"; Filename: "{app}\{#MyExe}"; IconFilename: "{app}\{#MyExe}"
+Name: "{autodesktop}\Q DATA"; Filename: "{app}\{#MyExe}"; IconFilename: "{app}\{#MyExe}"
 
 [Registry]
 ; Only on a normal (not silent) install: a silent self-update must not turn autostart back on if you switched it off in the tray.
@@ -50,8 +53,11 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; After an install or a silent self-update the app starts again (the updater passes /relaunch=--background when it was in the tray).
-Filename: "{app}\{#MyExe}"; Parameters: "{param:relaunch|}"; Description: "Open {#MyAppName}"; Flags: nowait postinstall
+Filename: "{app}\{#MyExe}"; Parameters: "{param:relaunch|}"; Description: "Open Q DATA"; Flags: nowait postinstall
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM ""{#MyExe}"""; Flags: runhidden; RunOnceId: "StopApp"
 Filename: "{sys}\reg.exe"; Parameters: "delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""{#MyAppName}"" /f"; Flags: runhidden; RunOnceId: "RemoveAutostart"
+
+[UninstallDelete]
+Type: files; Name: "{autodesktop}\Q DATA.lnk"

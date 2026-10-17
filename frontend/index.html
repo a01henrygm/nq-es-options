@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NQ / ES Options Analytics</title>
+<title>Q DATA · NQ / ES options analytics</title>
+<link rel="icon" href="icons/app.png">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 </head>
 <body>
 <header>
-  <h1>NQ / ES options analytics</h1>
+  <h1 class="brand"><img src="icons/app.png" alt=""><span class="qd">Q DATA</span><span class="sub">NQ / ES options analytics</span></h1>
   <div id="top"><span id="zoomctl" title="Text size. Ctrl and + / - also zoom the whole page."><button id="zm" aria-label="Smaller text">A-</button><button id="zp" aria-label="Bigger text">A+</button></span> <span id="mstate" class="badge">connecting</span> <span id="clock" class="dim"></span></div>
 </header>
 <div id="controls">
@@ -29,5 +30,6 @@
 <main id="view"><p class="dim">Loading...</p></main>
 <footer class="dim">All numbers come from your local backend. The browser never sees your API key. Modeled values are estimates and depend on stated assumptions. This is decision support, not a prediction.</footer>
 <script src="app.js"></script>
+<script src="more.js"></script>
 </body>
 </html>

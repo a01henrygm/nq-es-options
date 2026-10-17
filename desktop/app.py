@@ -12,9 +12,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from backend.config import DATA, ROOT, ensure_data_dir
+from backend.config import DATA, FROZEN, ROOT, ensure_data_dir
 
-APP_NAME = "NQ-ES Options"
+APP_NAME = "Q DATA"
 CHECK_EVERY = 4 * 3600                     # seconds between update checks
 log = logging.getLogger("desktop")
 
@@ -99,6 +99,7 @@ def main(argv=None):
     host = "127.0.0.1" if s.host in ("0.0.0.0", "::", "") else s.host
     port = _free_port(s.host, s.port)
     (DATA / "desktop.port").write_text(str(port))
+    os.environ["NQES_PORT"] = str(port)
     url = f"http://127.0.0.1:{port}"
     started = time.time()
     show_ev, quitting = threading.Event(), threading.Event()
@@ -148,6 +149,15 @@ def main(argv=None):
         threading.Thread(target=upd.check, daemon=True).start()
         return {"ok": True}
 
+    def restart():
+        """Starts a fresh copy a moment after this one has quit (used after changing settings such as phone access)."""
+        if sys.platform == "win32" and FROZEN:
+            import subprocess
+            exe = sys.executable
+            subprocess.Popen(["cmd", "/c", f'timeout /t 3 /nobreak >nul & start "" "{exe}"'], creationflags=0x08000000 | 0x00000008, close_fds=True)
+        threading.Timer(0.3, quit_app).start()
+        return {"ok": True, "restarting": sys.platform == "win32" and FROZEN}
+
     def install_now():
         if upd.state not in ("ready", "available"):
             return {"ok": False, "reason": "No update downloaded yet."}
@@ -155,19 +165,22 @@ def main(argv=None):
         return {"ok": True}
 
     for path, fn, method in (("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"),
-                             ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST")):
+                             ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST"),
+                             ("/api/desktop/restart", restart, "POST")):
         app.router.routes.insert(0, APIRoute(path, fn, methods=[method]))          # in front of the page files mounted at /
 
     # ---- server -----------------------------------------------------------------------------------------------------
     server = uvicorn.Server(uvicorn.Config(app, host=s.host, port=port, log_level="warning", log_config=None))
-    threading.Thread(target=server.run, name="server", daemon=True).start()
-    for _ in range(100):
-        if port_open(host, port):
-            break
-        time.sleep(0.1)
-    for c in collectors:
-        c.start()
-    log.info("desktop app %s on %s", __version__, url)
+
+    def start_server():
+        threading.Thread(target=server.run, name="server", daemon=True).start()
+        for _ in range(150):
+            if port_open(host, port):
+                break
+            time.sleep(0.1)
+        for c in collectors:
+            c.start()
+        log.info("desktop app %s on %s", __version__, url)
 
     # ---- quitting ---------------------------------------------------------------------------------------------------
     def quit_app(*_):
@@ -222,8 +235,31 @@ def main(argv=None):
     icon.run_detached()
 
     # ---- window -----------------------------------------------------------------------------------------------------
-    win = webview.create_window(APP_NAME, url, width=1440, height=920, min_size=(900, 600), hidden=background, text_select=True)
+    from desktop.splash import splash_html
+    splash = None if background else webview.create_window("Q DATA", html=splash_html(__version__), width=440, height=320, frameless=True,
+                                                            resizable=False, on_top=True, background_color="#05070b")
+    win = webview.create_window(APP_NAME, html="<body style='background:#0b0d10'></body>", width=1440, height=920, min_size=(900, 600),
+                                hidden=True, text_select=True, background_color="#0b0d10")
     state["window"] = win
+
+    def boot():
+        """Behind the loading window: start the server and data collection, load the dashboard, then swap windows."""
+        t0 = time.time()
+        say = (lambda t: splash.evaluate_js(f"setStatus({t!r})")) if splash else (lambda t: None)
+        try:
+            say("Starting the data server...")
+            start_server()
+            say("Starting data collection...")
+            win.load_url(url)
+            say("Loading your dashboard...")
+            time.sleep(max(0.0, 1.8 - (time.time() - t0)))           # long enough to read, never slower than the start itself
+        except Exception:
+            log.exception("start-up problem")
+        if not background:
+            win.show()
+            state["visible"] = True
+        if splash:
+            splash.destroy()
 
     def on_closing():
         if quitting.is_set():
@@ -252,6 +288,7 @@ def main(argv=None):
                     log.exception("could not show the window")
 
     def after_start():
+        threading.Thread(target=boot, daemon=True).start()
         threading.Thread(target=watch_show, daemon=True).start()
         threading.Thread(target=update_loop, daemon=True).start()
 

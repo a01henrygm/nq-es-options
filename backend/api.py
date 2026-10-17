@@ -736,6 +736,12 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         return {"available": True, "from": older["retrieved_at"], "to": latest["retrieved_at"],
                 "change_by_strike": [{"strike": k, **v} for k, v in sorted(by.items())]}
 
+    from types import SimpleNamespace
+    from .api_more import register as register_more
+    register_more(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok, levels_payload=levels_payload,
+                                       bias_for=bias_for, regime_for=regime_for, upcoming_events=upcoming_events, now_fn=now_fn, primary_db=primary_db,
+                                       oi_change=oi_change, reactions=reactions))
+
     @app.middleware("http")
     async def never_serve_stale_pages(request, call_next):
         """The page files (not the data) are re-checked on every load, so an updated app.js is used straight after you replace the folder."""

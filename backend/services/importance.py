@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-TYPE_FACTOR = {"gamma_flip": 1.0, "custom": 1.0, "gex_call_zone": 0.95, "gex_put_zone": 0.95, "gex_pos_zone": 0.9, "gex_neg_zone": 0.9, "expected_move_ext": 0.7, "oi_call_zone": 0.85, "oi_put_zone": 0.85, "volume_call_zone": 0.7, "volume_put_zone": 0.7, "gex_concentration": 0.9, "open_interest": 0.85, "expected_move": 0.85, "volume": 0.7,
+TYPE_FACTOR = {"gamma_flip": 1.0, "custom": 1.0, "gex0_call_wall": 0.95, "gex0_put_wall": 0.95, "gex0_flip": 0.9, "gex_call_zone": 0.95, "gex_put_zone": 0.95, "gex_pos_zone": 0.9, "gex_neg_zone": 0.9, "expected_move_ext": 0.7, "oi_call_zone": 0.85, "oi_put_zone": 0.85, "volume_call_zone": 0.7, "volume_put_zone": 0.7, "gex_concentration": 0.9, "open_interest": 0.85, "expected_move": 0.85, "volume": 0.7,
                "oi_by_expiry": 0.6, "volume_by_expiry": 0.6, "oi_mid": 0.4, "volume_mid": 0.4}
 RULE = ("Importance = size (versus the biggest level of its kind) x type weight x closeness to price (full inside about one expected move, "
         "fading to 35% beyond two). Levels within 0.10% of price of each other are merged into one zone, which gets +0.12 for each extra "
@@ -46,6 +46,8 @@ def short_tag(l):
     c, lab = l["category"], l["label"].lower()
     if c == "gamma_flip":
         return "Gamma flip"
+    if c in ("gex0_call_wall", "gex0_put_wall", "gex0_flip"):
+        return {"gex0_call_wall": "0DTE call wall", "gex0_put_wall": "0DTE put wall", "gex0_flip": "0DTE flip"}[c]
     if c in ("gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone"):
         return {"gex_call_zone": "Call wall zone", "gex_put_zone": "Put wall zone", "gex_pos_zone": "+GEX zone", "gex_neg_zone": "-GEX zone"}[c]
     if c in ("oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone"):
@@ -74,8 +76,8 @@ def score_levels(levels, spot, scale):
     em_days = sorted({(l.get("inputs") or {}).get("days") for l in levels if l["category"] in ("expected_move", "expected_move_ext") and (l.get("inputs") or {}).get("days") is not None})
     for l in levels:
         c, lab = l["category"], l["label"]
-        if c in ("gamma_flip", "custom"):
-            size = 1.0 if c == "gamma_flip" else 0.95
+        if c in ("gamma_flip", "custom", "gex0_flip"):
+            size = 1.0 if c != "custom" else 0.95
         elif c in ("expected_move", "expected_move_ext"):
             d = (l.get("inputs") or {}).get("days")
             base = 1.0 if c == "expected_move" else 0.5
@@ -91,7 +93,7 @@ def score_levels(levels, spot, scale):
 
 
 # Per-type counts ("quota"): how many zones of each family to show, so one family (for example GEX) can get more lines than the others.
-FAMILY = {"gex_concentration": "gex", "gex_call_zone": "gex", "gex_put_zone": "gex", "gex_pos_zone": "gex", "gex_neg_zone": "gex",
+FAMILY = {"gex0_call_wall": "gex", "gex0_put_wall": "gex", "gex0_flip": "gex", "gex_concentration": "gex", "gex_call_zone": "gex", "gex_put_zone": "gex", "gex_pos_zone": "gex", "gex_neg_zone": "gex",
           "open_interest": "oi", "oi_call_zone": "oi", "oi_put_zone": "oi", "oi_by_expiry": "oi", "oi_mid": "oi",
           "volume": "vol", "volume_call_zone": "vol", "volume_put_zone": "vol", "volume_by_expiry": "vol", "volume_mid": "vol",
           "expected_move": "move", "expected_move_ext": "move"}

@@ -35,6 +35,9 @@ CREATE INDEX IF NOT EXISTS ix_lr ON level_runs(underlying, session_date, active)
 CREATE TABLE IF NOT EXISTS custom_levels(id INTEGER PRIMARY KEY, underlying TEXT, label TEXT, value REAL, created_at TEXT);
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, date TEXT, time TEXT, name TEXT, importance TEXT, note TEXT);
 CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS trades(
+  id INTEGER PRIMARY KEY, underlying TEXT, instrument TEXT, side TEXT, qty REAL, entry REAL, stop REAL, target REAL, exit REAL,
+  opened_at TEXT, closed_at TEXT, setup TEXT, note TEXT, context TEXT);
 CREATE TABLE IF NOT EXISTS provider_errors(id INTEGER PRIMARY KEY, provider TEXT, underlying TEXT, at TEXT, kind TEXT, message TEXT);
 """
 
@@ -130,6 +133,39 @@ class Database:
             return [dict(r) for r in c.execute(
                 "SELECT value,calculated_at,snapshot_id FROM analytics WHERE underlying=? AND name=? ORDER BY id DESC LIMIT ?",
                 (underlying, name, limit))][::-1]
+
+    def metric_series(self, underlying, name, since=None, limit=5000):
+        """Like metric_history but with the stored detail (decoded) and an optional start time (ISO, UTC)."""
+        q = "SELECT value,detail,calculated_at FROM analytics WHERE underlying=? AND name=?" + (" AND calculated_at>=?" if since else "") + " ORDER BY id DESC LIMIT ?"
+        with self.conn() as c:
+            rows = c.execute(q, (underlying, name, since, limit) if since else (underlying, name, limit)).fetchall()
+        return [{"value": r["value"], "detail": json.loads(r["detail"]) if r["detail"] else None, "t": r["calculated_at"]} for r in rows][::-1]
+
+    # -- trade journal ---------------------------------------------------------------------
+    TRADE_FIELDS = ("underlying", "instrument", "side", "qty", "entry", "stop", "target", "exit", "opened_at", "closed_at", "setup", "note", "context")
+
+    def add_trade(self, t: dict) -> int:
+        row = {k: (json.dumps(t[k]) if k == "context" and t.get(k) is not None else t.get(k)) for k in self.TRADE_FIELDS}
+        with self.conn() as c:
+            return c.execute(f"INSERT INTO trades({','.join(row)}) VALUES({','.join('?' * len(row))})", tuple(row.values())).lastrowid
+
+    def update_trade(self, trade_id: int, changes: dict) -> bool:
+        ch = {k: (json.dumps(v) if k == "context" and v is not None else v) for k, v in changes.items() if k in self.TRADE_FIELDS}
+        if not ch:
+            return False
+        with self.conn() as c:
+            return c.execute(f"UPDATE trades SET {', '.join(k + '=?' for k in ch)} WHERE id=?", (*ch.values(), trade_id)).rowcount > 0
+
+    def delete_trade(self, trade_id: int) -> bool:
+        with self.conn() as c:
+            return c.execute("DELETE FROM trades WHERE id=?", (trade_id,)).rowcount > 0
+
+    def list_trades(self, limit=1000) -> list:
+        with self.conn() as c:
+            rows = [dict(r) for r in c.execute("SELECT * FROM trades ORDER BY opened_at DESC, id DESC LIMIT ?", (limit,))]
+        for r in rows:
+            r["context"] = json.loads(r["context"]) if r["context"] else None
+        return rows
 
     # -- levels of the day (for the reaction log) ----------------------------------------
     def has_session_levels(self, underlying, day):

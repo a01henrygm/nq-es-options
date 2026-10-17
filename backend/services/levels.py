@@ -1,6 +1,7 @@
 """Build the key-level list for one underlying. Every level keeps its origin, method, inputs and reliability."""
 from __future__ import annotations
 from . import analytics as an
+from . import intraday as idy
 
 RELIABILITY_RULE = ("high: data fresh/closed-session and 100+ contracts used; medium: 30+ contracts; "
                     "low: fewer, stale, or no source timestamp. Open-interest levels are daily figures by nature.")
@@ -129,4 +130,15 @@ def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expi
                 add("expected_move_ext", f"Extended move zone {word} {tag}", spot + sign * r["sd2"],
                     f"Band from the 1 sigma move out to the 2 sigma move for the {r['expiry']} expiry: unusual territory (about 68% to 95% of outcomes inside it under the "
                     "bell-curve assumption; real markets have fatter tails).", {**info, "kind": "extended"}, len(cons), {"low": edges[0], "high": edges[1]})
+    # 0DTE (nearest expiry only): its call wall, put wall and flip, kept apart from the all-expiry GEX levels.
+    z = idy.zero_dte(cons, spot, now, convention)
+    if z.get("available"):
+        tag = "0DTE" if z["is_today"] else f"Front expiry {z['expiry'][5:7]}/{z['expiry'][8:10]}"
+        n0 = z["contracts"]
+        if z["call_wall"] is not None:
+            add("gex0_call_wall", f"{tag} call wall", z["call_wall"], idy.ZERO_DTE_RULE, {"call_gex": z["call_wall_gex"], "expiry": z["expiry"]}, n0)
+        if z["put_wall"] is not None:
+            add("gex0_put_wall", f"{tag} put wall", z["put_wall"], idy.ZERO_DTE_RULE, {"put_gex": z["put_wall_gex"], "expiry": z["expiry"]}, n0)
+        if z["flip"] is not None:
+            add("gex0_flip", f"{tag} gamma flip", z["flip"], idy.ZERO_DTE_RULE, {"expiry": z["expiry"], "note": z["flip_note"]}, n0)
     return out

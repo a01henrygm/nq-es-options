@@ -7,6 +7,7 @@ from .config import Settings
 from .database import Database
 from .providers.base import OptionsProvider, ProviderError
 from .services import analytics as an
+from .services import intraday as idy
 from .services import market
 from .services.freshness import classify
 from .services.levels import build_levels
@@ -102,12 +103,65 @@ class Collector:
             if em.get("straddle"):
                 self.db.save_metric(snap.snapshot_id, u, "em_low", em["straddle"]["lower"], None, now)
                 self.db.save_metric(snap.snapshot_id, u, "em_high", em["straddle"]["upper"], None, now)
+            self._store_intraday(u, snap, now, g, f)
             for name, field in (("pc_ratio_volume", "volume"), ("pc_ratio_oi", "oi")):
                 r = an.concentration(snap.contracts, field)["put_call_ratio"]
                 if r is not None:
                     self.db.save_metric(snap.snapshot_id, u, name, r, None, now)
         except Exception:  # a calculation problem must never stop collection
             log.exception("metric calculation failed for %s", u)
+
+    def _store_intraday(self, u, snap, now, g, f):
+        """Small records for the session charts (GEX map over time, gamma at price, flow, the move cone) and the 0DTE view."""
+        sid, spot, cons = snap.snapshot_id, snap.spot, snap.contracts
+        try:
+            self.db.save_metric(sid, u, "gex_profile", g["total_net_gex"], idy.compact_profile(g["strikes"], spot), now)
+            if f.get("exposure_at_spot") is not None:
+                self.db.save_metric(sid, u, "gamma_at_spot", f["exposure_at_spot"], {"flip": f["flip"] if f["found"] else None}, now)
+            fl = idy.option_flow(cons)
+            fe = idy.front_expiry(cons, now)
+            f0 = idy.option_flow(cons, fe) if fe else {"calls": 0, "puts": 0}
+            self.db.save_metric(sid, u, "flow_net", fl["calls"] - fl["puts"], {**fl, "calls0": f0["calls"], "puts0": f0["puts"]}, now)
+            day = to_et(snap.source_ts or now).date().isoformat()
+            if self.db.get_meta(f"oi_profile:{u}:{day}") is None:
+                self.db.save_metric(sid, u, "oi_profile", None, idy.oi_profile(cons, spot), now)
+                self.db.set_meta(f"oi_profile:{u}:{day}", "1")
+            dm = idy.day_move(cons, spot, now)
+            if dm:
+                self.db.save_metric(sid, u, "day_move", dm["points"], {"method": dm["method"]}, now)
+            z = idy.zero_dte(cons, spot, now)
+            if z.get("available"):
+                self.db.save_metric(sid, u, "gex0_profile", z["total_net_gex"], idy.compact_profile(z["strikes"], spot), now)
+                if z["exposure_at_spot"] is not None:
+                    self.db.save_metric(sid, u, "gamma0_at_spot", z["exposure_at_spot"], {"expiry": z["expiry"]}, now)
+                for k in ("call_wall", "put_wall", "flip"):
+                    if z[k] is not None:
+                        self.db.save_metric(sid, u, f"gex0_{k}", z[k], {"expiry": z["expiry"]}, now)
+        except Exception:
+            log.exception("intraday records failed for %s", u)
+        try:
+            self._store_regime_once(u, snap, now)
+        except Exception:
+            log.exception("could not store the opening regime for %s", u)
+
+    def _store_regime_once(self, u, snap, now):
+        """The regime label once per session, shortly after the open, so the scorecard can compare it with the day's real range."""
+        from datetime import time as dtime
+        from .services.mapping import INDEX_GROUP
+        from .services.regime import compute_regime
+        et = to_et(now)
+        if et.weekday() >= 5 or et.time() < dtime(9, 35) or et.time() > dtime(10, 30):      # an opening read only
+            return
+        day = et.date().isoformat()
+        if self.db.get_meta(f"regime_open:{u}:{day}"):
+            return
+        hist = {k: self.db.metric_history(u, k, 6000) for k in ("iv_mid", "skew_25d")}
+        evs = [{**e, "days_away": 0, "is_today": True} for e in self.db.list_events(day) if e["date"] == day]
+        r = compute_regime(snap, now, classify(snap.source_ts, now, self.s.options_plan), "standard", hist, None, evs, INDEX_GROUP.get(u))
+        dm = idy.day_move(snap.contracts, snap.spot, now)
+        self.db.save_metric(snap.snapshot_id, u, "regime_open", r.get("total", 0), {"label": r.get("label"), "confidence": r.get("confidence") if isinstance(r.get("confidence"), str) else (r.get("confidence") or {}).get("label"),
+                            "day_move": dm["points"] if dm else None, "spot": snap.spot}, now)
+        self.db.set_meta(f"regime_open:{u}:{day}", "1")
 
     def _interval(self, u) -> float:
         st = self.state[u]
