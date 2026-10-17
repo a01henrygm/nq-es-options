@@ -6,6 +6,7 @@ const DIV = [[0, "#7b3fe4"], [0.42, "#3a2a66"], [0.5, "#14181d"], [0.58, "#1d4a7
 const hline = (y, col, dash = "dash") => ({ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: y, y1: y, line: { color: col, dash, width: 1.3 } });
 const vline = (x, col, dash = "dot") => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: col, dash, width: 1.3 } });
 const card = (t, v, sub = "") => `<div class="card">${t}<b>${v}</b>${sub}</div>`;
+const uName = u => String(u || "").replace(/^_/, "");                        // Cboe writes _NDX; people say NDX
 const etx = iso => new Date(iso).toLocaleString("sv-SE", { timeZone: "America/New_York" });     // chart times in Eastern Time on any PC
 const pct = x => x == null ? "-" : Math.round(x * 100) + "%";
 const sel = (id, opts, v) => `<select id="${id}">${opts.map(([k, n]) => `<option value="${esc(k)}" ${String(k) === String(v) ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
@@ -219,4 +220,88 @@ R.bias = async function () {
     <p class="hint">${esc(c.note)} Prices are in ${esc(S.u)} units; the Levels tab converts them to futures points.</p>`;
   const p = $("view").querySelector(".panel"), after = p && p.querySelector(".grid");
   if (after) after.after(box); else if (p) p.appendChild(box);
+};
+
+// ---- Home: the lean, the regime, and a ladder of the key levels around price ------------------------------------------------
+function ladderSVG(all, price, units) {
+  const W = 360, H = 600, padT = 18, padB = 18, axis = 104;
+  if (!all.length || price == null) return '<p class="dim">No levels yet.</p>';
+  const up = all.filter(l => l.v >= price).sort((a, b) => a.v - b.v), dn = all.filter(l => l.v < price).sort((a, b) => b.v - a.v);
+  const levels = up.slice(0, 6).concat(dn.slice(0, 6)), hidden = all.length - levels.length;
+  // square-root spacing around price: nearby levels get room, far ones stay on the ladder (their point distance is printed beside them)
+  const far = Math.max(...levels.map(l => Math.abs(l.v - price)), 1) * 1.08, mid = (H - padT - padB) / 2 + padT, half = (H - padT - padB) / 2;
+  const y = v => mid - Math.sign(v - price) * Math.sqrt(Math.min(Math.abs(v - price), far) / far) * half;
+  // keep labels from overlapping: walk down the ladder and push each label at least 17px below the previous one
+  const py0 = y(price);
+  const rows = levels.map(l => ({ ...l, y: y(l.v) })).concat([{ price: true, y: py0 }]).sort((a, b) => a.y - b.y);
+  let last = -1e9; rows.forEach(r => { r.ly = Math.max(r.y, last + (r.price || (rows[rows.indexOf(r) - 1] || {}).price ? 22 : 17)); last = r.ly; });
+  const over = last - (H - padB); if (over > 0) { rows.forEach(r => r.ly -= over); }
+  const py = rows.find(r => r.price).ly, col = c => (CATCOL[c] || "#8B95AD");
+  const trunc = t => t.length > 26 ? t.slice(0, 25) + "…" : t;
+  const parts = [`<line x1="${axis}" x2="${axis}" y1="${padT}" y2="${H - padB}" stroke="#2A3554" stroke-width="1.5"/>`];
+  rows.filter(r => !r.price).forEach(r => {
+    const c = col(r.cat);
+    if (r.lo != null && r.hi != null) parts.push(`<rect x="${axis - 7}" width="14" y="${y(r.hi)}" height="${Math.max(2, y(r.lo) - y(r.hi))}" rx="3" fill="${c}" fill-opacity=".28" stroke="${c}" stroke-opacity=".6"/>`);
+    parts.push(`<line x1="${axis - 10}" x2="${axis + 10}" y1="${r.y}" y2="${r.y}" stroke="${c}" stroke-width="2.5"/>`);
+    if (Math.abs(r.ly - r.y) > 1) parts.push(`<path d="M${axis + 10} ${r.y} L${axis + 18} ${r.ly}" stroke="${c}" stroke-opacity=".5" fill="none"/>`);
+    const d = r.v - price;
+    parts.push(`<text x="${axis - 16}" y="${r.ly + 4}" text-anchor="end" font-size="11.5" fill="${d > 0 ? "#3FB96A" : "#E5534B"}">${d > 0 ? "+" : ""}${fmt(d, 0)}</text>`);
+    parts.push(`<text x="${axis + 22}" y="${r.ly + 4}" font-size="12" fill="#E7ECF5">${esc(trunc(r.label))}</text>`);
+    parts.push(`<text x="${W - 4}" y="${r.ly + 4}" text-anchor="end" font-size="12" font-weight="700" fill="${c}">${fmt(r.v, 0)}</text>`);
+  });
+  parts.push(`<line x1="${axis}" x2="${W}" y1="${py}" y2="${py}" stroke="#E7ECF5" stroke-opacity=".55" stroke-width="1" stroke-dasharray="3 4"/>`,
+    `<rect x="2" y="${py - 11}" width="${axis - 6}" height="22" rx="11" fill="url(#qg)"/>`,
+    `<text x="${(axis - 4) / 2 + 2}" y="${py + 4.5}" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">${fmt(price, 2)}</text>`,
+    `<circle cx="${axis}" cy="${py}" r="4" fill="#fff"/>`);
+  if (hidden > 0) parts.push(`<text x="${W - 4}" y="${H - 2}" text-anchor="end" font-size="11" fill="#5D6884">${hidden} farther level${hidden > 1 ? "s" : ""} on Key levels</text>`);
+  return `<svg class="ladder" viewBox="0 0 ${W} ${H}" role="img" aria-label="Key levels above and below price, in ${esc(units)}">
+    <defs><linearGradient id="qg" x1="0" x2="1"><stop offset="0" stop-color="#3D8BFF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>${parts.join("")}</svg>`;
+}
+
+R.home = async function () {
+  const conv = $("conv").value;
+  const [lv, cs, rg, zd, ss] = await Promise.all([
+    api("/analytics/levels", { underlying: S.u, convention: conv, method: $("method").value, top: S.lvtop, by_expiry: S.lvexp, mid: S.lvmid, moves: S.lvmov, ...(S.lvq ? { quota: quotaFor() } : { key: Math.max(S.lvkey || 0, 12) }) }),
+    api("/analytics/bias-case", { underlying: S.u, convention: conv }).catch(() => null),
+    api("/analytics/regime", { underlying: S.u, convention: conv }).catch(() => null),
+    api("/analytics/zerodte", { underlying: S.u, convention: conv }).catch(() => null),
+    api("/charts/session", { underlying: S.u }).catch(() => null)]);
+  const m = lv.meta, zones = lv.zones.length ? lv.zones : lv.levels;
+  const mapped = zones.filter(z => z.mapped && z.mapped.mapped != null && z.mapped.status !== "invalid");
+  const useF = mapped.length > 0, root = lv.mapping.futures_root;
+  const offs = mapped.map(z => z.mapped.mapped - z.value).sort((a, b) => a - b), off = useF ? offs[Math.floor(offs.length / 2)] : 0;
+  const L = zones.map(z => ({ label: z.label, cat: z.category, v: useF && z.mapped && z.mapped.mapped != null ? z.mapped.mapped : z.value,
+    lo: z.low == null ? null : (useF && z.mapped_low != null ? z.mapped_low : z.low), hi: z.high == null ? null : (useF && z.mapped_high != null ? z.mapped_high : z.high) }));
+  const price = m.spot + off, units = useF ? `${root} points (estimated)` : `${S.u} units`;
+  const c = cs && cs.case, lean = c ? c.lean : "No read yet", lc = lean.includes("ull") ? "var(--ok)" : lean.includes("ear") ? "var(--bad)" : "var(--dim)";
+  const r = rg && rg.data, z = zd && zd.data, em = cs && null;
+  const above = L.filter(l => l.v > price).sort((a, b) => a.v - b.v)[0], below = L.filter(l => l.v < price).sort((a, b) => b.v - a.v)[0];
+  const top = (arr) => arr.slice().sort((a, b) => b.weight - a.weight).slice(0, 3).map(p => `<li><b>${esc(p.title)}</b><br><span class="dim">${esc(p.detail)}</span></li>`).join("");
+  $("view").innerHTML = `<div class="panel pagehead"><h2>${esc(uName(S.u))} today</h2>${metaBar(m)}</div>
+    <div class="home">
+      <div class="panel"><h3 style="margin-top:0">Level ladder</h3><p class="hint" style="margin:-4px 0 8px">${esc(units)}. ${useF ? "" : "Save a basis on Key levels to see NQ / ES points."}</p>
+        ${ladderSVG(L, price, units)}
+        <p class="hint">Nearest above: <b>${above ? esc(above.label) + " " + fmt(above.v, 0) : "none"}</b>${above ? ` (${fmt(above.v - price, 0)} pts)` : ""}. Nearest below: <b>${below ? esc(below.label) + " " + fmt(below.v, 0) : "none"}</b>${below ? ` (${fmt(price - below.v, 0)} pts)` : ""}.</p></div>
+      <div>
+        <div class="panel"><div class="verdict"><b style="color:${lc}">${esc(lean)}</b>${r ? `<span class="reg" style="color:${regCol(r.label)}">${esc(r.label)}</span>` : ""}</div>
+          <p style="max-width:80ch;margin:0 0 4px">${c ? esc(c.summary) : "The written read appears once options data has loaded."}</p>
+          ${useF && c ? `<p class="hint" style="margin:0 0 10px">The written read uses ${esc(uName(S.u))} index prices; the figures below and the ladder are in ${esc(root)} points.</p>` : ""}
+          <dl class="kv"><dt>Price</dt><dd>${fmt(price, 2)} <span class="dim">${esc(useF ? root : uName(S.u))}</span></dd>
+            ${r && r.gamma ? `<dt>Gamma flip</dt><dd>${fmt(r.gamma.flip + off, 0)} <span class="dim">price is ${r.gamma.above ? "above: dealers dampen moves" : "below: dealers add to moves"}</span></dd>` : ""}
+            ${z && z.available ? `<dt>${z.is_today ? "0DTE" : "Front-expiry"} walls</dt><dd>${z.put_wall != null ? fmt(z.put_wall + off, 0) : "-"} put, ${z.call_wall != null ? fmt(z.call_wall + off, 0) : "-"} call</dd>` : ""}
+            ${ss && ss.day_move ? `<dt>Expected move today</dt><dd>${fmt(ss.day_move.points, 0)} points <span class="dim">${esc(ss.day_move.method || "")}</span></dd>` : ""}
+            ${r ? `<dt>What it means</dt><dd style="font-weight:400">${esc(r.meaning)}</dd>` : ""}</dl>
+          <button class="go" data-goto="bias">Read the full case and plan</button> <button data-goto="levels">All key levels</button></div>
+        ${c ? `<div class="home-cols" style="margin-top:16px"><div class="panel side bull"><h3 style="margin-top:0">Pointing up</h3><ul class="reasons">${top(c.bull) || '<li class="dim">Nothing right now.</li>'}</ul></div>
+          <div class="panel side bear"><h3 style="margin-top:0">Pointing down</h3><ul class="reasons">${top(c.bear) || '<li class="dim">Nothing right now.</li>'}</ul></div></div>` : ""}
+        <div class="panel" style="margin-top:16px"><h3 style="margin-top:0">Price against today's expected move</h3><div id="hc" class="chart"></div></div>
+      </div></div>`;
+  document.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { S.tab = b.dataset.goto; $("tabs").querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === S.tab)); render(); });
+  if (ss && ss.cone.length) {
+    const C = ss.cone, x = C.map(q => etx(q.t));
+    plot("hc", [{ type: "scatter", mode: "lines", x, y: C.map(q => q.up1 + off), line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { type: "scatter", mode: "lines", x, y: C.map(q => q.dn1 + off), fill: "tonexty", fillcolor: "rgba(61,139,255,0.16)", line: { width: 0 }, name: "Expected move" },
+      { type: "scatter", mode: "lines", x: ss.price.map(p => etx(p.t)), y: ss.price.map(p => p.price + off), name: "Price", line: { color: "#E7ECF5", width: 2 } }],
+      LAY("", { margin: { l: 56, r: 12, t: 10, b: 50 }, showlegend: false }));
+  } else $("hc").innerHTML = '<p class="dim">Fills in after 9:30 ET once the app has a price near the open.</p>';
 };

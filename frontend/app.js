@@ -4,17 +4,19 @@ const big = n => n == null || isNaN(n) ? "-" : (Math.abs(n) >= 1e12 ? (n / 1e12)
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (n, d = 0) => n == null || isNaN(n) ? "-" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const et = iso => iso ? new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " ET" : "none supplied";
-const TABS = [["levels", "Levels"], ["bias", "Daily bias"], ["session", "Session charts"], ["regime", "Regime"], ["overview", "Market overview"], ["sheet", "Pre-market sheet"], ["chain", "Options chain"], ["gex", "GEX"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Heatmap"], ["preopen", "Before the open"],
-  ["iv", "IV by strike"], ["surface", "Vol surface"], ["move", "Expected move"], ["delta", "Delta exposure"], ["journal", "Journal"], ["scorecard", "Scorecard"], ["react", "Level reactions"], ["flow", "Flow"], ["events", "Events"], ["history", "History"], ["status", "Status"], ["phone", "Phone access"]];
-const TABICON = { levels: "key_levels", bias: "insights", session: "live_charts", regime: "implied_volatility", overview: "home", sheet: "news", chain: "search", gex: "options_analytics",
-  zerodte: "gamma", flip: "logout", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "data_feeds", iv: "implied_volatility", surface: "market_data", move: "watchlist",
-  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "reports", status: "settings", phone: "help" };
+const TABS = [["home", "Home"], ["levels", "Key levels"], ["bias", "Bias and plan"], ["session", "Session"], ["regime", "Regime"], ["overview", "All symbols"], ["sheet", "Pre-market sheet"],
+  ["chain", "Options chain"], ["gex", "GEX by strike"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Heatmap"], ["preopen", "Overnight changes"],
+  ["iv", "IV by strike"], ["surface", "Vol surface"], ["move", "Expected move"], ["delta", "Delta exposure"], ["journal", "Journal"], ["scorecard", "Scorecard"], ["react", "Level reactions"], ["flow", "Unusual volume"],
+  ["events", "Events"], ["history", "History"], ["status", "Data status"], ["phone", "Phone access"]];
+const TABICON = { home: "home", levels: "key_levels", bias: "insights", session: "live_charts", regime: "market_data", overview: "watchlist", sheet: "reports", chain: "search", gex: "options_analytics",
+  zerodte: "gamma", flip: "logout", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "news", iv: "implied_volatility", surface: "data_feeds", move: "market_data",
+  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help" };
 const RB = [[128, 0, 255], [47, 139, 245], [27, 224, 214], [127, 233, 122], [255, 211, 77], [255, 122, 46], [255, 0, 0]];
 const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
 const pickIdx = (n, m) => n <= m ? [...Array(n).keys()] : [...new Set([...Array(m).keys()].map(i => Math.round(i * (n - 1) / (m - 1))))];
 const cleanNote = c => `Cleaning: ${esc(c.method)} Used ${fmt(c.stats.used)} contracts; dropped ${fmt(c.stats.zero_bid)} with zero bid, ${fmt(c.stats.wide_spread)} with wide spreads, ${fmt(c.stats.no_iv)} without IV, ${fmt(c.stats.bad_iv)} with out-of-range IV, ${fmt(c.stats.itm_skipped)} in-the-money.`;
-const S = { u: null, tab: "levels", busy: false, hmf: "volume", hms: "total", hmw: "0.04", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2 }, zoom: 1, det: {}, touch: 0 };
+const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2 }, zoom: 1, det: {}, touch: 0 };
 const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "zoom"];
 function loadUI() {
   try {
@@ -47,9 +49,10 @@ const FAMILIES = [["flip", "Gamma flip", ["gamma_flip"], "#e6b422"], ["gex", "GE
   ["oi", "Open interest", ["open_interest", "oi_call_zone", "oi_put_zone", "oi_by_expiry", "oi_mid"], "#ff9f43"], ["vol", "Volume", ["volume", "volume_call_zone", "volume_put_zone", "volume_by_expiry", "volume_mid"], "#2ec4b6"],
   ["move", "Expected moves", ["expected_move", "expected_move_ext"], "#7db7ff"], ["mine", "My levels", ["custom"], "#ffffff"]];
 const ALLCATS = new Set(FAMILIES.flatMap(f => f[2]));
-const GROUPS = [["Today", ["levels", "bias", "session", "regime", "overview", "sheet"]], ["Options data", ["chain", "gex", "zerodte", "flip", "oi", "volume", "heatmap", "preopen"]], ["Volatility", ["iv", "surface", "move", "delta"]],
-  ["Review", ["journal", "scorecard", "react", "flow", "events", "history", "status", "phone"]]];
+const GROUPS = [["Today", ["home", "levels", "bias", "session", "regime", "overview", "sheet"]], ["Options", ["chain", "gex", "zerodte", "flip", "oi", "volume", "heatmap", "preopen"]],
+  ["Volatility", ["iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history"]], ["App", ["status", "phone"]]];
 const HELP = {
+  home: ["Today at a glance: the lean and why, the regime, and where price sits against the levels that matter.", "The ladder shows the key levels above and below price at their real distances, in futures points once a basis is saved. Open Bias and plan for the full reasoning, Key levels for the complete list."],
   session: ["How the session is unfolding: dealer gamma by strike through the day, price inside its expected-move cone, whether dealers are long or short gamma at the current price, and the call vs put volume race.", "Charts fill in as the app collects data during the day (a point about every 2 minutes). Use the Day box to look back at earlier sessions. The GEX map shows NET gamma per strike: blue is positive (dealers dampen moves there), purple is negative (they add to moves)."],
   zerodte: ["Gamma from today's expiry only (0DTE). Same-day options carry the most gamma per contract, so they drive most of the intraday dealer hedging and pinning.", "Bars are 0DTE GEX by strike near price. The 0DTE call wall, put wall and flip are also level types on the Levels tab and in the TradingView paste text. After the close, the next expiry takes over and the page says so."],
   preopen: ["What changed overnight and how fragile the market is before the bell: the gamma curve, the overnight change in GEX and open interest by strike, and implied volatility and skew across days.", "The gamma curve is total dealer gamma if price moved to each level: where it crosses zero is the flip, and the steeper it falls below, the faster moves can get there. Overnight change needs stored data from two sessions."],
@@ -79,13 +82,16 @@ const HELP = {
 };
 function addHelp() {
   const first = $("view").querySelector(".panel"), h = HELP[S.tab];
-  if (!first || !h || first.querySelector("details.help")) return;
+  if (!first || !h || first.querySelector(".lede")) return;
+  const p = document.createElement("p"); p.className = "lede"; p.textContent = h[0];
   const d = document.createElement("details"); d.className = "help"; d.dataset.k = "help-" + S.tab;
-  d.innerHTML = `<summary>What is this tab?</summary><p>${esc(h[0])}</p><p><b>How to read it:</b> ${esc(h[1])}</p>`;
-  (first.querySelector(".metabar") || first.querySelector("h2")).insertAdjacentElement("afterend", d);
+  d.innerHTML = `<summary>How to read this</summary><p>${esc(h[1])}</p>`;
+  const h2 = first.querySelector("h2"); if (!h2) return;
+  h2.insertAdjacentElement("afterend", p); (first.querySelector(".metabar") || p).insertAdjacentElement("afterend", d);
 }
-const LAY = (t, o = {}) => Object.assign({ title: { text: t, font: { size: 15, color: "#fff" } }, paper_bgcolor: "#14181d", plot_bgcolor: "#14181d", font: { color: "#ddd" },
-  margin: { l: 60, r: 20, t: 44, b: 96 }, xaxis: { gridcolor: "#262c34" }, yaxis: { gridcolor: "#262c34" }, legend: { orientation: "h", y: -0.3, x: 0 } }, o);
+const LAY = (t, o = {}) => Object.assign({ title: { text: t, x: 0, xanchor: "left", font: { size: 14, color: "#E7ECF5", family: "Manrope, Segoe UI, sans-serif" } }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+  font: { color: "#AEB7CC", family: "Manrope, Segoe UI, sans-serif", size: 12 }, hoverlabel: { bgcolor: "#162036", bordercolor: "#2A3554", font: { color: "#E7ECF5" } },
+  margin: { l: 60, r: 20, t: 44, b: 80 }, xaxis: { gridcolor: "#1E2840", zerolinecolor: "#2A3554" }, yaxis: { gridcolor: "#1E2840", zerolinecolor: "#2A3554" }, legend: { orientation: "h", y: -0.22, x: 0 } }, o);
 const PCFG = { displayModeBar: "hover", displaylogo: false, scrollZoom: true, responsive: true, doubleClick: "reset+autosize", modeBarButtonsToRemove: ["select2d", "lasso2d", "toggleSpikelines"] };
 const ZOOM = {};                                        // zoom and rotation you set on each chart, kept across the automatic refreshes
 const DEFAULT_EYE = { x: 1.55, y: -1.75, z: 0.85 };
@@ -102,12 +108,12 @@ const base = () => ({ underlying: S.u, expiration: exps(), convention: $("conv")
 
 function metaBar(m) {
   if (!m) return "";
-  return `<div class="metabar"><span>Provider: <b>${esc(m.provider)}</b></span><span>Symbol: <b>${esc(m.underlying)}</b></span>
-  <span>Status: <span class="badge ${esc(m.data_status)}">${esc(m.data_status.replace(/_/g, " "))}</span></span>
-  <span>Source time: ${et(m.source_timestamp)}</span><span>Retrieved: ${et(m.retrieved_at)}</span><span>Calculated: ${esc(m.calculated_at_et)}</span>
-  <span>${esc(m.served_from)}</span><span>${esc(m.freshness.note)}</span>${m.spot_note ? `<span>Price note: ${esc(m.spot_note)}</span>` : ""}</div>`;
+  const t = m.source_timestamp ? new Date(m.source_timestamp).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }) + " ET" : "no source time";
+  return `<div class="metabar"><span class="badge ${esc(m.data_status)}">${esc(m.data_status.replace(/_/g, " "))}</span><span>${esc(m.provider)} data as of ${t}</span>
+  <details><summary>Details</summary><div class="full"><span>Symbol ${esc(m.underlying)}</span><span>Source time: ${et(m.source_timestamp)}</span><span>Retrieved: ${et(m.retrieved_at)}</span><span>Calculated: ${esc(m.calculated_at_et)}</span>
+  <span>${esc(m.served_from)}</span><span>${esc(m.freshness.note)}</span>${m.spot_note ? `<span>Price note: ${esc(m.spot_note)}</span>` : ""}</div></details></div>`;
 }
-const panel = (title, m, body) => `<div class="panel"><h2>${esc(title)}</h2>${metaBar(m)}${body}</div>`;
+const panel = (title, m, body) => `<div class="panel"><h2>${esc(String(title).replace(/(^|[^A-Za-z0-9])_([A-Z]{2,})/g, "$1$2"))}</h2>${metaBar(m)}${body}</div>`;
 const note = (t, bad) => `<div class="msg ${bad ? "bad" : ""}">${esc(t)}</div>`;
 function showError(e) {
   $("view").innerHTML = `<div class="panel"><h2>No data to show</h2>${note(e.msg || "The backend is not reachable. Is start.bat still running?", true)}
@@ -224,7 +230,7 @@ const R = {
       <div class="actions"><button class="go" id="ftxt">Copy levels for the indicator</button>${root ? `<button id="fpine">Copy Pine code</button><button id="fpinedl">Download .pine</button><button id="fcopy">Copy ${root} levels as text</button>` : ""}</div>
       ${root && map.roll && map.roll.note ? note(map.roll.note, map.roll.status === "expired") : ""}${root && warns.length ? note("Mapping warnings: " + warns.join(" ")) : ""}
       ${root && !map.available ? note(map.note || "No futures price entered yet, so levels are shown in " + S.u + " units only.") : ""}
-      <div class="scroll tall"><table><tr><th>Level</th><th>${esc(S.u)}</th><th>${root || "Futures"} estimate</th><th>Score</th><th>${keyMode ? "What lines up here" : "Where it comes from"}</th><th>Since (ET)</th><th>Trust</th></tr>${rows || "<tr><td colspan=7>No levels available</td></tr>"}</table></div>
+      <div class="scroll tall"><table><tr><th>Level</th><th>${esc(S.u.replace(/^_/, ""))}</th><th>${root || "Futures"} estimate</th><th>Score</th><th>${keyMode ? "What lines up here" : "Where it comes from"}</th><th>Since (ET)</th><th>Trust</th></tr>${rows || "<tr><td colspan=7>No levels available</td></tr>"}</table></div>
       <p class="hint">${esc(lv.note)} Trust rule: ${esc(lv.meta.reliability_rule)}</p>
       ${d.available ? `<p class="hint">Mapping check on ${d.n} stored pairs: ratio error ${fmt(d.ratio.mae, 2)}, basis error ${fmt(d.basis.mae, 2)} (mean absolute, futures points). Best so far: ${d.best}.</p>` : `<p class="hint">Mapping accuracy: ${esc(d.note || "not measured yet")}</p>`}
       <details class="adv" data-k="lv-paste" open><summary>Paste into the TradingView indicator</summary><div class="body">
@@ -296,7 +302,7 @@ const R = {
       <p class="dim">Formula: ${esc(d.formula)}. Units: ${esc(d.units)}. Contracts used: ${d.contracts_used.provider} with provider gamma, ${d.contracts_used.model} with modeled gamma; excluded: ${d.contracts_excluded.no_open_interest} without open interest, ${d.contracts_excluded.no_gamma_or_iv} without gamma or IV. Total net: ${big(d.total_net_gex)}. Click a bar for its contracts.</p><div id="inspect"></div>`);
     plot("c1", [{ type: "bar", x: K, y: d.strikes.map(s => s.call_gex), name: "Calls", marker: { color: "#2f8bf5" } }, { type: "bar", x: K, y: d.strikes.map(s => s.put_gex), name: "Puts", marker: { color: "#ff7a2e" } },
       { type: "scatter", mode: "lines", x: K, y: d.strikes.map(s => s.net_gex), name: "Net", line: { color: "#fff", width: 2 } }],
-      LAY("GEX by strike ($ delta per 1% move)", { barmode: "relative", shapes: [{ type: "line", xref: "x", yref: "paper", x0: m.spot, x1: m.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }], xaxis: { title: "Strike (" + S.u + " price units)", gridcolor: "#262c34" } }));
+      LAY("GEX by strike ($ delta per 1% move)", { barmode: "relative", shapes: [{ type: "line", xref: "x", yref: "paper", x0: m.spot, x1: m.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }], xaxis: { title: "Strike (" + S.u + " price units)", gridcolor: "#1E2840" } }));
     $("c1").on && $("c1").on("plotly_click", ev => { const s = d.strikes.find(x => x.strike === ev.points[0].x); if (!s) return;
       $("inspect").innerHTML = `<h3>Strike ${fmt(s.strike, 2)}</h3><table><tr><th>Contract</th><th>Expiry</th><th>Open int.</th><th>Gamma</th><th>Source</th><th>Exposure</th></tr>${s.contributions.map(c => `<tr><td>${esc(c.ticker)}</td><td>${c.expiry}</td><td class="num">${fmt(c.oi)}</td><td class="num">${fmt(c.gamma, 5)}</td><td>${c.gamma_source}</td><td class="num">${fmt(c.exposure)}</td></tr>`).join("")}</table>`; });
   },
@@ -317,7 +323,7 @@ const R = {
       : `<h2>Open interest history</h2>${note(h.reason)}`;
     $("view").appendChild(box);
     if (h.available) plot("c2", [{ type: "bar", x: h.change_by_strike.map(r => r.strike), y: h.change_by_strike.map(r => r.call), name: "Calls", marker: { color: "#3fb96a" } }, { type: "bar", x: h.change_by_strike.map(r => r.strike), y: h.change_by_strike.map(r => r.put), name: "Puts", marker: { color: "#e5534b" } }],
-      LAY("Change in open interest by strike", { barmode: "group", yaxis: { title: "Contracts", gridcolor: "#262c34" } }));
+      LAY("Change in open interest by strike", { barmode: "group", yaxis: { title: "Contracts", gridcolor: "#1E2840" } }));
   },
   async volume() {
     let flagged = [];
@@ -343,8 +349,8 @@ const R = {
     plot("c1", [{ type: "heatmap", x: xs, y: ys, z: d.z.map(r => r.map(sg)), customdata: d.z, colorscale: cs, zmin: net ? -sg(cm) : 0, zmax: sg(cm), xgap: 2, ygap: 1, hoverongaps: false,
       hovertemplate: "Strike %{y}<br>%{x}<br>%{customdata:,.0f} contracts<extra></extra>",
       colorbar: { thickness: 14, title: { text: net ? "calls - puts" : "contracts" }, tickmode: "array", tickvals: tv.map(sg), ticktext: tv.map(v => fmt(v)) } }],
-      LAY("", { margin: { l: 80, r: 20, t: 20, b: 70 }, showlegend: false, xaxis: { gridcolor: "#262c34", side: "bottom", tickangle: -30 },
-        yaxis: { type: "category", categoryorder: "array", categoryarray: ys, gridcolor: "#262c34", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 30)) },
+      LAY("", { margin: { l: 80, r: 20, t: 20, b: 70 }, showlegend: false, xaxis: { gridcolor: "#1E2840", side: "bottom", tickangle: -30 },
+        yaxis: { type: "category", categoryorder: "array", categoryarray: ys, gridcolor: "#1E2840", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 30)) },
         shapes: [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "#ffd34d", width: 1.8, dash: "dot" } }] }));
   },
   async iv() {
@@ -363,11 +369,11 @@ const R = {
     const X = p => S.ivx === "strike" ? p.strike : p.moneyness, n = j.smiles.length;
     const traces = j.smiles.map((r, i) => ({ type: "scatter", mode: "lines+markers", x: r.points.map(X), y: r.points.map(p => p.iv * 100), name: `${r.expiry} (${fmt(r.dte, 1)}d)`,
       line: { color: rgbAt(n > 1 ? i / (n - 1) : 0), width: 2.5 }, marker: { size: 4 }, hovertemplate: `${r.expiry}<br>%{x}<br>IV %{y:.2f}%<extra></extra>` }));
-    plot("c1", traces, LAY("Cleaned IV smile, one line per expiry", { hovermode: "closest", xaxis: { title: S.ivx === "strike" ? "Strike" : "Strike / spot", gridcolor: "#262c34", tickformat: S.ivx === "strike" ? ",d" : ".3f" }, yaxis: { title: "IV %", gridcolor: "#262c34", ticksuffix: "%" },
+    plot("c1", traces, LAY("Cleaned IV smile, one line per expiry", { hovermode: "closest", xaxis: { title: S.ivx === "strike" ? "Strike" : "Strike / spot", gridcolor: "#1E2840", tickformat: S.ivx === "strike" ? ",d" : ".3f" }, yaxis: { title: "IV %", gridcolor: "#1E2840", ticksuffix: "%" },
       shapes: [{ type: "line", xref: "x", yref: "paper", x0: S.ivx === "strike" ? sp : 1, x1: S.ivx === "strike" ? sp : 1, y0: 0, y1: 1, line: { color: "#fff", dash: "dot", width: 1.5 } }] }));
     plot("c2", [{ type: "scatter", mode: "lines+markers+text", x: j.term_structure.map(t => t.dte), y: j.term_structure.map(t => t.iv * 100), text: j.term_structure.map(t => (t.iv * 100).toFixed(1) + "%"), textposition: "top center",
       fill: "tozeroy", fillcolor: "rgba(27,224,214,.10)", line: { color: "#1be0d6", width: 3 }, marker: { size: 9 }, hovertemplate: "%{x:.1f} days<br>IV %{y:.2f}%<extra></extra>" }],
-      LAY("ATM IV by days to expiry", { xaxis: { title: "Days to expiry", gridcolor: "#262c34", range: j.term_structure.length ? [Math.min(...j.term_structure.map(t => t.dte)) - 1.5, Math.max(...j.term_structure.map(t => t.dte)) + 1.5] : undefined }, yaxis: { title: "IV %", gridcolor: "#262c34", ticksuffix: "%" }, showlegend: false }));
+      LAY("ATM IV by days to expiry", { xaxis: { title: "Days to expiry", gridcolor: "#1E2840", range: j.term_structure.length ? [Math.min(...j.term_structure.map(t => t.dte)) - 1.5, Math.max(...j.term_structure.map(t => t.dte)) + 1.5] : undefined }, yaxis: { title: "IV %", gridcolor: "#1E2840", ticksuffix: "%" }, showlegend: false }));
   },
   async surface() {
     const j = await api("/analytics/surface", { underlying: S.u, otm_only: S.svotm, smooth: true, min_points: 6 }), m = j.meta, d = j.data;
@@ -390,7 +396,7 @@ const R = {
         plot("c1", tr, { paper_bgcolor: "#000", font: { color: "#ddd" }, margin: { l: 0, r: 0, t: 0, b: 0 }, scene: { xaxis: ax(S.svx === "strike" ? "Strike" : "Strike / spot"), yaxis: ax("Days to expiry"), zaxis: ax("IV %"), aspectmode: "manual", aspectratio: { x: 1.3, y: 1, z: .7 }, camera: { eye: { x: 1.55, y: -1.75, z: .85 } } } });
       }
       if (wantHeat) plot("c2", [{ type: "heatmap", x: X, y: d.expiries.map((e, i) => `${e} (${fmt(d.dte[i], 1)}d)`), z: Z, colorscale: RCS, zmin: lo, zmax: hi, xgap: 1, ygap: 1, hovertemplate: "Strike/ratio %{x}<br>%{y}<br>IV %{z:.2f}%<extra></extra>", colorbar: { thickness: 14, title: { text: "IV %" } } }],
-        LAY("IV heatmap (rows are expirations)", { xaxis: { title: S.svx === "strike" ? "Strike" : "Strike / spot", gridcolor: "#262c34", tickformat: S.svx === "strike" ? ",d" : ".3f" }, yaxis: { type: "category", autorange: "reversed", gridcolor: "#262c34" }, margin: { l: 150, r: 20, t: 44, b: 48 } }));
+        LAY("IV heatmap (rows are expirations)", { xaxis: { title: S.svx === "strike" ? "Strike" : "Strike / spot", gridcolor: "#1E2840", tickformat: S.svx === "strike" ? ",d" : ".3f" }, yaxis: { type: "category", autorange: "reversed", gridcolor: "#1E2840" }, margin: { l: 150, r: 20, t: 44, b: 48 } }));
     }
     $("svview").value = S.svview; $("svx").value = S.svx;
     $("svview").onchange = () => { S.svview = $("svview").value; render(); }; $("svx").onchange = () => { S.svx = $("svx").value; render(); }; $("svotm").onchange = () => { S.svotm = $("svotm").checked; render(); };
@@ -419,7 +425,7 @@ const R = {
     plot("c1", [{ type: "bar", x: d.strikes.map(s => s.strike), y: d.strikes.map(s => s.delta_exposure), marker: { color: d.strikes.map(s => s.delta_exposure >= 0 ? "#2f8bf5" : "#ff7a2e") } }],
       LAY("Delta exposure by strike", { shapes: [{ type: "line", xref: "x", yref: "paper", x0: j.meta.spot, x1: j.meta.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }] }));
     if (pr.available) plot("c2", [{ type: "scatter", mode: "lines", x: pr.grid.map(g => g.price), y: pr.grid.map(g => g.total_delta), line: { color: "#2f8bf5", width: 2.5 }, name: "Total modeled delta" }],
-      LAY("Total modeled delta if price were here", { shapes: [{ type: "line", xref: "x", yref: "paper", x0: j.meta.spot, x1: j.meta.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }], xaxis: { title: "Hypothetical price", gridcolor: "#262c34" } }));
+      LAY("Total modeled delta if price were here", { shapes: [{ type: "line", xref: "x", yref: "paper", x0: j.meta.spot, x1: j.meta.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }], xaxis: { title: "Hypothetical price", gridcolor: "#1E2840" } }));
   },
   async bias() {
     const j = await api("/analytics/bias", { underlying: S.u, convention: $("conv").value }), d = j.data, m = j.meta, L = d.levels, em = L.expected_move;
@@ -483,7 +489,7 @@ const R = {
       ${note(j.note)}<p class="dim">Numbers in brackets are ${"futures"} estimates from the basis you saved on the Levels tab (index symbols only). The market overview follows the Dealer sign scenario box at the top.</p></div>`;
     document.querySelectorAll("[data-open]").forEach(b => b.onclick = async () => {
       S.u = b.dataset.open; $("u").value = S.u; await loadExps(); S.tab = "bias";
-      [...$("tabs").children].forEach(x => x.classList.toggle("on", x.dataset.t === "bias")); render();
+      $("tabs").querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === "bias")); render();
     });
   },
   async sheet() {
@@ -549,7 +555,7 @@ const R = {
       <div id="c1" class="chart"></div>${h.points.length < 2 ? note("Not enough stored observations yet. History builds up while the app runs.") : ""}
       <h3>Stored snapshots (newest first)</h3><div class="scroll"><table><tr><th>ID</th><th>Retrieved</th><th>Source time</th><th>Spot</th><th>Contracts</th></tr>${sn.snapshots.map(s => `<tr><td>${s.id}</td><td>${et(s.retrieved_at)}</td><td>${et(s.source_ts)}</td><td class="num">${fmt(s.spot, 2)}</td><td class="num">${s.n_contracts}</td></tr>`).join("")}</table></div></div>`;
     $("hm").value = name; $("hm").onchange = render;
-    plot("c1", [{ type: "scatter", mode: "lines+markers", x: h.points.map(p => p.calculated_at), y: h.points.map(p => p.value), line: { color: "#2f8bf5" } }], LAY(name, { yaxis: { gridcolor: "#262c34", tickformat: name === "total_net_gex" ? ".3s" : undefined } }));
+    plot("c1", [{ type: "scatter", mode: "lines+markers", x: h.points.map(p => p.calculated_at), y: h.points.map(p => p.value), line: { color: "#2f8bf5" } }], LAY(name, { yaxis: { gridcolor: "#1E2840", tickformat: name === "total_net_gex" ? ".3s" : undefined } }));
   },
   async status() {
     const s = await api("/status");
@@ -566,7 +572,7 @@ async function bars(path, title, ytitle, extra) {
     <div class="grid"><div class="card">Calls<b>${fmt(d.total_calls)}</b></div><div class="card">Puts<b>${fmt(d.total_puts)}</b></div><div class="card">Put/call ratio<b>${d.put_call_ratio == null ? "-" : fmt(d.put_call_ratio, 2)}</b></div></div>
     <h3>Largest concentrations</h3><table><tr><th>Strike</th><th>Calls</th><th>Puts</th><th>Share of total</th></tr>${d.top.map(t => `<tr><td>${fmt(t.strike, 2)}</td><td class="num">${fmt(t.call)}</td><td class="num">${fmt(t.put)}</td><td class="num">${fmt(t.share_of_total * 100, 1)}%</td></tr>`).join("")}</table><p class="dim">${esc(d.note)}</p>`);
   plot("c1", [{ type: "bar", x: K, y: d.strikes.map(s => s.call), name: "Calls", marker: { color: "#3fb96a" } }, { type: "bar", x: K, y: d.strikes.map(s => s.put), name: "Puts", marker: { color: "#e5534b" } }],
-    LAY(title, { barmode: "group", yaxis: { title: ytitle, gridcolor: "#262c34" }, shapes: [{ type: "line", xref: "x", yref: "paper", x0: j.meta.spot, x1: j.meta.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }] }));
+    LAY(title, { barmode: "group", yaxis: { title: ytitle, gridcolor: "#1E2840" }, shapes: [{ type: "line", xref: "x", yref: "paper", x0: j.meta.spot, x1: j.meta.spot, y0: 0, y1: 1, line: { color: "#fff", dash: "dot" } }] }));
 }
 
 async function movesTop() {
@@ -594,7 +600,7 @@ async function movesTop() {
     { type: "scatter", mode: "lines+markers", x, y: mv.rows.map(r => sp + st(r)), name: "straddle up", line: { color: "#7db7ff", width: 1.5, dash: "dash" }, marker: { size: 5 } },
     { type: "scatter", mode: "lines+markers", x, y: mv.rows.map(r => sp - st(r)), name: "straddle down", line: { color: "#7db7ff", width: 1.5, dash: "dash" }, marker: { size: 5 } },
     { type: "scatter", mode: "lines", x: [Math.min(...x), Math.max(...x)], y: [sp, sp], name: "price now", line: { color: "#fff", width: 1.5 } }],
-    LAY("Expected-move cone: how far the options say price can travel by each expiry", { xaxis: { title: "Days until expiry", gridcolor: "#262c34" }, yaxis: { gridcolor: "#262c34", tickformat: ",.0f" }, legend: { orientation: "h", y: -0.25 } }));
+    LAY("Expected-move cone: how far the options say price can travel by each expiry", { xaxis: { title: "Days until expiry", gridcolor: "#1E2840" }, yaxis: { gridcolor: "#1E2840", tickformat: ",.0f" }, legend: { orientation: "h", y: -0.25 } }));
 }
 
 async function eventsBanner() {
@@ -630,7 +636,7 @@ async function priceChart() {
   let nxt = plotH + 14; for (let i = arr.length - 1; i >= 0; i--) { arr[i].lab = Math.min(arr[i].lab, nxt - 14); nxt = arr[i].lab; }
   const short = l => l.label.replace(/High |Large |modeled |Estimated /gi, "") + " " + fmt(l.value, 0) + (l.mapped && l.mapped.mapped != null && l.mapped.status !== "invalid" ? " | " + (root || "") + " " + fmt(l.mapped.mapped, 0) : "");
   plot("cpx", [{ type: "scatter", mode: "lines+markers", x: t, y: h.points.map(p => p.price), line: { color: "#fff", width: 2 }, marker: { size: 4 }, name: S.u }],
-    LAY("", { showlegend: false, margin: { l: 70, r: 360, t: 20, b: 50 }, xaxis: { type: "date", range: [x0.toISOString(), x1.toISOString()], gridcolor: "#262c34" }, yaxis: { range: [bot, top], gridcolor: "#262c34", tickformat: ",.0f" },
+    LAY("", { showlegend: false, margin: { l: 70, r: 360, t: 20, b: 50 }, xaxis: { type: "date", range: [x0.toISOString(), x1.toISOString()], gridcolor: "#1E2840" }, yaxis: { range: [bot, top], gridcolor: "#1E2840", tickformat: ",.0f" },
       shapes: lvls.filter(l => l.low != null).map(l => ({ type: "rect", xref: "x", yref: "y", x0: (l.first_seen && new Date(l.first_seen) > x0 ? new Date(l.first_seen) : x0).toISOString(), x1: x1.toISOString(), y0: l.low, y1: l.high, fillcolor: (COL[l.category] || "#999") + "33", line: { color: COL[l.category] || "#999", width: 1 }, layer: "below" }))
         .concat(lvls.map(l => ({ type: "line", xref: "x", yref: "y", x0: (l.first_seen && new Date(l.first_seen) > x0 ? new Date(l.first_seen) : x0).toISOString(), x1: x1.toISOString(), y0: l.value, y1: l.value, line: { color: COL[l.category] || "#999", width: 1.4, dash: l.category === "expected_move" ? "dot" : "solid" } }))),
       annotations: arr.map(o => ({ xref: "paper", yref: "y", x: 1, y: o.l.value, xanchor: "left", axref: "pixel", ayref: "pixel", ax: 16, ay: Math.round(o.lab - o.pos), showarrow: true, arrowhead: 0, arrowwidth: 0.8,
@@ -691,16 +697,16 @@ async function historyLevels() {
   const L = [["gamma_flip", "Gamma flip", "#e6b422", "solid"], ["call_wall", "Call wall", "#3fb96a", "solid"], ["put_wall", "Put wall", "#e5534b", "solid"], ["em_high", "Move high", "#7db7ff", "dot"], ["em_low", "Move low", "#7db7ff", "dot"]];
   plot("chl", [{ type: "scatter", mode: "lines", x: h.price.map(p => p.t), y: h.price.map(p => p.price), name: "Price", line: { color: "#fff", width: 2 } }]
     .concat(L.filter(([k]) => h.levels[k].length).map(([k, n, c, d]) => ({ type: "scatter", mode: "lines+markers", marker: { size: 6 }, x: h.levels[k].map(p => p.t), y: h.levels[k].map(p => p.value), name: n, line: { color: c, width: 1.6, dash: d, shape: "hv" } }))),
-    LAY("Price and levels over the session", { legend: { orientation: "h", y: -0.2 }, xaxis: { gridcolor: "#262c34" } }));
+    LAY("Price and levels over the session", { legend: { orientation: "h", y: -0.2 }, xaxis: { gridcolor: "#1E2840" } }));
 }
 async function render() {
   if (S.busy) { S.again = true; return; }                  // something changed while a refresh was running: run again right after it
-  S.busy = true; $("clock").textContent = "updating...";
+  S.busy = true; $("clock").textContent = "Updating...";
   saveUI();
   try { await R[S.tab](); } catch (e) { showError(e); } finally { S.busy = false; }
   if (S.again) { S.again = false; return render(); }
   addHelp(); persistDetails(); eventsBanner();
-  $("clock").textContent = "page updated " + new Date().toLocaleTimeString() + " (browser clock, not data time)";
+  $("clock").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 const AL = Object.assign({ on: false, pct: 0.1, sound: true, notify: false, cats: ["gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move"] }, JSON.parse(localStorage.getItem("alerts") || "{}"));
 const alerted = {};
@@ -751,9 +757,12 @@ async function boot() {
   $("conv").value = S.savedConv || "standard"; if (S.savedMethod) $("method").value = S.savedMethod;
   $("zm").onclick = () => { S.zoom = Math.max(0.8, +(S.zoom - 0.1).toFixed(2)); applyZoom(); saveUI(); };
   $("zp").onclick = () => { S.zoom = Math.min(1.7, +(S.zoom + 0.1).toFixed(2)); applyZoom(); saveUI(); };
-  $("tabs").onclick = e => { const bt = e.target.closest && e.target.closest("[data-t]"), t = bt && bt.dataset.t; if (!t) return; S.tab = t; [...$("tabs").children].forEach(b => b.classList.toggle("on", b.dataset.t === t)); render(); };
+  $("tabs").onclick = e => { const bt = e.target.closest && e.target.closest("[data-t]"), t = bt && bt.dataset.t; if (!t) return; document.body.classList.remove("navopen"); S.tab = t; $("tabs").querySelectorAll("[data-t]").forEach(b => b.classList.toggle("on", b.dataset.t === t)); render(); };
   ["conv", "method", "exp"].forEach(id => $(id).onchange = render);
   $("reload").onclick = render;
+  $("setbtn").onclick = () => { $("controls").hidden = !$("controls").hidden; };
+  $("setclose").onclick = () => { $("controls").hidden = true; };
+  $("navbtn").onclick = () => document.body.classList.toggle("navopen");
   saveAlerts(); drawAlertPanel();
   $("alertbtn").onclick = () => { const a = $("alerts"); a.style.display = a.style.display === "none" ? "block" : "none"; };
   setInterval(alertTick, 30000);
@@ -771,7 +780,7 @@ async function boot() {
 }
 async function useSource() {
   const st = await api("/status"), us = Object.keys(st.underlyings);
-  S.u = us.includes(S.u) ? S.u : us[0]; $("u").innerHTML = us.map(u => `<option>${u}</option>`).join(""); $("u").value = S.u;
+  S.u = us.includes(S.u) ? S.u : us[0]; $("u").innerHTML = us.map(u => `<option value="${u}">${u.replace(/^_/, "")}</option>`).join(""); $("u").value = S.u;
   await loadExps(); setState(st);
 }
 async function loadExps() {
@@ -790,7 +799,11 @@ async function desktopTick() {
   const b = $("updgo");
   if (b) b.onclick = async () => { b.disabled = true; b.textContent = "Updating, the app will reopen..."; await fetch("/api/desktop/update/install", { method: "POST" }).catch(() => null); };
 }
-function setState(st) { $("mstate").textContent = "market " + st.market_state; $("mstate").className = "badge " + st.market_state; }
+function setState(st) {
+  $("mstate").textContent = "Market " + st.market_state.replace(/_/g, " "); $("mstate").className = "badge " + st.market_state;
+  const x = (st.underlyings || {})[S.u];
+  $("tick").innerHTML = x && x.spot != null ? `<b>${fmt(x.spot, 2)}</b><span class="sub">${esc(S.u.replace(/^_/, ""))}${x.data_status ? ", " + esc(x.data_status.replace(/_/g, " ")) : ""}</span>` : "";
+}
 loadUI();
 boot();
 desktopTick(); setInterval(desktopTick, 60000);

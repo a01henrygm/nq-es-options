@@ -3,32 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Q DATA · NQ / ES options analytics</title>
+<title>Q DATA</title>
 <link rel="icon" href="icons/app.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 </head>
 <body>
-<header>
-  <h1 class="brand"><img src="icons/app.png" alt=""><span class="qd">Q DATA</span><span class="sub">NQ / ES options analytics</span></h1>
-  <div id="top"><span id="zoomctl" title="Text size. Ctrl and + / - also zoom the whole page."><button id="zm" aria-label="Smaller text">A-</button><button id="zp" aria-label="Bigger text">A+</button></span> <span id="mstate" class="badge">connecting</span> <span id="clock" class="dim"></span></div>
-</header>
-<div id="controls">
-  <label>Data source <select id="src"></select></label>
-  <label>Underlying <select id="u"></select></label>
-  <label>Expiration <select id="exp" multiple size="1"></select></label>
-  <label>Dealer sign scenario
-    <select id="conv"><option value="standard">Standard: calls +, puts -</option><option value="customers_long">Reverse: calls -, puts +</option><option value="gross">Gross: no sign</option></select></label>
-  <label>Futures mapping <select id="method"><option value="auto">Auto</option><option value="ratio">Ratio</option><option value="basis">Basis from a futures price (index only)</option><option value="typed_basis">Typed basis (NQ minus NDX)</option></select></label>
-  <button id="reload">Refresh now</button>
-  <button id="alertbtn">Alerts: off</button>
+<div class="app">
+  <aside id="side">
+    <div class="brand"><img src="icons/app.png" alt=""><span class="qd">Q DATA</span></div>
+    <nav id="tabs" aria-label="Pages"></nav>
+    <p class="sidefoot">Delayed options data. Estimates for context, not signals.</p>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button id="navbtn" class="icon-btn" aria-label="Show pages">&#9776;</button>
+      <label class="sym" title="Which index to analyse"><select id="u" aria-label="Underlying"></select></label>
+      <div id="tick" class="tick"></div>
+      <span id="mstate" class="badge">connecting</span>
+      <span id="clock" class="dim"></span>
+      <div class="topactions">
+        <button id="reload" title="Load the latest data now">Refresh</button>
+        <button id="alertbtn" title="Alerts when price nears a level">Alerts: off</button>
+        <span id="zoomctl" title="Text size"><button id="zm" aria-label="Smaller text">A-</button><button id="zp" aria-label="Bigger text">A+</button></span>
+        <button id="setbtn" title="Data source, expirations and model settings">Settings</button>
+      </div>
+    </header>
+    <section id="controls" class="drawer" hidden>
+      <div class="drawer-head"><h2>Settings</h2><button id="setclose">Done</button></div>
+      <div class="drawer-grid">
+        <label>Data source <select id="src"></select><span class="hint">Where the options chain comes from.</span></label>
+        <label>Expirations <select id="exp" multiple size="4"></select><span class="hint">Leave empty to use all of them. Ctrl-click to pick several.</span></label>
+        <label>Dealer positioning
+          <select id="conv"><option value="standard">Standard: dealers long calls, short puts</option><option value="customers_long">Reversed: dealers short calls, long puts</option><option value="gross">No sign: size only</option></select>
+          <span class="hint">An assumption behind every gamma number. Standard is the usual one.</span></label>
+        <label>Convert levels to futures
+          <select id="method"><option value="auto">Automatic</option><option value="ratio">Ratio of prices</option><option value="basis">Basis from a futures price</option><option value="typed_basis">Basis I typed (NQ minus NDX)</option></select>
+          <span class="hint">How index prices are turned into NQ / ES points.</span></label>
+      </div>
+    </section>
+    <div id="alerts" class="panel" style="display:none"></div>
+    <div id="toast"></div>
+    <div id="evbanner"></div>
+    <main id="view"><p class="dim">Loading...</p></main>
+    <footer class="dim">Everything is calculated on this computer from delayed options data. Modeled values depend on the stated assumptions. Decision support, not a prediction.</footer>
+  </div>
 </div>
-<div id="alerts" class="panel" style="display:none"></div>
-<div id="toast"></div>
-<nav id="tabs"></nav>
-<div id="evbanner"></div>
-<main id="view"><p class="dim">Loading...</p></main>
-<footer class="dim">All numbers come from your local backend. The browser never sees your API key. Modeled values are estimates and depend on stated assumptions. This is decision support, not a prediction.</footer>
 <script src="app.js"></script>
 <script src="more.js"></script>
 </body>

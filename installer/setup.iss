@@ -53,6 +53,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; After an install or a silent self-update the app starts again (the updater passes /relaunch=--background when it was in the tray).
+; refresh Windows' icon cache so the desktop and taskbar show the current Q DATA icon straight away
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden waituntilterminated skipifdoesntexist
 Filename: "{app}\{#MyExe}"; Parameters: "{param:relaunch|}"; Description: "Open Q DATA"; Flags: nowait postinstall
 
 [UninstallRun]

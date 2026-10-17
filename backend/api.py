@@ -174,7 +174,8 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                       "last_new_data": iso(st.get("last_new_data")), "consecutive_failures": st.get("failures", 0),
                       "last_error": st.get("last_error"), "has_snapshot": snap is not None,
                       "snapshot_source_timestamp": iso(snap.source_ts) if snap else None,
-                      "data_status": fr.status if fr else "unavailable", "freshness": fr.to_dict() if fr else None}
+                      "data_status": fr.status if fr else "unavailable", "freshness": fr.to_dict() if fr else None,
+                      "spot": snap.spot if snap else None}
         return {"source": current.get(), "default_source": default_name, "available_sources": notes,
                 "provider": settings.provider, "requires_key": settings.requires_key,
                 "api_key_configured": settings.key_configured if settings.requires_key else None, "options_plan": settings.options_plan,
