@@ -1,0 +1,5 @@
+# Extra packages for the Windows desktop app and its installer build (not needed for the .bat version).
+pywebview==5.4
+pystray==0.19.5
+pillow>=10.4
+pyinstaller==6.11.1

@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+data/*.db-*
+logs/*.log
+logs/diagnose_sample.json
+.pytest_cache/
+build/
+dist/
+*.spec
+data/.session_secret

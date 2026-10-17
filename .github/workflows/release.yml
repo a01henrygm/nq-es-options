@@ -1,0 +1,48 @@
+# Every tag like v1.2.0 runs the tests, builds the Windows installer, and publishes it as a GitHub release.
+# The installed app checks these releases and updates itself.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:          # a manual run builds the installer as a downloadable artifact without publishing a release
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-desktop.txt
+      - run: choco install innosetup -y --no-progress
+      - name: Build the app and the installer
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { "0.0.0" }
+          ./installer/build.ps1 -Version $v -Repo "${{ github.repository }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/installer/*.exe
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/installer/*.exe
+          generate_release_notes: true
