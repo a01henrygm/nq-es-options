@@ -124,7 +124,7 @@ def test_release_build_files_fit_together():
     wf = (ROOT / ".github" / "workflows" / "release.yml").read_text()
     iss = (ROOT / "installer" / "setup.iss").read_text()
     spec = (ROOT / "installer" / "build.ps1").read_text()
-    assert "tags:" in wf and "v*" in wf and "windows-latest" in wf and "pytest" in wf and "build.ps1" in wf
+    assert "branches: [main]" in wf and "gh release view" in wf and "tag_name: v" in wf and "windows-latest" in wf and "pytest" in wf and "build.ps1" in wf
     assert "PrivilegesRequired=lowest" in iss and "{localappdata}" in iss.lower() or "{userpf}" in iss.lower()
     assert "NQ-ES-Options-{#MyVersion}-Setup" in iss and "postinstall" in iss and "CloseApplications" in iss
     assert "--add-data" in spec and "frontend" in spec and "NQES.py" in spec and "assets" in spec

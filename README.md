@@ -49,8 +49,9 @@ and automatic updates. No Python, no .bat files.
   when the app starts, or after 16:30 ET on weekdays and any time on weekends, so it never restarts during the session. A bar at the
   top of the page and the tray menu also offer **Restart and update** right away. Set `AUTO_UPDATE=0` in `.env` to only be told.
   A private repository needs `UPDATE_TOKEN=<token>` in `.env` (a fine-grained GitHub token with read access to that repo's contents).
-* **Making a release:** push a tag like `v1.2.0`. GitHub Actions runs the tests, builds the installer on Windows
-  (`installer/build.ps1`: PyInstaller, then Inno Setup) and publishes the release the app updates from.
+* **Making a release:** raise `__version__` in `backend/version.py` and push to main. GitHub Actions runs the tests and, when that
+  version has no release yet, builds the installer on Windows (`installer/build.ps1`: PyInstaller, then Inno Setup) and publishes
+  release `v<version>`, which the app updates from.
 * **The old .bat version still works** from the project folder and keeps its files there. The desktop app removes the old
   "start at sign-in" task the first time it runs, so the two do not both start.
 
