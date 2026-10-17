@@ -16,7 +16,9 @@ import re
 from datetime import datetime
 
 TYPE_FACTOR = {"gamma_flip": 1.0, "custom": 1.0, "gex0_call_wall": 0.95, "gex0_put_wall": 0.95, "gex0_flip": 0.9, "gex_call_zone": 0.95, "gex_put_zone": 0.95, "gex_pos_zone": 0.9, "gex_neg_zone": 0.9, "expected_move_ext": 0.7, "oi_call_zone": 0.85, "oi_put_zone": 0.85, "volume_call_zone": 0.7, "volume_put_zone": 0.7, "gex_concentration": 0.9, "open_interest": 0.85, "expected_move": 0.85, "volume": 0.7,
-               "oi_by_expiry": 0.6, "volume_by_expiry": 0.6, "oi_mid": 0.4, "volume_mid": 0.4}
+               "oi_by_expiry": 0.6, "volume_by_expiry": 0.6, "oi_mid": 0.4, "volume_mid": 0.4,
+               "charm_sell_zone": 0.75, "charm_buy_zone": 0.75, "vanna_pos_zone": 0.7, "vanna_neg_zone": 0.7, "dex_pos_zone": 0.65, "dex_neg_zone": 0.65,
+               "new_call_zone": 0.8, "new_put_zone": 0.8}
 RULE = ("Importance = size (versus the biggest level of its kind) x type weight x closeness to price (full inside about one expected move, "
         "fading to 35% beyond two). Levels within 0.10% of price of each other are merged into one zone, which gets +0.12 for each extra "
         "kind of level that agrees there. The weights are my own judgement, not tested evidence.")
@@ -41,6 +43,10 @@ def _metric(l):
     return None
 
 
+GREEK_TAGS = {"charm_sell_zone": "Charm sell", "charm_buy_zone": "Charm buy", "vanna_pos_zone": "Vanna+", "vanna_neg_zone": "Vanna-",
+              "dex_pos_zone": "Dealer long delta", "dex_neg_zone": "Dealer short delta", "new_call_zone": "New call OI", "new_put_zone": "New put OI"}
+
+
 def short_tag(l):
     """One short word or two for the KIND of level, so a zone reads like 'Call OI / Volume / GEX+'."""
     c, lab = l["category"], l["label"].lower()
@@ -52,6 +58,8 @@ def short_tag(l):
         return {"gex_call_zone": "Call wall zone", "gex_put_zone": "Put wall zone", "gex_pos_zone": "+GEX zone", "gex_neg_zone": "-GEX zone"}[c]
     if c in ("oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone"):
         return {"oi_call_zone": "Call OI zone", "oi_put_zone": "Put OI zone", "volume_call_zone": "Call volume zone", "volume_put_zone": "Put volume zone"}[c]
+    if c in GREEK_TAGS:
+        return GREEK_TAGS[c]
     if c == "gex_concentration":
         return "Call GEX" if "call gex" in lab else "Put GEX" if "put gex" in lab else "GEX+" if "positive" in lab else "GEX-"
     if c in ("open_interest", "oi_by_expiry", "oi_mid"):
@@ -96,9 +104,11 @@ def score_levels(levels, spot, scale):
 FAMILY = {"gex0_call_wall": "gex", "gex0_put_wall": "gex", "gex0_flip": "gex", "gex_concentration": "gex", "gex_call_zone": "gex", "gex_put_zone": "gex", "gex_pos_zone": "gex", "gex_neg_zone": "gex",
           "open_interest": "oi", "oi_call_zone": "oi", "oi_put_zone": "oi", "oi_by_expiry": "oi", "oi_mid": "oi",
           "volume": "vol", "volume_call_zone": "vol", "volume_put_zone": "vol", "volume_by_expiry": "vol", "volume_mid": "vol",
-          "expected_move": "move", "expected_move_ext": "move"}
-QUOTA_KEYS = ("gex", "oi", "vol", "move")
-QUOTA_RULE = ("Per-type counts: within each family (GEX, open interest, volume, expected move) the highest-scoring zones are kept, up to that family's "
+          "expected_move": "move", "expected_move_ext": "move",
+          "charm_sell_zone": "charm", "charm_buy_zone": "charm", "vanna_pos_zone": "vanna", "vanna_neg_zone": "vanna",
+          "dex_pos_zone": "dex", "dex_neg_zone": "dex", "new_call_zone": "new", "new_put_zone": "new"}
+QUOTA_KEYS = ("gex", "oi", "vol", "move", "charm", "vanna", "dex", "new")
+QUOTA_RULE = ("Per-type counts: within each family (GEX, open interest, volume, expected move, charm, vanna, dealer delta, new positions) the highest-scoring zones are kept, up to that family's "
               "count. A zone where several families line up uses ONE slot, from the family that leads it if it has room, otherwise from another "
               "family in it that still has room. The gamma flip and levels you typed in are always shown and use no slot.")
 
@@ -131,6 +141,11 @@ def select_by_quota(zones, quota):
     return sorted(out, key=lambda z: -z["value"])
 
 
+# Modeled flow zones (charm, vanna, dealer delta) and new-positioning zones keep their own line: they are never merged into another
+# band and never swallow other levels, so each can be shown, counted and styled on its own.
+SOLO = {"charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"}
+
+
 def _overlap(a, b):
     """How much of the narrower band the two bands share (0 to 1)."""
     shared = max(0.0, min(a["high"], b["high"]) - max(a["low"], b["low"]))
@@ -147,7 +162,7 @@ def make_zones(levels, spot, top_n=10, cluster_pct=0.0010):
     bands = [l for l in levels if l.get("low") is not None]
     plain = [l for l in levels if l.get("low") is None]
     keep = ("gamma_flip", "custom")                                               # the flip and your own levels are never hidden inside a band
-    inside = {id(l): ([b for b in bands if b["low"] <= l["value"] <= b["high"]] if l["category"] not in keep else []) for l in plain}
+    inside = {id(l): ([b for b in bands if b["low"] <= l["value"] <= b["high"] and b["category"] not in SOLO] if l["category"] not in keep else []) for l in plain}
     absorbed = [l for l in plain if inside[id(l)]]
     ordered = sorted((l for l in plain if not inside[id(l)]), key=lambda l: l["value"])
     groups, cur = [], []
@@ -186,7 +201,7 @@ def make_zones(levels, spot, top_n=10, cluster_pct=0.0010):
     # bands that overlap by half or more are merged into one that shows both names, with a bonus for the agreement
     merged, tags = [], {}
     for z in sorted((z for z in zones if z.get("band")), key=lambda z: -z["importance"]):
-        hit = next((k for k in merged if _overlap(k, z) >= 0.5), None)
+        hit = None if z["category"] in SOLO else next((k for k in merged if k["category"] not in SOLO and _overlap(k, z) >= 0.5), None)
         if hit is None:
             merged.append(z)
             tags[id(z)] = [short_tag(z)]

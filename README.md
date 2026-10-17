@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.3
+
+* **Activity heatmap** (replaces the old Heatmap tab): strike by expiry for new positions (open interest change since the last
+  session), volume, open interest, modeled GEX, charm, vanna or dealer delta. It shows where the activity is concentrated: hot-spot
+  bands, the activity center, and how much sits above or below price, each with its NQ / ES price once a basis is saved.
+* **Charm and vanna** tab: modeled dealer flows by strike, how much dealers would need to buy or sell by the close from time
+  passing alone, and what a 1-point IV drop would force. All labelled as estimates.
+* **New level types:** charm zones, vanna zones, dealer delta zones and new-position zones. Each has its own count on Key levels and
+  its own settings group (show, max levels, colors, width, style) in the TradingView indicator. Re-paste the indicator code once.
+* The app now stores each day's per-contract open interest, so new positions fill in from the next session on.
+
 ## New in 1.1
 
 * **0DTE GEX** tab and level types: gamma from today's expiry only, with its call wall, put wall and flip (also in the paste text

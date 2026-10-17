@@ -759,7 +759,7 @@ def test_per_type_counts_give_gex_more_lines_and_follow_into_the_export():
     c, db = api_client()
     heavy = c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:8,oi:2,vol:1,move:2", "moves": 3}).json()
     sel = heavy["selection"]
-    assert sel["mode"] == "custom" and sel["quota"] == {"gex": 8, "oi": 2, "vol": 1, "move": 2}
+    assert sel["mode"] == "custom" and sel["quota"] == {"gex": 8, "oi": 2, "vol": 1, "move": 2, "charm": 0, "vanna": 0, "dex": 0, "new": 0}
     for f, n in sel["quota"].items():
         assert sel["used"][f] <= n
     assert sel["used"]["gex"] > sel["used"]["oi"] and sel["used"]["gex"] >= 4                    # GEX really gets more lines
@@ -775,7 +775,7 @@ def test_per_type_counts_give_gex_more_lines_and_follow_into_the_export():
     assert code["levels"] == len(heavy["zones"])
     assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:99"}).status_code == 422
     assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "foo:2"}).status_code == 422
-    assert parse_quota("gex:5") == {"gex": 5, "oi": 0, "vol": 0, "move": 0}
+    assert parse_quota("gex:5") == {"gex": 5, "oi": 0, "vol": 0, "move": 0, "charm": 0, "vanna": 0, "dex": 0, "new": 0}
 
 
 # ---- the TradingView indicator: per-kind settings, and paste rows that carry score and family -----------------------
@@ -793,7 +793,7 @@ def test_indicator_has_per_family_settings_and_trims_by_score():
         ind_default(ind, cat)                                                                                    # every type has a family and a color setting
     js = (ROOT / "frontend" / "app.js").read_text()
     assert "function famOf(l)" in js and "Math.round((l.importance || 0) * 100)" in js and "${base}, ${st || \"\"}, , , ${tail}" in js
-    assert 'tv: { gex: 16, oi: 8, vol: 6, move: 8 }' in js
+    assert 'tv: { gex: 16, oi: 8, vol: 6, move: 8, charm: 6, vanna: 6, dex: 4, new: 6 }' in js
 
 
 def test_static_pine_export_declares_each_input_once():

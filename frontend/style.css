@@ -76,6 +76,22 @@ details.help>summary::-webkit-details-marker{display:none}details.help p{margin:
 .badge.stale,.badge.unavailable,.badge.no_source_time,.badge.invalid,.badge.closed{color:var(--bad);border-color:#5a2a28}
 .badge.daily_snapshot,.badge.asynchronous,.badge.degraded,.badge.premarket,.badge.afterhours{color:var(--warn);border-color:#5a4a1c}
 
+/* activity heatmap + charm and vanna */
+.readout{margin:4px 0 14px;padding:12px 16px;border-radius:var(--r);background:linear-gradient(90deg,rgba(61,139,255,.12),rgba(139,92,246,.10));border:1px solid var(--line2);color:var(--ink);font-weight:600;max-width:110ch}
+.hm-tiles{display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:10px;margin:0 0 14px}
+@media (max-width:900px){.hm-tiles{grid-template-columns:1fr 1fr}}
+.hm-tiles .card{display:flex;flex-direction:column;gap:2px}
+.hm-tiles .card>span{font-size:.82em;color:var(--dim);font-weight:600}
+.hm-tiles .card em{font-style:normal;font-size:.8em;color:var(--faint);margin-top:2px}
+.hm-tiles .hm-big{border-color:#3a4a7a;background:linear-gradient(160deg,#152246,#101829)}
+.hm-tiles .hm-big b{font-size:1.9em}
+.fut{display:inline-block;align-self:flex-start;font-style:normal;font-weight:700;font-size:.92em;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35);background:var(--grad);padding:1px 8px;border-radius:999px}
+td .fut{font-size:.82em}
+.tilt{height:10px;border-radius:5px;background:#3a1d26;overflow:hidden;margin:10px 0 4px}.tilt i{display:block;height:100%;background:linear-gradient(90deg,#3D8BFF,#8B5CF6)}
+.share{display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;overflow:hidden}.share i{display:block;height:100%}
+table.hot td{vertical-align:middle}
+.card.bull b{color:var(--ok)}.card.bear b{color:var(--bad)}
+
 /* stat tiles: a quiet label above a figure */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:10px 0}
 .grid.wide{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}

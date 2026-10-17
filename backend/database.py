@@ -141,6 +141,13 @@ class Database:
             rows = c.execute(q, (underlying, name, since, limit) if since else (underlying, name, limit)).fetchall()
         return [{"value": r["value"], "detail": json.loads(r["detail"]) if r["detail"] else None, "t": r["calculated_at"]} for r in rows][::-1]
 
+    def latest_metric_before(self, underlying, name, before):
+        """The newest stored record of one metric calculated before `before` (ISO, UTC), with its detail decoded. None if there is none."""
+        with self.conn() as c:
+            r = c.execute("SELECT value,detail,calculated_at FROM analytics WHERE underlying=? AND name=? AND calculated_at<? ORDER BY id DESC LIMIT 1",
+                          (underlying, name, before)).fetchone()
+        return {"value": r["value"], "detail": json.loads(r["detail"]) if r["detail"] else None, "t": r["calculated_at"]} if r else None
+
     # -- trade journal ---------------------------------------------------------------------
     TRADE_FIELDS = ("underlying", "instrument", "side", "qty", "entry", "stop", "target", "exit", "opened_at", "closed_at", "setup", "note", "context")
 

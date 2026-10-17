@@ -1,5 +1,5 @@
 //@version=6
-indicator("Options levels", overlay = true, max_lines_count = 200, max_labels_count = 200, max_boxes_count = 100)
+indicator("Options levels", overlay = true, max_lines_count = 300, max_labels_count = 300, max_boxes_count = 150)
 
 // Each level is drawn as a line that STARTS when that level first appeared and runs to the current candle,
 // ending in a small block that shows the label and price. Nothing extends to infinity.
@@ -7,7 +7,8 @@ indicator("Options levels", overlay = true, max_lines_count = 200, max_labels_co
 // Paste your levels into the setting below, one per line:
 //   price, label, type, first seen (Eastern Time), zone low, zone high, score, family
 // Only price and label are required. Zone low and high are for bands: those are drawn as a shaded box.
-// Score (0 to 100) is the app's importance score; family is gex, oi, vol, move, flip or mine.
+// Score (0 to 100) is the app's importance score; family is gex, oi, vol, move, charm, vanna, dex, new, flip or mine.
+// Charm, vanna and dealer delta are MODELED dealer flows (estimates). New positions = open interest added since the previous session.
 // Each family has its own settings group: show it or not, how many to draw, color, width and line style.
 // "Max levels" keeps the highest-scoring levels of that family (nearest to price first when there is no score).
 // First seen example: 2026-10-16 09:50 . The app also writes a line  // @start 2026-10-16 09:40  used for levels without their own time.
@@ -20,6 +21,10 @@ const string G_GEX  = "GEX"
 const string G_OI   = "Open interest"
 const string G_VOL  = "Volume"
 const string G_MOVE = "Expected move"
+const string G_CHARM = "Charm (estimate)"
+const string G_VANNA = "Vanna (estimate)"
+const string G_DEX  = "Dealer delta (estimate)"
+const string G_NEW  = "New positions"
 const string G_MINE = "Levels you typed in"
 const string MAXTIP = "Draws only this many levels of this kind: the highest-scoring ones. 0 = draw every one you pasted."
 
@@ -75,6 +80,34 @@ sMove    = input.string("Dotted", "Style", options = ["Solid", "Dashed", "Dotted
 cMove    = input.color(#7db7ff, "Expected", group = G_MOVE, inline = "mvc")
 cMoveExt = input.color(#8e9bff, "Extended", group = G_MOVE, inline = "mvc")
 
+showCharm  = input.bool(true, "Show", group = G_CHARM, inline = "ch")
+maxCharm   = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_CHARM, inline = "ch")
+wCharm     = input.int(1, "Width", minval = 1, maxval = 6, group = G_CHARM, inline = "ch2")
+sCharm     = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_CHARM, inline = "ch2")
+cCharmSell = input.color(#e76f51, "Dealers sell into close", group = G_CHARM, inline = "chc")
+cCharmBuy  = input.color(#2a9d8f, "Dealers buy into close", group = G_CHARM, inline = "chc")
+
+showVanna  = input.bool(true, "Show", group = G_VANNA, inline = "va")
+maxVanna   = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_VANNA, inline = "va")
+wVanna     = input.int(1, "Width", minval = 1, maxval = 6, group = G_VANNA, inline = "va2")
+sVanna     = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_VANNA, inline = "va2")
+cVannaPos  = input.color(#c77dff, "Vanna +", group = G_VANNA, inline = "vac")
+cVannaNeg  = input.color(#ffb703, "Vanna -", group = G_VANNA, inline = "vac")
+
+showDex    = input.bool(true, "Show", group = G_DEX, inline = "dx")
+maxDex     = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_DEX, inline = "dx")
+wDex       = input.int(1, "Width", minval = 1, maxval = 6, group = G_DEX, inline = "dx2")
+sDex       = input.string("Dotted", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_DEX, inline = "dx2")
+cDexPos    = input.color(#4cc9f0, "Dealers long delta", group = G_DEX, inline = "dxc")
+cDexNeg    = input.color(#f72585, "Dealers short delta", group = G_DEX, inline = "dxc")
+
+showNew    = input.bool(true, "Show", group = G_NEW, inline = "nw")
+maxNew     = input.int(3, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_NEW, inline = "nw")
+wNew       = input.int(2, "Width", minval = 1, maxval = 6, group = G_NEW, inline = "nw2")
+sNew       = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_NEW, inline = "nw2")
+cNewCall   = input.color(#b5e48c, "New calls", group = G_NEW, inline = "nwc")
+cNewPut    = input.color(#ff6b6b, "New puts", group = G_NEW, inline = "nwc")
+
 showCustom = input.bool(true, "Show", group = G_MINE, inline = "mine")
 cCustom    = input.color(#ffffff, "", group = G_MINE, inline = "mine")
 wCustom    = input.int(2, "Width", minval = 1, maxval = 6, group = G_MINE, inline = "mine")
@@ -105,6 +138,14 @@ famOf(string cat) =>
         "volume_put_zone" => "vol"
         "expected_move" => "move"
         "expected_move_ext" => "move"
+        "charm_sell_zone" => "charm"
+        "charm_buy_zone" => "charm"
+        "vanna_pos_zone" => "vanna"
+        "vanna_neg_zone" => "vanna"
+        "dex_pos_zone" => "dex"
+        "dex_neg_zone" => "dex"
+        "new_call_zone" => "new"
+        "new_put_zone" => "new"
         => "other"
 
 colorFor(string cat) =>
@@ -131,6 +172,14 @@ colorFor(string cat) =>
         "expected_move" => cMove
         "expected_move_ext" => cMoveExt
         "custom" => cCustom
+        "charm_sell_zone" => cCharmSell
+        "charm_buy_zone" => cCharmBuy
+        "vanna_pos_zone" => cVannaPos
+        "vanna_neg_zone" => cVannaNeg
+        "dex_pos_zone" => cDexPos
+        "dex_neg_zone" => cDexNeg
+        "new_call_zone" => cNewCall
+        "new_put_zone" => cNewPut
         => color.gray
 
 showFor(string fam) =>
@@ -141,6 +190,10 @@ showFor(string fam) =>
         "vol" => showVol
         "move" => showMove
         "mine" => showCustom
+        "charm" => showCharm
+        "vanna" => showVanna
+        "dex" => showDex
+        "new" => showNew
         => true
 
 maxFor(string fam) =>
@@ -149,6 +202,10 @@ maxFor(string fam) =>
         "oi" => maxOi
         "vol" => maxVol
         "move" => maxMove
+        "charm" => maxCharm
+        "vanna" => maxVanna
+        "dex" => maxDex
+        "new" => maxNew
         => 0
 
 widthFor(string fam) =>
@@ -159,6 +216,10 @@ widthFor(string fam) =>
         "vol" => wVol
         "move" => wMove
         "mine" => wCustom
+        "charm" => wCharm
+        "vanna" => wVanna
+        "dex" => wDex
+        "new" => wNew
         => 1
 
 styleFor(string fam) =>
@@ -169,6 +230,10 @@ styleFor(string fam) =>
         "vol" => sVol
         "move" => sMove
         "mine" => sCustom
+        "charm" => sCharm
+        "vanna" => sVanna
+        "dex" => sDex
+        "new" => sNew
         => "Solid"
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
@@ -198,7 +263,7 @@ parseStart(string txt) =>
     result
 
 validFam(string f) =>
-    f == "gex" or f == "oi" or f == "vol" or f == "move" or f == "flip" or f == "mine"
+    f == "gex" or f == "oi" or f == "vol" or f == "move" or f == "flip" or f == "mine" or f == "charm" or f == "vanna" or f == "dex" or f == "new"
 
 parseLevels(string txt) =>
     prices = array.new<float>()
@@ -259,7 +324,7 @@ if barstate.islast
     else
         // pick, per family, the highest-scoring levels up to that family's Max levels
         keep = array.new<bool>(n, false)
-        for fam in array.from("flip", "gex", "oi", "vol", "move", "mine", "other")
+        for fam in array.from("flip", "gex", "oi", "vol", "move", "charm", "vanna", "dex", "new", "mine", "other")
             if showFor(fam)
                 idx = array.new<int>()
                 keys = array.new<float>()

@@ -1,7 +1,7 @@
 """FastAPI endpoints. The browser only talks to these; the provider key never leaves the backend."""
 from __future__ import annotations
 import contextvars
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -13,6 +13,7 @@ from .config import Settings, ROOT
 from .database import Database
 from .services import analytics as an
 from .services import market
+from .services import flows as fl
 from .services.freshness import classify
 from .security import Auth, install_auth
 from .services.bias import compute_bias
@@ -415,6 +416,104 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         cl = an.clean_iv(snap.contracts, snap.spot, now, otm_only, max_spread, smooth)
         return {"meta": m, "data": an.build_surface(cl, snap.spot, min_points), "cleaning": {"stats": cl["stats"], "method": cl["method"]}}
 
+    @app.get("/api/analytics/greeks")
+    def greeks(underlying: str, expiration: str | None = None, convention: str = "standard"):
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        snap, cons = analysed(underlying, expiration)
+        m, _, now = meta(snap, {"convention": convention})
+        g = fl.greek_exposure(cons, snap.spot, now, convention)
+        zones = {k: fl.signed_zones(g["strikes"], k, snap.spot, 3) for k in ("charm", "vanna", "dex")}
+        return {"meta": m, "data": g, "zones": zones,
+                "note": "Modeled estimates. The dealer side comes from the positioning assumption in Settings, not from observed positions."}
+
+    @app.get("/api/analytics/activity")
+    def activity(underlying: str, measure: str = "oi_change", side: str = "total", window: float = Query(0.04, ge=0, le=1),
+                 expiries: int = Query(8, ge=1, le=30), convention: str = "standard", method: str = "auto", hot: int = Query(5, ge=1, le=12)):
+        if measure not in fl.MEASURES or side not in fl.SIDES or convention not in an.SIGNS:
+            raise HTTPException(422, f"measure must be one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
+        u = underlying_ok(underlying)
+        snap = snapshot(u)
+        m, _, now = meta(snap, {"convention": convention})
+        poi, poi_t = prev_oi_for(u, snap) if measure == "oi_change" else ({}, None)
+        if measure == "oi_change" and not poi:
+            return {"meta": m, "available": False,
+                    "reason": "Open interest change needs the previous session's open interest. The app stores it each day, so this fills in from the next session on. Pick another measure meanwhile."}
+        d = fl.activity_map(snap.contracts, snap.spot, now, measure, side, window, expiries, convention, poi, hot)
+        mapper, mapping = futures_mapper(u, snap, now, method)
+        root = mapping["futures_root"]
+        conv = (lambda v: (lambda r: r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None)(mapper(v))) if mapper else (lambda v: None)
+        for h in d["hot_spots"]:
+            h["futures"], h["futures_low"], h["futures_high"] = conv(h["price"]), conv(h["low"]), conv(h["high"])
+        d["center_futures"] = conv(d["center"]) if d["center"] is not None else None
+        d["spot_futures"] = conv(snap.spot)
+        fp = lambda k: f"{k:,.0f}" + (f" ({root} {conv(k):,.0f})" if conv(k) is not None else "")
+        d["summary"] = fl.summary_line(d, fp)
+        return {"meta": m, "available": True, "data": d, "futures_root": root, "mapped": mapper is not None, "oi_from": poi_t,
+                "mapping_note": None if mapper else mapping.get("note")}
+
+    def futures_mapper(u, snap, now, method="auto"):
+        """(mapper, mapping info). mapper(value) -> mapped dict, or None when no futures price or basis is saved."""
+        root = FUTURES_FOR.get(u)
+        mapping = {"futures_root": root, "available": False}
+        if not root:
+            return None, mapping
+        row = db.latest_price(root)
+        contract = settings.futures_contracts.get(root, "")
+        mapping["roll"] = roll_status(contract, now.date())
+        base = PricePoint(u, snap.spot, snap.spot_ts, snap.provider)
+        diag = evaluate_methods(pair_observations(db.price_history(u), db.price_history(root)))
+        mapping["diagnostics"] = diag
+        brow = db.latest_price(f"{root}_BASIS")
+        if brow:
+            mapping["typed_basis"] = {"value": brow["price"], "entered_at": brow["retrieved_at"],
+                                      "age_minutes": (now - parse_ts(brow["retrieved_at"])).total_seconds() / 60}
+        newer_basis = bool(brow) and (not row or brow["retrieved_at"] > row["retrieved_at"])
+        if method == "typed_basis" or (method == "auto" and newer_basis):
+            mapping["available"] = bool(brow)
+            if brow:
+                return (lambda v: map_with_typed_basis(v, u, snap.spot, brow["price"], parse_ts(brow["retrieved_at"]), now)), mapping
+            mapping["note"] = f"Type a basis ({root} minus the index) on the Levels tab."
+            return None, mapping
+        if row:
+            fut = PricePoint(root, row["price"], parse_ts(row["source_ts"] or row["retrieved_at"]), row["source"], row["contract"], bool(row["manual"]))
+            mapping["available"] = True
+            prefer = diag.get("best") if diag.get("available") and method == "auto" else None
+            expired = mapping["roll"]["status"] == "expired"
+
+            def mp(v):
+                r = map_level(v, u, base, fut, now, method, prefer=prefer)
+                if expired:
+                    r["warnings"].append("The selected futures contract has expired.")
+                    r["status"] = "stale"
+                return r
+            return mp, mapping
+        mapping["note"] = f"Enter a {root} price on the dashboard to see levels in futures points."
+        return None, mapping
+
+    _poi = {}
+
+    def prev_oi_for(u, snap):
+        """{ticker: open interest} from the previous trading day, and when it was stored. ({}, None) when there is none yet."""
+        day = to_et(snap.source_ts or snap.retrieved_at).date()
+        cut = iso(datetime.combine(day, dtime(0, 0), tzinfo=to_et(snap.retrieved_at).tzinfo))
+        r = db.latest_metric_before(u, "oi_contracts", cut)
+        if r and r["detail"]:
+            key = (u, r["t"])
+            if key not in _poi:
+                _poi.clear()
+                _poi[key] = {t: v for t, v in r["detail"]}
+            return _poi[key], r["t"]
+        for row in db.list_snapshots(u, 500):                  # fallback: an older full snapshot from an earlier day, if one is still stored
+            if to_et(parse_ts(row["retrieved_at"])).date() < day:
+                key = (u, "snap", row["id"])
+                if key not in _poi:
+                    old = db.load_snapshot(u, row["id"])
+                    _poi.clear()
+                    _poi[key] = {c.ticker: c.oi or 0 for c in old.contracts} if old else {}
+                return _poi[key], row["retrieved_at"]
+        return {}, None
+
     def levels_payload(underlying, convention, method, categories, top=2, expiration=None, by_expiry=0, mid=0, moves=0, key=0, near=0, quota=None):
         u = underlying_ok(underlying)
         if convention not in an.SIGNS or method not in ("auto", "ratio", "basis", "typed_basis"):
@@ -431,9 +530,15 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
             gex_top = max(top, min(10, -(-q["gex"] // 2) + 1))
         if q:                                                # same for open interest and volume
             top = max(top, min(10, -(-max(q["oi"], q["vol"]) // 2)))
+        greek_top = None
+        if q:                                                # charm, vanna, dealer delta and new positions: enough of each to fill its count
+            greek_top = min(8, -(-max(q["charm"], q["vanna"], q["dex"], q["new"]) // 2) + 1) if any(q[k] for k in ("charm", "vanna", "dex", "new")) else 0
         snap = snapshot(u)
         m, fr, now = meta(snap, {"convention": convention, "reliability_rule": RELIABILITY_RULE})
-        lv = build_levels(snap, now, convention, fr, top=top, expirations=exps(expiration), per_expiry=by_expiry, mid=mid, moves=moves, gex_top=gex_top)
+        poi, poi_t = prev_oi_for(u, snap) if (greek_top is None or greek_top) else ({}, None)
+        m["new_positions_from"] = poi_t
+        lv = build_levels(snap, now, convention, fr, top=top, expirations=exps(expiration), per_expiry=by_expiry, mid=mid, moves=moves, gex_top=gex_top,
+                          greek_top=greek_top, prev_oi=poi or None)
         for cl in db.list_custom_levels(u):
             lv.append({"instrument": snap.underlying, "source_timestamp": m["source_timestamp"], "data_status": fr.status, "provider": snap.provider,
                        "category": "custom", "label": cl["label"], "value": cl["value"], "method": "Typed in by you", "inputs": {},
@@ -458,46 +563,13 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
             dist = lambda z: (0.0 if z["low"] <= sp_ <= z["high"] else min(abs(sp_ - z["low"]), abs(sp_ - z["high"]))) if z.get("low") is not None else abs(z["value"] - sp_)
             zones = sorted(sorted(zones, key=dist)[:near], key=lambda z: -z["value"])
         lv += zones
-        root = FUTURES_FOR.get(u)
-        mapping = {"futures_root": root, "available": False}
-        if root:
-            row = db.latest_price(root)
-            contract = settings.futures_contracts.get(root, "")
-            mapping["roll"] = roll_status(contract, now.date())
-            base = PricePoint(u, snap.spot, snap.spot_ts, snap.provider)
-            diag = evaluate_methods(pair_observations(db.price_history(u), db.price_history(root)))
-            mapping["diagnostics"] = diag
-            brow = db.latest_price(f"{root}_BASIS")
-            if brow:
-                mapping["typed_basis"] = {"value": brow["price"], "entered_at": brow["retrieved_at"],
-                                          "age_minutes": (now - parse_ts(brow["retrieved_at"])).total_seconds() / 60}
-            newer_basis = bool(brow) and (not row or brow["retrieved_at"] > row["retrieved_at"])
-            if method == "typed_basis" or (method == "auto" and newer_basis):
-                mapping["available"] = bool(brow)
-                if brow:
-                    mapper = lambda v: map_with_typed_basis(v, u, snap.spot, brow["price"], parse_ts(brow["retrieved_at"]), now)
-                    for x in lv:
-                        x["mapped"] = mapper(x["value"])
-                        if x.get("low") is not None:                       # GEX wall zones: convert both edges of the band
-                            x["mapped_low"], x["mapped_high"] = mapper(x["low"])["mapped"], mapper(x["high"])["mapped"]
-                else:
-                    mapping["note"] = f"Type a basis ({root} minus the index) on the Levels tab."
-            elif row:
-                fut = PricePoint(root, row["price"], parse_ts(row["source_ts"] or row["retrieved_at"]), row["source"], row["contract"],
-                                 bool(row["manual"]))
-                mapping["available"] = True
-                prefer = diag.get("best") if diag.get("available") and method == "auto" else None
-                mapper = lambda v: map_level(v, u, base, fut, now, method, prefer=prefer)
-                for x in lv:
-                    x["mapped"] = mapper(x["value"])
-                    if x.get("low") is not None:
-                        x["mapped_low"], x["mapped_high"] = mapper(x["low"])["mapped"], mapper(x["high"])["mapped"]
-                if mapping["roll"]["status"] == "expired":
-                    for x in lv:
-                        x["mapped"]["warnings"].append("The selected futures contract has expired.")
-                        x["mapped"]["status"] = "stale"
-            else:
-                mapping["note"] = f"Enter a {root} price on the dashboard to see levels in futures points."
+        mapper, mapping = futures_mapper(u, snap, now, method)
+        root = mapping["futures_root"]
+        if mapper:
+            for x in lv:
+                x["mapped"] = mapper(x["value"])
+                if x.get("low") is not None:                       # zones: convert both edges of the band
+                    x["mapped_low"], x["mapped_high"] = mapper(x["low"])["mapped"], mapper(x["high"])["mapped"]
         return {"meta": m, "levels": [x for x in lv if not x.get("zone")], "zones": [x for x in lv if x.get("zone")], "mapping": mapping,
                 "selection": {"mode": "custom" if q else "nearest" if near else "key" if key else "all", "n": len(zones) if q else (near or key or None), "available": available,
                               **({"quota": q, "used": {f: sum(1 for z in zones if z.get("slot") == f) for f in q}, "quota_rule": QUOTA_RULE} if q else {})},

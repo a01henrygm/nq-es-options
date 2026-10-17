@@ -85,6 +85,14 @@ def oi_profile(contracts, spot, window=0.06):
     return [by[k] for k in sorted(by)]
 
 
+def oi_by_contract(contracts, spot, now, window=0.12, max_days=70):
+    """[[ticker, open interest], ...] for contracts within 12% of price and 70 days, so a day's record stays small."""
+    from datetime import timedelta
+    from ..timeutil import ET as _ET
+    last = now.astimezone(_ET).date() + timedelta(days=max_days)
+    return [[c.ticker, c.oi] for c in contracts if c.oi and abs(c.strike / spot - 1) <= window and c.expiry <= last]
+
+
 def oi_change_from_profiles(prev, cur):
     a = {r[0]: r for r in prev}
     b = {r[0]: r for r in cur}

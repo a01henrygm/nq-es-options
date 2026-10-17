@@ -30,6 +30,8 @@ showMove   = input.bool(true, "Expected move")
 showCustom = input.bool(true, "Levels you typed in")
 showZones  = input.bool(true, "GEX call and put wall zones")
 showNet    = input.bool(true, "Positive and negative GEX zones")
+showFlows  = input.bool(true, "Charm, vanna and dealer delta zones (estimates)")
+showNew    = input.bool(true, "New positions since the last session")
 offsetPts  = input.float(0.0, "Add to every level (points)")
 startMode  = input.string("Level time", "Lines start at", options = ["Level time", "Session open 9:30 ET", "Start of chart data"])
 extBars    = input.int(3, "Lines run this many bars past the current candle", minval = 0)
@@ -63,6 +65,14 @@ colorFor(string cat) =>
         "oi_put_zone" => #d9480f
         "volume_call_zone" => #2ec4b6
         "volume_put_zone" => #f06292
+        "charm_sell_zone" => #e76f51
+        "charm_buy_zone" => #2a9d8f
+        "vanna_pos_zone" => #c77dff
+        "vanna_neg_zone" => #ffb703
+        "dex_pos_zone" => #4cc9f0
+        "dex_neg_zone" => #f72585
+        "new_call_zone" => #b5e48c
+        "new_put_zone" => #ff6b6b
         => color.gray
 
 visibleCat(string cat) =>
@@ -89,6 +99,14 @@ visibleCat(string cat) =>
         "oi_put_zone" => showOi
         "volume_call_zone" => showVol
         "volume_put_zone" => showVol
+        "charm_sell_zone" => showFlows
+        "charm_buy_zone" => showFlows
+        "vanna_pos_zone" => showFlows
+        "vanna_neg_zone" => showFlows
+        "dex_pos_zone" => showFlows
+        "dex_neg_zone" => showFlows
+        "new_call_zone" => showNew
+        "new_put_zone" => showNew
         => true
 
 var line[]  lns = array.new<line>()

@@ -126,6 +126,13 @@ class Collector:
             if self.db.get_meta(f"oi_profile:{u}:{day}") is None:
                 self.db.save_metric(sid, u, "oi_profile", None, idy.oi_profile(cons, spot), now)
                 self.db.set_meta(f"oi_profile:{u}:{day}", "1")
+            # Per-contract open interest, saved again whenever it changes during the day, so the LAST record of each day is that day's
+            # final figure. The heatmap and the new-positioning zones compare today's chain against the previous day's record.
+            oc = idy.oi_by_contract(cons, spot, now)
+            tot = str(round(sum(v for _, v in oc)))
+            if oc and self.db.get_meta(f"oi_contracts:{u}:{day}") != tot:
+                self.db.save_metric(sid, u, "oi_contracts", float(tot), oc, now)
+                self.db.set_meta(f"oi_contracts:{u}:{day}", tot)
             dm = idy.day_move(cons, spot, now)
             if dm:
                 self.db.save_metric(sid, u, "day_move", dm["points"], {"method": dm["method"]}, now)

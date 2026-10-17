@@ -5,23 +5,25 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const fmt = (n, d = 0) => n == null || isNaN(n) ? "-" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const et = iso => iso ? new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " ET" : "none supplied";
 const TABS = [["home", "Home"], ["levels", "Key levels"], ["bias", "Bias and plan"], ["session", "Session"], ["regime", "Regime"], ["overview", "All symbols"], ["sheet", "Pre-market sheet"],
-  ["chain", "Options chain"], ["gex", "GEX by strike"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Heatmap"], ["preopen", "Overnight changes"],
+  ["chain", "Options chain"], ["gex", "GEX by strike"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["flows", "Charm and vanna"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Activity heatmap"], ["preopen", "Overnight changes"],
   ["iv", "IV by strike"], ["surface", "Vol surface"], ["move", "Expected move"], ["delta", "Delta exposure"], ["journal", "Journal"], ["scorecard", "Scorecard"], ["react", "Level reactions"], ["flow", "Unusual volume"],
   ["events", "Events"], ["history", "History"], ["status", "Data status"], ["phone", "Phone access"]];
 const TABICON = { home: "home", levels: "key_levels", bias: "insights", session: "live_charts", regime: "market_data", overview: "watchlist", sheet: "reports", chain: "search", gex: "options_analytics",
-  zerodte: "gamma", flip: "logout", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "news", iv: "implied_volatility", surface: "data_feeds", move: "market_data",
+  zerodte: "gamma", flip: "logout", flows: "options_flow", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "news", iv: "implied_volatility", surface: "data_feeds", move: "market_data",
   delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help" };
 const RB = [[128, 0, 255], [47, 139, 245], [27, 224, 214], [127, 233, 122], [255, 211, 77], [255, 122, 46], [255, 0, 0]];
 const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
 const pickIdx = (n, m) => n <= m ? [...Array(n).keys()] : [...new Set([...Array(m).keys()].map(i => Math.round(i * (n - 1) / (m - 1))))];
 const cleanNote = c => `Cleaning: ${esc(c.method)} Used ${fmt(c.stats.used)} contracts; dropped ${fmt(c.stats.zero_bid)} with zero bid, ${fmt(c.stats.wide_spread)} with wide spreads, ${fmt(c.stats.no_iv)} without IV, ${fmt(c.stats.bad_iv)} with out-of-range IV, ${fmt(c.stats.itm_skipped)} in-the-money.`;
-const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2 }, zoom: 1, det: {}, touch: 0 };
-const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "zoom"];
+const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", hmm: "oi_change", hmx: "8", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext", "charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, zoom: 1, det: {}, touch: 0 };
+const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "hmm", "hmx", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "zoom"];
 function loadUI() {
   try {
     const j = JSON.parse(localStorage.getItem("nqes.ui") || "{}");
+    const qc0 = S.lvqc;
     UIKEYS.forEach(k => { if (j[k] !== undefined) S[k] = j[k]; });
+    S.lvqc = { ...qc0, ...S.lvqc };                       // counts saved before a family existed start at its default
     if (Array.isArray(j.cats)) S.cats = new Set([...j.cats, ...[...S.cats].filter(c => !(j.known || []).includes(c))]);
     S.det = j.det || {}; S.savedConv = j.conv; S.savedMethod = j.method;
   } catch (e) { /* settings just start fresh */ }
@@ -34,8 +36,9 @@ function saveUI() {
     localStorage.setItem("nqes.ui", JSON.stringify(o));
   } catch (e) { /* private mode or storage full: nothing to save */ }
 }
-const QPRESET = { gex: { gex: 8, oi: 2, vol: 1, move: 2 }, bal: { gex: 3, oi: 3, vol: 2, move: 2 }, tv: { gex: 16, oi: 8, vol: 6, move: 8 } };
-const QNAMES = [["gex", "GEX"], ["oi", "Open interest"], ["vol", "Volume"], ["move", "Expected move"]];
+const QPRESET = { gex: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, bal: { gex: 3, oi: 3, vol: 2, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 },
+  tv: { gex: 16, oi: 8, vol: 6, move: 8, charm: 6, vanna: 6, dex: 4, new: 6 } };
+const QNAMES = [["gex", "GEX"], ["oi", "Open interest"], ["vol", "Volume"], ["move", "Expected move"], ["charm", "Charm"], ["vanna", "Vanna"], ["dex", "Dealer delta"], ["new", "New positions"]];
 const quotaFor = () => { const q = S.lvq === "custom" ? S.lvqc : QPRESET[S.lvq]; return q ? QNAMES.map(([k]) => `${k}:${q[k] || 0}`).join(",") : undefined; };
 const selParams = () => (S.lvq ? { quota: quotaFor() } : { key: S.lvkey, near: S.lvnear });
 function applyZoom() { document.documentElement.style.setProperty("--z", S.zoom); }
@@ -44,12 +47,15 @@ function persistDetails() {
   $("view").querySelectorAll("details[data-k]").forEach(d => { const k = d.dataset.k; if (k in S.det) d.open = S.det[k]; d.ontoggle = () => { S.det[k] = d.open; saveUI(); }; });
 }
 const CATCOL = { gex0_call_wall: "#22d3ee", gex0_put_wall: "#ff4d8d", gex0_flip: "#ffd166", gamma_flip: "#e6b422", gex_concentration: "#2f8bf5", open_interest: "#ff7a2e", volume: "#3fb96a", expected_move: "#7db7ff", expected_move_ext: "#8e9bff", custom: "#ffffff", oi_by_expiry: "#ff7a2e", volume_by_expiry: "#3fb96a", oi_mid: "#ff7a2e", volume_mid: "#3fb96a",
-  gex_call_zone: "#3fb96a", gex_put_zone: "#e5534b", gex_pos_zone: "#2f8bf5", gex_neg_zone: "#a371f7", oi_call_zone: "#ff9f43", oi_put_zone: "#d9480f", volume_call_zone: "#2ec4b6", volume_put_zone: "#f06292" };
+  gex_call_zone: "#3fb96a", gex_put_zone: "#e5534b", gex_pos_zone: "#2f8bf5", gex_neg_zone: "#a371f7", oi_call_zone: "#ff9f43", oi_put_zone: "#d9480f", volume_call_zone: "#2ec4b6", volume_put_zone: "#f06292",
+  charm_sell_zone: "#e76f51", charm_buy_zone: "#2a9d8f", vanna_pos_zone: "#c77dff", vanna_neg_zone: "#ffb703", dex_pos_zone: "#4cc9f0", dex_neg_zone: "#f72585", new_call_zone: "#b5e48c", new_put_zone: "#ff6b6b" };
 const FAMILIES = [["flip", "Gamma flip", ["gamma_flip"], "#e6b422"], ["gex", "GEX zones", ["gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "gex_concentration", "gex0_call_wall", "gex0_put_wall", "gex0_flip"], "#2f8bf5"],
   ["oi", "Open interest", ["open_interest", "oi_call_zone", "oi_put_zone", "oi_by_expiry", "oi_mid"], "#ff9f43"], ["vol", "Volume", ["volume", "volume_call_zone", "volume_put_zone", "volume_by_expiry", "volume_mid"], "#2ec4b6"],
-  ["move", "Expected moves", ["expected_move", "expected_move_ext"], "#7db7ff"], ["mine", "My levels", ["custom"], "#ffffff"]];
+  ["move", "Expected moves", ["expected_move", "expected_move_ext"], "#7db7ff"], ["charm", "Charm (est.)", ["charm_sell_zone", "charm_buy_zone"], "#e76f51"],
+  ["vanna", "Vanna (est.)", ["vanna_pos_zone", "vanna_neg_zone"], "#c77dff"], ["dex", "Dealer delta (est.)", ["dex_pos_zone", "dex_neg_zone"], "#4cc9f0"],
+  ["new", "New positions", ["new_call_zone", "new_put_zone"], "#b5e48c"], ["mine", "My levels", ["custom"], "#ffffff"]];
 const ALLCATS = new Set(FAMILIES.flatMap(f => f[2]));
-const GROUPS = [["Today", ["home", "levels", "bias", "session", "regime", "overview", "sheet"]], ["Options", ["chain", "gex", "zerodte", "flip", "oi", "volume", "heatmap", "preopen"]],
+const GROUPS = [["Today", ["home", "levels", "bias", "session", "regime", "overview", "sheet"]], ["Options", ["chain", "gex", "zerodte", "flip", "flows", "oi", "volume", "heatmap", "preopen"]],
   ["Volatility", ["iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history"]], ["App", ["status", "phone"]]];
 const HELP = {
   home: ["Today at a glance: the lean and why, the regime, and where price sits against the levels that matter.", "The ladder shows the key levels above and below price at their real distances, in futures points once a basis is saved. Open Bias and plan for the full reasoning, Key levels for the complete list."],
@@ -69,7 +75,8 @@ const HELP = {
   flip: ["The estimated price where modeled dealer gamma changes sign.", "Above it moves tend to be calmer; below it they can be bigger (under the standard sign scenario). Treat it as a zone, not a line: the scenarios table shows how much it shifts with the assumptions."],
   oi: ["Open interest: contracts still open from before today, by strike. It updates once a day.", "Tall bars are strikes with a lot of positions, which can act as magnets or barriers. The change view shows where positions were added or removed since the last session."],
   volume: ["Contracts traded today by strike, with unusually busy strikes flagged.", "A flagged strike is trading far more than the rest of today's chain. Volume does not say who bought or sold."],
-  heatmap: ["A grid of strike by expiry showing where volume or open interest sits.", "Brighter means more. Use it to see which expiry a busy strike belongs to."],
+  heatmap: ["Where the activity is: a strike by expiry heatmap of new positions, volume, open interest or modeled dealer flows, with the prices where it is concentrated.", "Each row is a strike and each column an expiry; brighter or deeper color means more. The bars on the right add up each strike across expiries. Hot spots are bands of neighbouring strikes with the most activity, listed with their futures price once a basis is saved. The activity center is the price that splits the activity in half. The yellow dotted line is the current price."],
+  flows: ["Charm and vanna: how dealer hedging may shift as time passes and as implied volatility moves, plus how much delta dealers hold at each strike. All modeled estimates.", "Charm: as the day goes on, option deltas drift, and dealers hedge that drift. The drift-to-close figure is how much they would need to buy or sell by 16:00 ET if price and IV stayed put; it is biggest on 0DTE afternoons. Vanna: when IV falls, dealer deltas change too, so a vol crush can force buying or selling. The sign of each depends on the dealer-positioning assumption in Settings."],
   iv: ["Implied volatility across strikes (the smile or skew) and across expiries (term structure).", "A higher left side means puts are priced richer than calls. The other chart shows whether near expiries cost more or less volatility than far ones."],
   surface: ["The whole volatility picture in one view: strike, expiry and implied volatility. The 3D view and the heatmap show the same data, and Both shows them together.", "Drag to rotate the 3D view, scroll to zoom, and use the buttons above each chart to zoom, reset or fill the screen. Your view and settings are remembered."],
   move: ["How far option prices say the market may travel by each expiry, up and down.", "The table lists the straddle, 1 sigma and 2 sigma moves and the price levels they imply; the cone shows how the range widens with time. 1 sigma is about a 68% range if the usual bell-curve assumption held. Real markets move beyond it more often."],
@@ -208,7 +215,7 @@ const R = {
     const sel = (id, opts) => `<select id="${id}">${opts.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select>`;
     const cnt = [["0", "Off"], ["1", "Nearest expiry"], ["2", "Next 2 expiries"], ["3", "Next 3 expiries"], ["5", "Next 5 expiries"]];
     $("view").innerHTML = panel(`Key levels for ${S.u}${root ? " mapped to " + root : ""}`, m, `
-      <div class="toolbar"><label>Show<select id="lvkey"><option value="all">All levels</option><optgroup label="Most important"><option value="k6">Key levels: top 6</option><option value="k8">Key levels: top 8</option><option value="k10">Key levels: top 10</option><option value="k12">Key levels: top 12</option><option value="k15">Key levels: top 15</option></optgroup><optgroup label="Set count per type"><option value="qgex">GEX-heavy (GEX 8, OI 2, volume 1, move 2)</option><option value="qbal">Balanced (GEX 3, OI 3, volume 2, move 2)</option><option value="qtv">Send extra, trim in TradingView (GEX 16, OI 8, volume 6, move 8)</option><option value="qcustom">Custom counts...</option></optgroup><optgroup label="Closest to price"><option value="n8">Nearest 8</option><option value="n14">Nearest 14</option><option value="n20">Nearest 20</option><option value="n30">Nearest 30</option></optgroup></select></label>
+      <div class="toolbar"><label>Show<select id="lvkey"><option value="all">All levels</option><optgroup label="Most important"><option value="k6">Key levels: top 6</option><option value="k8">Key levels: top 8</option><option value="k10">Key levels: top 10</option><option value="k12">Key levels: top 12</option><option value="k15">Key levels: top 15</option></optgroup><optgroup label="Set count per type"><option value="qgex">GEX-heavy (GEX 8, OI 2, volume 1, move 2, charm 2, vanna 2, dealer delta 1, new 2)</option><option value="qbal">Balanced (GEX 3, OI 3, volume 2, move 2, charm 2, vanna 2, dealer delta 1, new 2)</option><option value="qtv">Send extra, trim in TradingView (GEX 16, OI 8, volume 6, move 8, charm 6, vanna 6, dealer delta 4, new 6)</option><option value="qcustom">Custom counts...</option></optgroup><optgroup label="Closest to price"><option value="n8">Nearest 8</option><option value="n14">Nearest 14</option><option value="n20">Nearest 20</option><option value="n30">Nearest 30</option></optgroup></select></label>
         <div class="chips" title="Switch whole families of levels on or off">${FAMILIES.map(([k, n, cs, col]) => `<label class="chip" style="--c:${col}"><input type="checkbox" data-fam="${k}" ${cs.every(c => S.cats.has(c)) ? "checked" : ""}><span>${n}</span></label>`).join("")}</div></div>
       ${S.lvq === "custom" ? `<div class="row quota" title="How many zones of each kind to show. The gamma flip and your own levels are always shown on top.">${QNAMES.map(([k, n]) => `<label>${n}<input type="number" min="0" max="20" step="1" data-q="${k}" value="${S.lvqc[k] || 0}" style="width:4.5em"></label>`).join("")}<span class="hint">Gamma flip and your own levels are always shown.</span></div>` : ""}
       <p class="status"><b>${keyMode ? `Showing ${lv.zones.length} of ${lv.selection.available} zones (${lv.selection.mode === "nearest" ? "the closest to price" : lv.selection.mode === "custom" ? "per-type counts: " + QNAMES.map(([k, n]) => `${n} ${lv.selection.used[k]}/${lv.selection.quota[k]}`).join(", ") : "the most important"}).` : `Showing all ${lv.levels.length} levels.`}</b>
@@ -332,26 +339,92 @@ const R = {
     if (flagged.length && window.Plotly && $("c1")) Plotly.addTraces("c1", [{ type: "scatter", mode: "markers", x: flagged.map(f => f.strike), y: flagged.map(f => f.volume), name: "Unusual", marker: { symbol: "diamond", size: 11, color: "#ffd34d", line: { color: "#000", width: 1 } }, hovertemplate: "Unusual: %{x}<br>total volume %{y}<extra></extra>" }]);
   },
   async heatmap() {
-    const j = await api("/analytics/heatmap", { underlying: S.u, field: S.hmf, side: S.hms, window: S.hmw }), d = j.data, m = j.meta, net = d.side === "net";
-    const ctl = `<div class="row"><label>Measure<select id="hmf"><option value="volume">Volume (today)</option><option value="oi">Open interest</option></select></label>
-      <label>Side<select id="hms"><option value="total">Calls + puts</option><option value="call">Calls</option><option value="put">Puts</option><option value="net">Calls minus puts</option></select></label>
-      <label>Strikes within<select id="hmw"><option value="0.02">2% of price</option><option value="0.04">4% of price</option><option value="0.08">8% of price</option><option value="0">All strikes</option></select></label></div>`;
-    $("view").innerHTML = panel(`${S.hmf === "oi" ? "Open interest" : "Volume"} by strike and expiry, ${S.u}`, m, ctl + (d.strikes.length ? `<div id="c1" class="chart" style="height:${Math.min(1100, Math.max(460, d.strikes.length * 15 + 130))}px"></div>` : note("No contracts have any activity inside this window. Widen it.", true)) +
-      `<p class="dim">${esc(d.note)} ${esc(m.field_note || "")} ${net ? "Green means more calls, red means more puts." : "Brighter means more contracts (the color scale is compressed, so mid-sized cells still show up)."} The yellow dotted line is the current price. ${d.color_max && d.color_max < d.max ? `Colors stop getting brighter at ${fmt(d.color_max)} contracts (the 95th percentile) so smaller cells stay visible; the biggest cell is ${fmt(d.max)}.` : ""} Hover a cell for its exact value.</p>`);
-    $("hmf").value = S.hmf; $("hms").value = S.hms; $("hmw").value = S.hmw;
-    ["hmf", "hms", "hmw"].forEach(id => $(id).onchange = () => { S.hmf = $("hmf").value; S.hms = $("hms").value; S.hmw = $("hmw").value; render(); });
+    const want = { underlying: S.u, measure: S.hmm, side: S.hms, window: S.hmw, expiries: S.hmx, convention: $("conv").value, method: $("method").value };
+    let j;
+    try { j = await api("/analytics/activity", want); } catch (e) { throw e; }
+    const M = [["oi_change", "New positions (open interest change since the last session)"], ["volume", "Volume today"], ["oi", "Open interest"], ["gex", "Modeled GEX"], ["charm", "Modeled charm (est.)"], ["vanna", "Modeled vanna (est.)"], ["dex", "Modeled dealer delta (est.)"]];
+    const modeled = ["gex", "charm", "vanna", "dex"].includes(S.hmm);
+    const ctl = `<div class="toolbar">
+      <label>Show<select id="hmm">${M.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select></label>
+      <label>Side<select id="hms"><option value="total">Calls + puts</option><option value="call">Calls only</option><option value="put">Puts only</option>${modeled ? "" : '<option value="net">Calls minus puts</option>'}</select></label>
+      <label>Strikes within<select id="hmw"><option value="0.015">1.5% of price</option><option value="0.02">2% of price</option><option value="0.04">4% of price</option><option value="0.08">8% of price</option><option value="0">All strikes</option></select></label>
+      <label>Expirations<select id="hmx"><option value="2">Next 2</option><option value="4">Next 4</option><option value="8">Next 8</option><option value="15">Next 15</option><option value="30">Up to 30</option></select></label></div>`;
+    const wire = () => { $("hmm").value = S.hmm; $("hms").value = modeled && S.hms === "net" ? "total" : S.hms; $("hmw").value = S.hmw; $("hmx").value = S.hmx;
+      ["hmm", "hms", "hmw", "hmx"].forEach(id => $(id).onchange = () => { S.hmm = $("hmm").value; S.hms = $("hms").value; S.hmw = $("hmw").value; S.hmx = $("hmx").value; render(); }); };
+    if (!j.available) { $("view").innerHTML = panel(`Activity heatmap, ${S.u}`, j.meta, ctl + note(j.reason)); wire(); return; }
+    const d = j.data, m = j.meta, root = j.futures_root, fut = v => v == null ? "" : `<i class="fut">${esc(root)} ${fmt(v, 0)}</i>`;
+    const px = v => fmt(v, v % 1 ? 2 : 0);
+    const unitTxt = d.modeled ? big : (v => fmt(v));
+    const meanCol = h => ({ call: "#3fb96a", put: "#e5534b", positive: d.measure === "oi_change" ? "#3fb96a" : d.measure === "charm" ? "#e76f51" : "#4cc9f0", negative: d.measure === "oi_change" ? "#e5534b" : d.measure === "charm" ? "#2a9d8f" : "#f72585" }[h.side]);
+    const hot = d.hot_spots.map((h, i) => `<tr><td><b>#${i + 1}</b></td><td class="num"><b>${px(h.price)}</b><br><span class="dim">${px(h.low)} to ${px(h.high)}</span></td>
+      <td class="num">${h.futures != null ? `<b>${fmt(h.futures, 0)}</b><br><span class="dim">${fmt(h.futures_low, 0)} to ${fmt(h.futures_high, 0)}</span>` : "-"}</td>
+      <td><span class="dot" style="background:${meanCol(h)}"></span>${esc(h.meaning)}</td>
+      <td><span class="share"><i style="width:${Math.round(h.share * 100)}%;background:${meanCol(h)}"></i></span> ${fmt(h.share * 100, 0)}%</td>
+      <td class="num">${h.distance_pct >= 0 ? "+" : ""}${fmt(h.distance_pct, 2)}%</td><td>${h.top_expiry ? esc(h.top_expiry.slice(5)) : "-"}</td></tr>`).join("");
+    const above = d.share_above, below = d.share_below;
+    const tiles = `<div class="hm-tiles">
+      <div class="card hm-big"><span>Activity center</span><b>${d.center != null ? px(d.center) : "-"}</b>${fut(d.center_futures)}<em>Half the activity in view sits above this price, half below.</em></div>
+      <div class="card"><span>Biggest hot spot</span><b>${d.hot_spots[0] ? px(d.hot_spots[0].price) : "-"}</b>${d.hot_spots[0] ? fut(d.hot_spots[0].futures) : ""}<em>${d.hot_spots[0] ? esc(d.hot_spots[0].meaning) + ", " + fmt(d.hot_spots[0].share * 100, 0) + "% of the total" : "none"}</em></div>
+      <div class="card"><span>Price now</span><b>${px(m.spot)}</b>${fut(d.spot_futures)}<em>${above != null ? `${fmt(above * 100, 0)}% of activity above, ${fmt(below * 100, 0)}% below` : ""}</em></div>
+      ${above != null ? `<div class="card"><span>Above vs below price</span><div class="tilt"><i style="width:${Math.round(above * 100)}%"></i></div><em>${above > 0.6 ? "Weighted above price" : below > 0.6 ? "Weighted below price" : "Spread on both sides"}</em></div>` : ""}</div>`;
+    $("view").innerHTML = panel(`${esc(d.title)}, ${S.u}`, m, ctl + `<div class="readout">${esc(d.summary)}</div>` + tiles +
+      (d.strikes.length ? `<div id="c1" class="chart" style="height:${Math.min(1250, Math.max(520, d.strikes.length * 16 + 140))}px"></div>` : note("Nothing in this window. Widen the strikes or add expirations.", true)) +
+      `<h3>Hot spots: where the activity is concentrated</h3>
+      <div class="scroll"><table class="hot"><tr><th></th><th>${esc(S.u.replace(/^_/, ""))} price (band)</th><th>${root || "Futures"} price</th><th>What it is</th><th>Share of activity</th><th>From price</th><th>Main expiry</th></tr>${hot || "<tr><td colspan=7>None</td></tr>"}</table></div>
+      ${!j.mapped && root ? note(`Save a basis on the Key levels tab to see ${root} prices here. ${j.mapping_note || ""}`) : ""}
+      ${d.modeled ? note("Modeled estimate. The dealer side comes from the positioning assumption in Settings, not from observed positions.") : ""}
+      <p class="hint">${d.measure === "oi_change" && j.oi_from ? `Compared with the open interest stored ${esc(et(j.oi_from))}. ` : ""}Units: ${esc(d.units)}. ${esc(d.hot_rule)} ${d.color_max && d.color_max < d.max ? `Colors stop getting stronger at ${unitTxt(d.color_max)} so smaller cells stay visible.` : ""} Hover a cell for its exact value.</p>`);
+    wire();
     if (!d.strikes.length) return;
-    const ys = d.strikes.map(k => fmt(k, k % 1 ? 2 : 0)), xs = d.expiries.map((e, i) => `${e.slice(5)} (${fmt(d.dte[i], 1)}d)`);
+    const ys = d.strikes.map(k => px(k)), xs = d.expiries.map((e, i) => `${e.slice(5)} (${fmt(d.dte[i], d.dte[i] < 1 ? 1 : 0)}d)`);
     let near = 0; d.strikes.forEach((k, i) => { if (Math.abs(k - m.spot) < Math.abs(d.strikes[near] - m.spot)) near = i; });
-    const cs = net ? [[0, "#e5534b"], [.5, "#101418"], [1, "#3fb96a"]] : [[0, "#10243d"], [.35, "#2f8bf5"], [.7, "#9ad0ff"], [1, "#ffffff"]];
-    const sg = v => v == null ? null : Math.sign(v) * Math.sqrt(Math.abs(v)), cm = d.color_max || d.max || 1;     // square-root color scale: one huge cell cannot wash out the rest
-    const fr = net ? [-1, -.5, -.1, 0, .1, .5, 1] : [0, .05, .15, .35, .65, 1], tv = fr.map(f => f * cm);
-    plot("c1", [{ type: "heatmap", x: xs, y: ys, z: d.z.map(r => r.map(sg)), customdata: d.z, colorscale: cs, zmin: net ? -sg(cm) : 0, zmax: sg(cm), xgap: 2, ygap: 1, hoverongaps: false,
-      hovertemplate: "Strike %{y}<br>%{x}<br>%{customdata:,.0f} contracts<extra></extra>",
-      colorbar: { thickness: 14, title: { text: net ? "calls - puts" : "contracts" }, tickmode: "array", tickvals: tv.map(sg), ticktext: tv.map(v => fmt(v)) } }],
-      LAY("", { margin: { l: 80, r: 20, t: 20, b: 70 }, showlegend: false, xaxis: { gridcolor: "#1E2840", side: "bottom", tickangle: -30 },
-        yaxis: { type: "category", categoryorder: "array", categoryarray: ys, gridcolor: "#1E2840", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 30)) },
-        shapes: [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "#ffd34d", width: 1.8, dash: "dot" } }] }));
+    const sg = v => v == null ? null : Math.sign(v) * Math.sqrt(Math.abs(v)), cm = d.color_max || d.max || 1;
+    const green = d.measure === "oi_change" || (d.side === "net" && !d.modeled);
+    const cs = d.signed ? (green ? [[0, "#ff4d5e"], [0.25, "#8a1f33"], [0.5, "#0D1322"], [0.75, "#1f6b45"], [1, "#4dff9a"]] : [[0, "#ff3d9a"], [0.25, "#6e1f5c"], [0.5, "#0D1322"], [0.75, "#145a7a"], [1, "#4cc9f0"]])
+      : [[0, "#0D1322"], [0.12, "#1b2a6b"], [0.32, "#3D8BFF"], [0.52, "#22d3c5"], [0.74, "#ffd34d"], [1, "#ff4d3d"]];
+    const fr = d.signed ? [-1, -.4, -.1, 0, .1, .4, 1] : [0, .05, .2, .45, 1], tv = fr.map(f => f * cm);
+    const hov = d.modeled ? "%{customdata:,.3s}" : "%{customdata:,.0f}";
+    const prof = d.profile, pcol = prof.map(v => d.signed ? (v >= 0 ? (green ? "#3fb96a" : "#4cc9f0") : (green ? "#e5534b" : "#f72585")) : "#3D8BFF");
+    const hotIdx = d.hot_spots.map(h => d.strikes.indexOf(h.price));
+    const shapes = [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "#ffd34d", width: 2, dash: "dot" } }]
+      .concat(d.hot_spots.map((h, i) => ({ type: "rect", xref: "paper", yref: "y", x0: 0, x1: 0.79, y0: Math.min(...h.members.map(k => d.strikes.indexOf(k)).filter(x => x >= 0), hotIdx[i]) - 0.5, y1: Math.max(...h.members.map(k => d.strikes.indexOf(k)), hotIdx[i]) + 0.5, line: { color: "#ffffff", width: i ? 1 : 2 }, fillcolor: "rgba(0,0,0,0)" })));
+    const ann = d.hot_spots.map((h, i) => ({ xref: "paper", yref: "y", x: 1, y: hotIdx[i], xanchor: "right", showarrow: false, bgcolor: "rgba(10,15,28,.82)", bordercolor: "#fff", borderwidth: i ? 0 : 1, borderpad: 3,
+      text: `<b>#${i + 1} ${px(h.price)}</b>${h.futures != null ? `  ${root} ${fmt(h.futures, 0)}` : ""}`, font: { size: 11, color: "#fff" } }))
+      .concat([{ xref: "paper", yref: "y", x: 0, y: near, xanchor: "left", yanchor: "bottom", showarrow: false, text: `price ${px(m.spot)}${d.spot_futures != null ? ` (${root} ${fmt(d.spot_futures, 0)})` : ""}`, font: { size: 11, color: "#ffd34d" }, bgcolor: "rgba(10,15,28,.75)" }]);
+    plot("c1", [
+      { type: "heatmap", x: xs, y: ys, z: d.z.map(r => r.map(sg)), customdata: d.z, colorscale: cs, zmid: d.signed ? 0 : undefined, zmin: d.signed ? -sg(cm) : 0, zmax: sg(cm), xgap: 2, ygap: 1, hoverongaps: false,
+        hovertemplate: `Strike %{y}<br>Expiry %{x}<br>${hov} ${esc(d.units)}<extra></extra>`,
+        colorbar: { orientation: "h", thickness: 10, x: 0, xanchor: "left", y: -0.1, yanchor: "top", len: 0.79, title: { text: d.units, side: "top" }, tickmode: "array", tickvals: tv.map(sg), ticktext: tv.map(v => d.modeled ? big(v) : fmt(v)) } },
+      { type: "bar", orientation: "h", x: prof, y: ys, xaxis: "x2", yaxis: "y", marker: { color: pcol }, hovertemplate: `Strike %{y}<br>all expiries: ${d.modeled ? "%{x:,.3s}" : "%{x:,.0f}"}<extra></extra>` }],
+      LAY("", { margin: { l: 70, r: 14, t: 16, b: 120 }, showlegend: false,
+        xaxis: { domain: [0, 0.79], gridcolor: "#1E2840", tickangle: -30, side: "bottom" },
+        xaxis2: { domain: [0.81, 1], gridcolor: "#1E2840", zerolinecolor: "#5D6884", title: { text: "All expiries", font: { size: 11 } }, showticklabels: false },
+        yaxis: { type: "category", categoryorder: "array", categoryarray: ys, autorange: "reversed", gridcolor: "#1E2840", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 32)) },
+        shapes, annotations: ann }));
+  },
+  async flows() {
+    const j = await api("/analytics/greeks", base()), d = j.data, m = j.meta, K = d.strikes.map(s => s.strike);
+    const t = d.totals, dr = d.drift_to_close;
+    const sideTxt = { charm: { positive: "dealers sell as time passes", negative: "dealers buy as time passes" }, vanna: { positive: "dealers buy if IV falls", negative: "dealers sell if IV falls" }, dex: { positive: "dealers long delta", negative: "dealers short delta" } };
+    const zrows = ["charm", "vanna", "dex"].flatMap(k => j.zones[k].map(z => ({ k, ...z }))).sort((a, b) => b.center - a.center).map(z =>
+      `<tr><td><span class="dot" style="background:${{ charm: { positive: "#e76f51", negative: "#2a9d8f" }, vanna: { positive: "#c77dff", negative: "#ffb703" }, dex: { positive: "#4cc9f0", negative: "#f72585" } }[z.k][z.side]}"></span>${{ charm: "Charm", vanna: "Vanna", dex: "Dealer delta" }[z.k]}</td>
+      <td class="num"><b>${fmt(z.center, 0)}</b><br><span class="dim">${fmt(z.low, 0)} to ${fmt(z.high, 0)}</span></td><td>${esc(sideTxt[z.k][z.side])}</td><td class="num">${big(z.magnitude)}</td></tr>`).join("");
+    const vSent = t.vanna === 0 ? "" : `If IV falls 1 point, dealers would need to ${t.vanna > 0 ? "BUY" : "SELL"} about $${big(Math.abs(t.vanna))} of ${esc(S.u.replace(/^_/, ""))} to stay hedged (the reverse if IV rises).`;
+    $("view").innerHTML = panel(`Charm and vanna, ${S.u}`, m, `<div class="grid">
+      <div class="card ${dr > 0 ? "bear" : dr < 0 ? "bull" : ""}">Charm drift to the close<b>${dr === 0 ? "none" : (dr > 0 ? "Sell " : "Buy ") + "$" + big(Math.abs(dr))}</b><span class="dim">${fmt(d.hours_to_close, 1)} hours left</span></div>
+      <div class="card">Charm per day (all strikes)<b>${t.charm > 0 ? "Sell " : "Buy "}$${big(Math.abs(t.charm))}</b><span class="dim">if price and IV held for a day</span></div>
+      <div class="card ${t.vanna > 0 ? "bull" : "bear"}">Vanna (per 1 IV point)<b>$${big(t.vanna)}</b><span class="dim">${t.vanna > 0 ? "IV down = dealer buying" : "IV down = dealer selling"}</span></div>
+      <div class="card">Dealer delta now<b>$${big(t.dex)}</b><span class="dim">${t.dex > 0 ? "dealers net long" : "dealers net short"}</span></div></div>
+      <div class="readout">${esc(d.drift_note)} ${vSent}</div>
+      <div id="c1" class="chart"></div><div id="c2" class="chart"></div><div id="c3" class="chart"></div>
+      <h3>Zones</h3><div class="scroll"><table><tr><th>Kind</th><th>Strike (band)</th><th>What it means</th><th>Size</th></tr>${zrows || "<tr><td colspan=4>None</td></tr>"}</table></div>
+      ${note(j.note)}<p class="hint">${esc(d.rules.charm)}</p><p class="hint">${esc(d.rules.vanna)}</p><p class="hint">${esc(d.rules.dex)} Contracts used: ${fmt(d.contracts_used)}. These zones are also level types on Key levels and in the TradingView paste text, each with its own settings group.</p>`);
+    const spotLine = [{ type: "line", xref: "x", yref: "paper", x0: m.spot, x1: m.spot, y0: 0, y1: 1, line: { color: "#ffd34d", dash: "dot" } }];
+    const bars = (div, key, title, pos, neg) => plot(div, [{ type: "bar", x: K, y: d.strikes.map(s => s[key]), marker: { color: d.strikes.map(s => s[key] >= 0 ? pos : neg) }, hovertemplate: "Strike %{x}<br>%{y:,.3s}<extra></extra>" }],
+      LAY(title, { shapes: spotLine, showlegend: false, xaxis: { title: "Strike", gridcolor: "#1E2840" }, yaxis: { gridcolor: "#1E2840", title: "$ delta" } }));
+    bars("c1", "charm", "Charm by strike ($ delta per day; up = dealers sell as time passes)", "#e76f51", "#2a9d8f");
+    bars("c2", "vanna", "Vanna by strike ($ delta per 1 IV point; up = dealers buy if IV falls)", "#c77dff", "#ffb703");
+    bars("c3", "dex", "Dealer delta by strike ($ of underlying)", "#4cc9f0", "#f72585");
   },
   async iv() {
     const j = await api("/analytics/iv", { underlying: S.u, expiration: exps(), otm_only: S.ivotm, smooth: S.ivsm }), m = j.meta, pc = j.percentile, sp = m.spot;
@@ -655,7 +728,7 @@ function famOf(l) {
   if (cats.includes("gamma_flip")) return "flip";
   if (l.slot) return l.slot;
   const c = l.category;
-  return FAMOF[c] || (c.startsWith("gex") ? "gex" : c.startsWith("oi") || c === "open_interest" ? "oi" : c.startsWith("volume") ? "vol" : "other");
+  return FAMOF[c] || (c.startsWith("gex") ? "gex" : c.startsWith("oi") || c === "open_interest" ? "oi" : c.startsWith("volume") ? "vol" : c.startsWith("charm") ? "charm" : c.startsWith("vanna") ? "vanna" : c.startsWith("dex") ? "dex" : c.startsWith("new_") ? "new" : "other");
 }
 function indicatorText(lv, m, root) {
   const src = lv.selection.mode !== "all" ? lv.zones : lv.levels.filter(l => S.cats.has(l.category));

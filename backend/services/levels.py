@@ -2,6 +2,7 @@
 from __future__ import annotations
 from . import analytics as an
 from . import intraday as idy
+from . import flows as fl
 
 RELIABILITY_RULE = ("high: data fresh/closed-session and 100+ contracts used; medium: 30+ contracts; "
                     "low: fewer, stale, or no source timestamp. Open-interest levels are daily figures by nature.")
@@ -26,10 +27,12 @@ def tiered(zs, side, top, mid, floor):
     return mine[:top], mids
 
 
-def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expiry=0, mid=0, moves=0, gex_top=None) -> list:
+def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expiry=0, mid=0, moves=0, gex_top=None, greek_top=None, prev_oi=None) -> list:
     """top: how many strikes to keep per type. expirations: list of ISO dates to use (None = all in the snapshot).
     per_expiry: also add open-interest and volume strikes for each of the next N expirations on their own (0 = off).
-    gex_top: how many GEX strikes and GEX zones to build per side (None = same as top, up to 3 zones). Lets GEX have more levels than the rest."""
+    gex_top: how many GEX strikes and GEX zones to build per side (None = same as top, up to 3 zones). Lets GEX have more levels than the rest.
+    greek_top: how many charm, vanna and dealer-delta zones to build per side (None = same as top, up to 3; 0 = none).
+    prev_oi: {ticker: open interest} from the previous session, for the new-positioning zones (None = skip them)."""
     gt = gex_top or top
     gz = max(1, min(gex_top, 8)) if gex_top else max(1, min(top, 3))
     spot = snap.spot
@@ -141,4 +144,29 @@ def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expi
             add("gex0_put_wall", f"{tag} put wall", z["put_wall"], idy.ZERO_DTE_RULE, {"put_gex": z["put_wall_gex"], "expiry": z["expiry"]}, n0)
         if z["flip"] is not None:
             add("gex0_flip", f"{tag} gamma flip", z["flip"], idy.ZERO_DTE_RULE, {"expiry": z["expiry"], "note": z["flip_note"]}, n0)
+    # Charm, vanna and dealer delta: modeled from the same dealer sign assumption as GEX. Labelled as estimates.
+    gk = max(0, min(greek_top, 8)) if greek_top is not None else max(1, min(top, 3))
+    if gk:
+        ge = fl.greek_exposure(cons, spot, now, convention)
+        n_x = ge["contracts_used"]
+        names = {"charm": (("positive", "charm_sell_zone", "Charm zone, dealers sell into close (est.)"), ("negative", "charm_buy_zone", "Charm zone, dealers buy into close (est.)")),
+                 "vanna": (("positive", "vanna_pos_zone", "Vanna + zone (est.)"), ("negative", "vanna_neg_zone", "Vanna - zone (est.)")),
+                 "dex": (("positive", "dex_pos_zone", "Dealer long delta zone (est.)"), ("negative", "dex_neg_zone", "Dealer short delta zone (est.)"))}
+        for key, sides in names.items():
+            zs_ = fl.signed_zones(ge["strikes"], key, spot, gk)
+            for side, cat, lab in sides:
+                for i, z_ in enumerate(z_ for z_ in zs_ if z_["side"] == side):
+                    add(cat, lab + (f" #{i + 1}" if i else ""), z_["center"], ge["rules"][key],
+                        {"low": z_["low"], "high": z_["high"], "zone_mag": z_["magnitude"], "peak": z_["peak"], "members": z_["members"],
+                         "convention": convention, "estimate": True, "units": ge["units"][key]}, n_x, {"low": z_["low"], "high": z_["high"]})
+    # New positioning: strikes where open interest rose since the previous session.
+    if prev_oi:
+        rows = fl.new_positioning(cons, prev_oi)
+        if rows:
+            zs_ = an.series_zones(rows, grid, spot)
+            for side in ("call", "put"):
+                for i, z_ in enumerate(sorted((q for q in zs_ if q["side"] == side), key=lambda q: -q["magnitude"])[:max(1, min(top, 3)) if greek_top is None else max(1, min(greek_top or top, 8))]):
+                    add(f"new_{side}_zone", f"New {side} positions zone" + (f" #{i + 1}" if i else ""), z_["center"], fl.NEW_OI_RULE,
+                        {"low": z_["low"], "high": z_["high"], "zone_mag": z_["magnitude"], "peak": z_["peak"], "call_strikes": z_["call_strikes"],
+                         "put_strikes": z_["put_strikes"], "members": z_["members"]}, len(rows), {"low": z_["low"], "high": z_["high"]})
     return out
