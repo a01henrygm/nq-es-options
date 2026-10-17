@@ -1,4 +1,4 @@
-# NQ / ES options analytics (local, Windows)
+# NQ / ES options analytics (local, Windows and Mac)
 
 A personal options-analytics dashboard that runs on your own PC. A Python backend downloads options data from
 Cboe's free delayed quotes (or from Massive, formerly Polygon.io, if you switch), calculates exposure levels, stores history in SQLite, and serves a browser dashboard.
@@ -76,11 +76,33 @@ and automatic updates. No Python, no .bat files.
   top of the page and the tray menu also offer **Restart and update** right away. Set `AUTO_UPDATE=0` in `.env` to only be told.
   A private repository needs `UPDATE_TOKEN=<token>` in `.env` (a fine-grained GitHub token with read access to that repo's contents).
 * **Making a release:** raise `__version__` in `backend/version.py` and push to main. GitHub Actions runs the tests and, when that
-  version has no release yet, builds the installer on Windows (`installer/build.ps1`: PyInstaller, then Inno Setup) and publishes
-  release `v<version>`, which the app updates from.
+  version has no release yet, builds the installer on Windows (`installer/build.ps1`: PyInstaller, then Inno Setup) and the Mac
+  apps (`installer/build_mac.sh`), and publishes release `v<version>` with all of them, which the apps update from.
 * **The old .bat version still works** from the project folder and keeps its files there. The desktop app removes the old
   "start at sign-in" task the first time it runs, so the two do not both start.
 
+
+## Desktop app (Mac)
+
+The same app for macOS 11 or newer, on Apple Silicon (M1 and later) and Intel Macs: its own window, an icon in the menu bar,
+optional open at login, and automatic updates. No Python needed.
+
+* **Install:** from the GitHub release download `Q-DATA-<version>-macOS-arm64.dmg` (Apple Silicon: Apple menu > About This Mac
+  shows an "Apple M..." chip) or `...-macOS-x86_64.dmg` (Intel). Open it and drag **Q DATA** onto **Applications**. Open it from
+  Applications, not from the download window, or updates can't replace it.
+* **The first time you open it** macOS says it can't verify the developer, because the app is not signed with a paid Apple
+  developer account. Click **Done**, then go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to
+  Q DATA (once). Or in Terminal: `xattr -dr com.apple.quarantine "/Applications/Q DATA.app"`. After that it opens normally, and the
+  updates it downloads itself don't ask again.
+* **Window and menu bar:** closing the window (or Cmd+Q) keeps the app running in the menu bar, still collecting data. Click the
+  menu bar icon for Open, updates, **Open at login**, the settings folder, and **Quit**. Clicking the Dock icon brings the window back.
+* **Your files:** settings (`.env`), the database and logs are in `~/Library/Application Support/Q DATA` (menu bar: *Open settings
+  folder*). Updates never touch that folder.
+* **Updates:** the same schedule as on Windows. The app downloads the `.zip` for its chip, waits until it has quit, puts the new
+  Q DATA in place of the old one in Applications, and opens it again.
+* **Phone access:** when you turn it on, macOS may ask whether Q DATA may accept incoming network connections: click **Allow**.
+* **Building:** `installer/build_mac.sh` (PyInstaller, then a `.dmg` and an update `.zip`). The release workflow runs it on an Apple
+  Silicon and an Intel Mac, opens each built app once with `--smoke-test` to check it starts, and adds the files to the release.
 
 ## What each part does
 

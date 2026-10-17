@@ -1,5 +1,6 @@
 """Desktop app pieces that run anywhere: the self-updater (against a FAKE GitHub served by httpx.MockTransport), version
-handling, the data folder, and the release build files. The window and tray themselves only run on Windows."""
+handling, the data folder, the Mac update and login item, and the release build files. The window and tray themselves only run
+on Windows and Mac (the Mac build starts the real app once with --smoke-test)."""
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -129,3 +130,111 @@ def test_release_build_files_fit_together():
     assert "NQ-ES-Options-{#MyVersion}-Setup" in iss and "postinstall" in iss and "CloseApplications" in iss
     assert "--add-data" in spec and "frontend" in spec and "NQES.py" in spec and "assets" in spec
     assert (ROOT / "assets" / "icon.ico").exists() and (ROOT / "requirements-desktop.txt").exists()
+
+
+# ---- Mac -------------------------------------------------------------------------------------------------------------
+def _mac_assets(tag="v1.4.0"):
+    v = tag[1:]
+    names = [f"NQ-ES-Options-{v}-Setup.exe", f"Q-DATA-{v}-macOS-arm64.dmg", f"Q-DATA-{v}-macOS-arm64.zip",
+             f"Q-DATA-{v}-macOS-x86_64.dmg", f"Q-DATA-{v}-macOS-x86_64.zip"]
+    return [{"name": n, "url": f"https://api.github.com/repos/o/r/releases/assets/{i}", "browser_download_url": f"https://github.com/o/r/releases/download/{tag}/{n}",
+             "size": 10} for i, n in enumerate(names, 10)]
+
+
+def test_each_computer_picks_its_own_release_file():
+    c, _ = fake_github(tag="v1.4.0", assets=_mac_assets())
+    assert up.latest_release("o/r", client=c, pattern=up.asset_pattern("win32"))["name"].endswith("-Setup.exe")
+    assert up.latest_release("o/r", client=c, pattern=up.asset_pattern("darwin", "arm64"))["name"] == "Q-DATA-1.4.0-macOS-arm64.zip"
+    assert up.latest_release("o/r", client=c, pattern=up.asset_pattern("darwin", "x86_64"))["name"] == "Q-DATA-1.4.0-macOS-x86_64.zip"
+    only_windows = [a for a in _mac_assets() if a["name"].endswith(".exe")]
+    c, _ = fake_github(tag="v1.4.0", assets=only_windows)
+    assert up.latest_release("o/r", client=c, pattern=up.asset_pattern("darwin", "arm64")) is None    # no Mac build in it: stay put
+
+
+def test_mac_finds_its_app_and_refuses_to_update_from_a_bad_place(tmp_path):
+    exe = tmp_path / "Applications" / "Q DATA.app" / "Contents" / "MacOS" / "Q DATA"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    bundle = up.mac_app_bundle(str(exe))
+    assert bundle.name == "Q DATA.app" and up.mac_update_problem(bundle) is None
+    assert up.mac_app_bundle(str(tmp_path / "python3")) is None and up.mac_update_problem(None)
+    assert "Applications" in up.mac_update_problem(Path("/private/var/folders/x/AppTranslocation/ABC/d/Q DATA.app"))
+    assert "Applications" in up.mac_update_problem(Path("/Volumes/Q DATA/Q DATA.app"))
+
+
+def test_mac_update_unpacks_and_hands_over_to_the_swap_script(tmp_path, monkeypatch):
+    import zipfile
+    bundle = tmp_path / "Applications" / "Q DATA.app"
+    (bundle / "Contents").mkdir(parents=True)
+    work = tmp_path / "updates"
+    work.mkdir()
+    z = work / "Q-DATA-1.4.0-macOS-arm64.zip"
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("Q DATA.app/Contents/Info.plist", "<plist/>")
+    calls = []
+    monkeypatch.setattr(up.subprocess, "Popen", lambda args, **kw: calls.append((args, kw)))
+    up.run_mac_update(z, background=True, bundle=bundle, unzip=lambda zp, out: zipfile.ZipFile(zp).extractall(out))
+    args, kw = calls[0]
+    assert args[0] == "/bin/sh" and args[1].endswith("swap.sh") and args[3].endswith("staged/Q DATA.app") and args[4] == str(bundle)
+    assert args[-1] == "--background" and kw["start_new_session"]
+    assert (work / "staged" / "Q DATA.app" / "Contents" / "Info.plist").exists()
+    script = (work / "swap.sh").read_text()
+    assert 'kill -0 "$pid"' in script and 'mv "$new" "$dest"' in script and 'open "$dest"' in script and "quarantine" in script
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("readme.txt", "x")
+    with pytest.raises(IOError):
+        up.run_mac_update(z, bundle=bundle, unzip=lambda zp, out: zipfile.ZipFile(zp).extractall(out))
+
+
+def test_a_failed_install_is_reported_not_raised(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("Move Q DATA into your Applications folder")
+    monkeypatch.setattr(up, "run_installer", boom)
+    c, _ = fake_github()
+    u = up.Updater("1.0.0", "o/r", folder=tmp_path)
+    u.check(client=c)
+    assert u.install() is False and u.state == "error" and "Applications" in u.info()["error"]
+
+
+def test_mac_login_item_and_settings_folder(tmp_path):
+    import plistlib
+    from desktop import autostart
+    from backend.config import installed_data_dir
+    d = plistlib.loads(autostart.mac_plist("/Applications/Q DATA.app/Contents/MacOS/Q DATA"))
+    assert d["Label"] == "com.qdata.app" and d["RunAtLoad"] is True
+    assert d["ProgramArguments"] == ["/Applications/Q DATA.app/Contents/MacOS/Q DATA", "--background"]
+    assert autostart.mac_plist_path(tmp_path) == tmp_path / "Library" / "LaunchAgents" / "com.qdata.app.plist"
+    assert installed_data_dir("darwin", {}, tmp_path) == tmp_path / "Library" / "Application Support" / "Q DATA"
+    assert installed_data_dir("win32", {"LOCALAPPDATA": str(tmp_path)}, tmp_path) == tmp_path / "NQ-ES Options"
+
+
+def test_mac_release_build_fits_together():
+    wf = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    sh = (ROOT / "installer" / "build_mac.sh").read_text()
+    assert "build_mac.sh" in wf and "macos-latest" in wf and "--smoke-test" in wf and "out/*.dmg" in wf and "out/*.zip" in wf
+    assert "needs.build.result == 'success'" in wf                       # a Mac build failing never holds back the Windows update
+    assert 'NAME="Q-DATA-${VERSION}-macOS-${ARCH}"' in sh and "ditto -c -k" in sh and "hdiutil create" in sh
+    assert "webview.platforms.cocoa" in sh and "pystray._darwin" in sh and "frontend:frontend" in sh and "codesign" in sh
+    assert up.asset_pattern("darwin", "arm64").search("Q-DATA-1.4.0-macOS-arm64.zip")         # the names the build makes are the names the app looks for
+    assert up.ASSET_RE.search("NQ-ES-Options-1.4.0-Setup.exe")
+
+
+def test_single_copy_lock_off_windows(tmp_path, monkeypatch):
+    import sys as _sys
+    if _sys.platform == "win32":
+        pytest.skip("Windows uses a mutex")
+    from desktop import app as dapp
+    monkeypatch.setattr(dapp, "DATA", tmp_path)
+    first = dapp._single_instance()
+    assert first is not None
+    import subprocess, textwrap
+    code = textwrap.dedent(f"""
+        import fcntl, sys
+        f = open({str(tmp_path / 'desktop.lock')!r}, 'a+')
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB); print('got')
+        except OSError:
+            print('busy')
+    """)
+    assert subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True).stdout.strip() == "busy"
+    first.close()

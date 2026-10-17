@@ -1,7 +1,9 @@
-"""NQ-ES Options as a Windows desktop app: its own window, an icon in the system tray, start with Windows, and self-update.
+"""Q DATA as a desktop app (Windows and Mac): its own window, an icon in the system tray (Windows) or menu bar (Mac),
+start at sign-in, and self-update.
 
 The dashboard server is the same one the .bat files start; it runs inside this program on 127.0.0.1 and the window shows it.
-Closing the window only hides it (data collection keeps running). Quit from the tray icon to stop everything.
+Closing the window only hides it (data collection keeps running). Quit from the tray / menu bar icon to stop everything.
+Run with --smoke-test to start everything, check the dashboard answers, and quit (exit code 0 = OK); the Mac build uses it.
 """
 from __future__ import annotations
 import logging
@@ -9,6 +11,7 @@ import os
 import sys
 import threading
 import time
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +19,8 @@ from backend.config import DATA, FROZEN, ROOT, ensure_data_dir
 
 APP_NAME = "Q DATA"
 CHECK_EVERY = 4 * 3600                     # seconds between update checks
+MAC = sys.platform == "darwin"
+TRAY = "menu bar" if MAC else "tray"
 log = logging.getLogger("desktop")
 
 
@@ -28,9 +33,16 @@ def _quiet_streams():
 
 
 def _single_instance() -> object | None:
-    """Returns a handle while we are the only copy running, None if another copy already runs (Windows only)."""
+    """Returns a handle while we are the only copy running, None if another copy already runs."""
     if sys.platform != "win32":
-        return object()
+        import fcntl
+        f = open(DATA / "desktop.lock", "a+")
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)        # released by the system when this copy exits
+        except OSError:
+            f.close()
+            return None
+        return f
     import ctypes
     h = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\NQESOptionsDesktop")
     return None if ctypes.windll.kernel32.GetLastError() == 183 else h      # 183 = already exists
@@ -60,6 +72,43 @@ def _market_hours(now: datetime | None = None) -> bool:
     return t.weekday() < 5 and (8, 30) <= (t.hour, t.minute) < (16, 30)
 
 
+def _on_main(fn):
+    """Mac only lets the main thread touch the menu bar: hand the change over to it. Elsewhere just run it."""
+    if not MAC:
+        return fn()
+    from PyObjCTools import AppHelper
+    AppHelper.callAfter(fn)
+
+
+def _open_folder(path: Path):
+    if hasattr(os, "startfile"):
+        os.startfile(str(path))
+    elif MAC:
+        import subprocess
+        subprocess.Popen(["open", str(path)])
+
+
+def _mac_watch_system(on_power_off, on_activate):
+    """Mac: quit cleanly when you shut down or log out (the window would otherwise refuse and stop the logout), and show the
+    window when you click the Dock icon or open the app again while it runs hidden."""
+    import AppKit
+    import objc
+
+    class QDataSystemWatcher(AppKit.NSObject):
+        def powerOff_(self, _note):
+            on_power_off()
+
+        def activated_(self, _note):
+            on_activate()
+
+    w = QDataSystemWatcher.alloc().init()
+    AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
+        w, objc.selector(w.powerOff_, signature=b"v@:@"), AppKit.NSWorkspaceWillPowerOffNotification, None)
+    AppKit.NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+        w, objc.selector(w.activated_, signature=b"v@:@"), AppKit.NSApplicationDidBecomeActiveNotification, None)
+    return w
+
+
 def _icon_image():
     from PIL import Image
     for p in (ROOT / "assets" / "icon.png", ROOT / "assets" / "icon.ico"):
@@ -70,7 +119,8 @@ def _icon_image():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    background = "--background" in argv
+    smoke = "--smoke-test" in argv
+    background = "--background" in argv and not smoke
     ensure_data_dir()
     _quiet_streams()
     os.environ.setdefault("NQES_DATA_DIR", str(DATA))
@@ -103,13 +153,13 @@ def main(argv=None):
     url = f"http://127.0.0.1:{port}"
     started = time.time()
     show_ev, quitting = threading.Event(), threading.Event()
-    state = {"window": None, "icon": None, "visible": not background}
+    state = {"window": None, "icon": None, "visible": not background, "exit": 0}
 
     # ---- updates ----------------------------------------------------------------------------------------------------
     def changed(u):
         ic = state["icon"]
         if ic:
-            ic.update_menu()
+            _on_main(ic.update_menu)
             if u.state == "ready" and u.latest:
                 try:
                     ic.notify(f"Version {u.latest['version']} is ready. It installs when you restart the app, or by itself after the market closes.", APP_NAME)
@@ -151,12 +201,19 @@ def main(argv=None):
 
     def restart():
         """Starts a fresh copy a moment after this one has quit (used after changing settings such as phone access)."""
+        import subprocess
+        can = FROZEN and sys.platform in ("win32", "darwin")
         if sys.platform == "win32" and FROZEN:
-            import subprocess
             exe = sys.executable
             subprocess.Popen(["cmd", "/c", f'timeout /t 3 /nobreak >nul & start "" "{exe}"'], creationflags=0x08000000 | 0x00000008, close_fds=True)
+        elif MAC and FROZEN:
+            from desktop.updater import mac_app_bundle
+            bundle = mac_app_bundle()
+            if bundle:
+                subprocess.Popen(["/bin/sh", "-c", 'sleep 3; open -n "$0"', str(bundle)], start_new_session=True, close_fds=True)
+            can = bool(bundle)
         threading.Timer(0.3, quit_app).start()
-        return {"ok": True, "restarting": sys.platform == "win32" and FROZEN}
+        return {"ok": True, "restarting": can}
 
     def install_now():
         if upd.state not in ("ready", "available"):
@@ -195,7 +252,7 @@ def main(argv=None):
         server.should_exit = True
         if state["icon"]:
             state["icon"].stop()
-        threading.Timer(1.5, lambda: os._exit(0)).start()
+        threading.Timer(1.5, lambda: os._exit(state["exit"])).start()
         if state["window"]:
             state["window"].destroy()
 
@@ -218,15 +275,15 @@ def main(argv=None):
 
     def toggle_autostart(*_):
         autostart.set_enabled(not autostart.is_enabled())
-        state["icon"].update_menu()
+        _on_main(state["icon"].update_menu)
 
     menu = pystray.Menu(
         pystray.MenuItem("Open", open_window, default=True),
         pystray.MenuItem(f"Version {__version__}", None, enabled=False),
         pystray.MenuItem(update_label, update_click, enabled=lambda i: upd.enabled and upd.state not in ("checking", "downloading")),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda i: autostart.is_enabled()),
-        pystray.MenuItem("Open settings folder (.env, data, logs)", lambda *_: os.startfile(str(DATA)) if hasattr(os, "startfile") else None),
+        pystray.MenuItem(autostart.label(), toggle_autostart, checked=lambda i: autostart.is_enabled()),
+        pystray.MenuItem("Open settings folder (.env, data, logs)", lambda *_: _open_folder(DATA)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit (stops data collection)", quit_app),
     )
@@ -269,7 +326,8 @@ def main(argv=None):
         if not getattr(on_closing, "told", False):
             on_closing.told = True
             try:
-                icon.notify("Still running in the tray, collecting data. Right-click the tray icon to quit.", APP_NAME)
+                icon.notify(f"Still running in the {TRAY}, collecting data. Use the {TRAY} icon to quit." if MAC else
+                            "Still running in the tray, collecting data. Right-click the tray icon to quit.", APP_NAME)
             except Exception:
                 pass
         return False
@@ -287,13 +345,45 @@ def main(argv=None):
                 except Exception:
                     log.exception("could not show the window")
 
+    def smoke_check():
+        """--smoke-test: wait for the dashboard to answer, write the result to smoke.json, quit with exit code 0 or 1."""
+        import httpx
+        ok, detail = False, "no answer"
+        for _ in range(90):
+            try:
+                r = httpx.get(f"{url}/api/desktop/info", timeout=3)
+                ok, detail = r.status_code == 200 and r.json().get("desktop") is True, f"HTTP {r.status_code}"
+                if ok:
+                    break
+            except Exception as e:
+                detail = str(e)[:200]
+            time.sleep(1)
+        time.sleep(3)                                       # let the window and the tray / menu bar icon settle
+        (DATA / "smoke.json").write_text(json.dumps({"ok": ok, "detail": detail, "version": __version__, "tray": state["icon"] is not None,
+                                                     "platform": sys.platform}))
+        log.info("smoke test %s (%s)", "passed" if ok else "FAILED", detail)
+        state["exit"] = 0 if ok else 1
+        _on_main(quit_app) if MAC else quit_app()
+
     def after_start():
         threading.Thread(target=boot, daemon=True).start()
         threading.Thread(target=watch_show, daemon=True).start()
-        threading.Thread(target=update_loop, daemon=True).start()
+        if smoke:
+            threading.Thread(target=smoke_check, daemon=True).start()
+        else:
+            threading.Thread(target=update_loop, daemon=True).start()
+
+    if MAC:
+        def on_activate():
+            if not state["visible"] and not quitting.is_set() and time.time() - started > 5:
+                show_ev.set()
+        try:
+            state["watcher"] = _mac_watch_system(quit_app, on_activate)
+        except Exception:
+            log.exception("could not watch for shutdown / Dock clicks")
 
     webview.settings["ALLOW_DOWNLOADS"] = True
     (DATA / "webview").mkdir(exist_ok=True)
     webview.start(after_start, private_mode=False, storage_path=str(DATA / "webview"))   # keeps your page settings between runs
     quit_app()
-    return 0
+    return state["exit"]

@@ -1,6 +1,8 @@
 # Publishing a new version: change __version__ in backend/version.py and push to main.
-# If no release exists yet for that version, this runs the tests, builds the Windows installer and publishes release v<version>.
-# The installed app checks these releases and updates itself. Pushes that keep the same version only run the tests.
+# If no release exists yet for that version, this runs the tests, builds the Windows installer and the Mac apps (Apple Silicon
+# and Intel), and publishes release v<version> with all of them. The installed apps check these releases and update themselves.
+# Pushes that keep the same version only run the tests. Running it by hand (workflow_dispatch) builds everything without
+# publishing, to try the builds.
 name: Release
 
 on:
@@ -51,12 +53,65 @@ jobs:
         with:
           name: installer
           path: dist/installer/*.exe
+
+  build-mac:
+    needs: test
+    if: needs.test.outputs.publish == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest       # Apple Silicon
+            arch: arm64
+          - runner: macos-15-intel     # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-desktop.txt
+      - name: Build the Mac app, the .dmg and the update .zip
+        run: bash installer/build_mac.sh "${{ needs.test.outputs.version }}" "${{ github.repository }}"
+      - name: Start the built app, check the dashboard answers, quit
+        env:
+          NQES_DATA_DIR: ${{ runner.temp }}/qdata-smoke
+          AUTO_UPDATE: "0"
+        run: |
+          set +e
+          ( "dist/Q DATA.app/Contents/MacOS/Q DATA" --smoke-test ) & pid=$!
+          for i in $(seq 1 150); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          if kill -0 $pid 2>/dev/null; then kill -9 $pid; echo "App did not quit within 150 s"; code=1; else wait $pid; code=$?; fi
+          cat "$NQES_DATA_DIR/smoke.json" 2>/dev/null; echo
+          tail -n 40 "$NQES_DATA_DIR"/logs/*.log 2>/dev/null
+          exit $code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            dist/installer/*.dmg
+            dist/installer/*.zip
+
+  publish:
+    needs: [test, build, build-mac]
+    # The Windows installer is required. A Mac build that failed is left out rather than holding back the release.
+    if: always() && needs.test.outputs.publish == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: ls -la out
       - name: Publish the release
-        if: needs.test.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.test.outputs.version }}
           target_commitish: ${{ github.sha }}
           name: NQ-ES Options ${{ needs.test.outputs.version }}
-          files: dist/installer/*.exe
+          files: |
+            out/*.exe
+            out/*.dmg
+            out/*.zip
           generate_release_notes: true

@@ -187,7 +187,7 @@ Object.assign(R, {
       <ol><li>Install <b>Tailscale</b> (free) on this PC and on your phone, and sign in to both with the same account.</li>
         <li>Turn phone access on above. The "From anywhere" address (it starts with 100.) appears here after the restart.</li>
         <li>Open that address on your phone, from any network. Tailscale encrypts the connection and nothing is opened to the internet.</li></ol>
-      <p class="hint">On Wi-Fi the connection is plain http inside your home network, so use a password you don't use elsewhere. Windows may ask once to let Q DATA through the firewall: allow it on private networks.
+      <p class="hint">On Wi-Fi the connection is plain http inside your home network, so use a password you don't use elsewhere. Windows or macOS may ask once to let Q DATA accept connections: allow it (on Windows, for private networks).
         Settings are stored in ${esc(j.env_file)}.</p>`);
     const save = async (enabled) => {
       const r = await fetch("/api/phone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled, password: ($("ph_pw") || {}).value || "" }) });

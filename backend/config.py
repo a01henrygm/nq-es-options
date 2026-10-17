@@ -10,10 +10,20 @@ import sys
 
 # ROOT: where the program files are (the page, the indicator). DATA: where your settings (.env), database and logs live.
 # Run from the project folder both are that folder. In the installed desktop app the program folder is replaced by every
-# update, so your own files live in %LOCALAPPDATA%\NQ-ES Options instead and survive updates.
+# update, so your own files live in %LOCALAPPDATA%\NQ-ES Options (Windows) or ~/Library/Application Support/Q DATA (Mac)
+# instead and survive updates.
 FROZEN = bool(getattr(sys, "frozen", False))
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-DATA = Path(os.environ.get("NQES_DATA_DIR") or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "NQ-ES Options" if FROZEN else ROOT))
+
+
+def installed_data_dir(platform: str = sys.platform, env=os.environ, home: Path | None = None) -> Path:
+    home = home or Path.home()
+    if platform == "darwin":
+        return home / "Library" / "Application Support" / "Q DATA"
+    return Path(env.get("LOCALAPPDATA") or home) / "NQ-ES Options"
+
+
+DATA = Path(os.environ.get("NQES_DATA_DIR") or (installed_data_dir() if FROZEN else ROOT))
 
 
 def ensure_data_dir() -> Path:
