@@ -33,6 +33,13 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.6
+
+- **HOD / LOD tab**: the projected high and low of the day. A ladder from the 9:30 open at 0.5 to 2.5 standard deviations of the day's expected move (priced near the open, so the levels stay put), the chance each level gets touched at the open and now, the 0DTE walls, and the 50% / 80% / 95% projected high and low for the rest of the session.
+- **HOD/LOD TradingView indicator** (Copy HOD/LOD indicator): the same ladder anchored to your chart's real 9:30 open with live chances, the gamma-regime playbook and regime flips, the 0DTE walls and flip, a mean-reversion test, a Monte Carlo of targets against your stop, and an ES/NQ principal-component split. The expected move is pasted as a share of price, so it works on NQ, MNQ, ES and MES without a basis. Re-copy each session.
+- **Quant lab tab**: take profit by gamma regime (short gamma = trend day, aim far, one trade; long gamma = range day, fade failed auctions, 1 to 3 R), the mean-reversion test (t statistic must be below -2.9, half life in minutes), a Monte Carlo of target-before-stop-before-the-close for 1 to 12 R, and NQ against ES from the eigenvectors of their return covariance.
+- None of it is backtested; each view says what it assumed.
+
 ## New in 1.4
 
 * **Q DATA for Mac:** Apple Silicon and Intel builds in every release, with a menu bar icon, open at login, and the same automatic
