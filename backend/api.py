@@ -884,7 +884,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                                        oi_change=oi_change, reactions=reactions))
     from .api_quant import register as register_quant
     register_quant(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok,
-                                        futures_mapper=futures_mapper, now_fn=now_fn))
+                                        futures_mapper=futures_mapper, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions))
 
     @app.middleware("http")
     async def never_serve_stale_pages(request, call_next):

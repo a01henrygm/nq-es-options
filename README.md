@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.7
+
+- **Level map tab**: a candle chart of the session (built from the prices the app stores) with every key level tagged RESPECT, CHOP or DISRESPECT, and projected candles after the last real one acting the calls out, plus a faded alternate path where the first level goes the other way. The call comes from the 0DTE gamma regime and the dealer gamma at each level; the table shows why, how strong, and how often that level type held in the app's own touch log. Scenarios, not forecasts.
+
 ## New in 1.6
 
 - **HOD / LOD tab**: the projected high and low of the day. A ladder from the 9:30 open at 0.5 to 2.5 standard deviations of the day's expected move (priced near the open, so the levels stay put), the chance each level gets touched at the open and now, the 0DTE walls, and the 50% / 80% / 95% projected high and low for the rest of the session.

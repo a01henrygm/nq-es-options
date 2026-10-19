@@ -9,6 +9,7 @@ from fastapi import HTTPException, Query
 
 from .services import analytics as an
 from .services import intraday as idy
+from .services import behavior as bh
 from .services import quant as qt
 from .services.hodlod_pine import build_hodlod_pine
 from .services.mapping import FUTURES_FOR, INDEX_GROUP
@@ -184,3 +185,42 @@ def register(app, h):
         return {"code": code, "meta": m, "state": pb["state"], "sigma_pct": sig_pct, "mapped": c["spot_f"] is not None,
                 "note": "Paste into TradingView's Pine Editor and add to chart. The ladder, chances, mean-reversion test, Monte Carlo and ES/NQ split run live "
                         "on your chart; the expected move, regime and walls are today's values from Q DATA, so re-copy each session."}
+
+    @app.get("/api/charts/level-map")
+    def level_map(underlying: str, convention: str = "standard", tf: int = Query(2, ge=1, le=30), ahead: int = Query(90, ge=10, le=390)):
+        """Candles from the stored prices, the key levels with a respect / chop / disrespect call each, and projected candles acting them out."""
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = context(u, convention)
+        snap, z, now = c["snap"], c["z"], c["now"]
+        pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        op = datetime.combine(c["day"], RTH_OPEN, ET)
+        bars = bh.candles(c["rows"], op, tf)
+        j = h.levels_payload(u, convention, "auto", None, key=14)
+        try:
+            rec = {r["category"]: r for r in h.reactions(u, 30, 0.05)["summary"]}
+        except HTTPException:
+            rec = {}
+        from .services import analytics as _an
+        gf = _an.gamma_flip(snap.contracts, snap.spot, now, convention)
+        flips = [z.get("flip") if z.get("available") else None, gf["flip"] if gf["found"] else None]
+        lv = bh.level_calls(j["zones"], snap, now, pb["state"], flips, convention, rec)
+        steps = int(min(ahead, c["mins_left"]) // tf) if c["mins_left"] > 0 else int(ahead // tf)
+        sd_day = c["sig_rem"] or c["sig_open"]
+        mins = c["mins_left"] if c["mins_left"] > 0 else 390.0
+        sd_c = sd_day * (tf / mins) ** 0.5 if sd_day else None
+        if pb["state"] == "short" and c["open"]:
+            d = 1 if snap.spot >= c["open"] else -1
+        else:
+            nl = min(lv, key=lambda x: abs(x["value"] - snap.spot), default=None)
+            d = 1 if nl is None or nl["value"] >= snap.spot else -1
+        start = bars[-1]["t"] + timedelta(minutes=tf) if bars else to_et(now)
+        times = [iso(start + timedelta(minutes=tf * i)) for i in range(steps)]
+        main = bh.ghost_path(lv, snap.spot, sd_c, steps, d) if sd_c and steps > 0 else None
+        alt = bh.ghost_path(lv, snap.spot, sd_c, steps, d, flip_first=True) if sd_c and steps > 0 else None
+        return {"meta": c["m"], "tf": tf, "candles": [{**b, "t": iso(b["t"])} for b in bars], "levels": lv, "regime": {k: pb[k] for k in ("state", "title", "tagline", "color", "flips")},
+                "open": c["open"], "spot": snap.spot, "ratio": c["ratio"], "futures_root": c["root"], "mapped": c["spot_f"] is not None,
+                "projection": {"times": times, "main": main, "alt": alt, "direction": d, "sd_candle": sd_c},
+                "rule": bh.RULE, "note": ("Candles are built from the index prices this app stores (about one every 2 minutes, about 15 minutes delayed), so they are "
+                                          "coarser than TradingView's. Projected candles picture the calls; they are scenarios, not forecasts.")}
