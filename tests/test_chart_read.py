@@ -59,11 +59,11 @@ def test_chart_read_endpoint(monkeypatch, tmp_path):
     assert c.post("/api/chart-read/key", json={"key": "nope"}).status_code == 422
     assert c.post("/api/chart-read/key", json={"key": "sk-ant-api03-" + "a" * 30}).json()["saved"]
     assert "ANTHROPIC_API_KEY=sk-ant-api03-" in (tmp_path / ".env").read_text()
-    spot = c.get("/api/analytics/hodlod", params={"underlying": "_NDX"}).json()["data"]["hodlod"]["spot"]
+    spot = c.get("/api/analytics/hodlod", params={"underlying": "_NDX"}).json()["data"]["spot_futures"]       # NQ fair value from the chain
     monkeypatch.setattr(cr, "read_chart", lambda *a, **k: good_reading(last=spot + 30))
     j = c.post("/api/chart-read", json={"image": PNG, "underlying": "_NDX"}).json()
     assert j["problems"] == [] and j["levels"] and all(l["call"] in ("RESPECT", "CHOP", "DISRESPECT") for l in j["levels"])
-    assert j["warnings"] and "basis" in j["warnings"][0]                                  # no futures price saved: scaled to the chart
+    assert j["unit"] == "NQ" and j["warnings"] == []                                     # levels arrive in NQ points already
     assert j["projection"]["main"]["candles"] and j["projection"]["start_x"] == 0.7
     monkeypatch.setattr(cr, "read_chart", lambda *a, **k: good_reading(last=6800.0))     # an ES chart against NDX levels
     j = c.post("/api/chart-read", json={"image": PNG, "underlying": "_NDX"}).json()

@@ -27,6 +27,28 @@ function wirePine(idB, idD) {
   if (d) d.onclick = async () => { try { const r = await get(); download(`qdata_hodlod_${S.u.replace(/^_/, "")}.pine`, r.code); d.textContent = "Downloaded"; } catch (e) { fail(e); } };
 }
 
+function movesBlock(mv, root) {
+  if (!mv) return "";
+  if (!mv.available) return `<h3>Moves we may encounter</h3>${note(mv.reason)}`;
+  const pill = c => `<span style="background:${CALLCOL[c][0]};color:${CALLCOL[c][1]};padding:2px 8px;border-radius:4px;font-weight:600;font-size:.85em;white-space:nowrap">${c}</span>`;
+  const rows = (arr, up) => arr.length ? arr.map((r, i) => `<tr><td class="num"><b>${fmt(r.price, 2)}</b>${r.futures != null ? `<br><span class="dim">${esc(root)} ${fmt(r.futures, 2)}</span>` : ""}</td>
+      <td>${i + 1}. ${esc(r.label)}<br><span class="dim">${up ? "+" : "-"}${fmt(r.points, 0)} pts, ${fmt(r.sd, 2)} sd away</span></td><td>${pill(r.call)}</td>
+      <td class="num"><b>${pc0(r.chance)}</b></td><td>${esc(r.note)}<br><span class="dim">${esc(r.why)}</span></td></tr>`).join("")
+    : `<tr><td colspan="5" class="dim">No key levels ${up ? "above" : "below"} price within reach.</td></tr>`;
+  const head = `<tr><th>Price</th><th>Level</th><th>Call</th><th>Chance of a touch</th><th>What should happen and why</th></tr>`;
+  const r = mv.range;
+  return `<h3>Moves we may encounter</h3>
+    <div class="msg" style="background:#0f1318">${mv.summary.map(t => `<p style="margin:3px 0">${esc(t)}</p>`).join("")}</div>
+    <div class="grid wide">
+      <div class="card"><b style="font-size:1.05em;color:#3fb96a">If price goes up</b><div class="scroll"><table>${head}${rows(mv.up, true)}</table></div></div>
+      <div class="card"><b style="font-size:1.05em;color:#e5534b">If price goes down</b><div class="scroll"><table>${head}${rows(mv.down, false)}</table></div></div></div>
+    ${r && r.stay_inside != null ? `<div class="grid">${card("Stays in the range until the close", pc0(r.stay_inside), `between ${esc(r.low_label.split(" / ")[0])} ${fmt(r.low, 0)}${r.low_futures != null ? ` (${esc(root)} ${fmt(r.low_futures, 0)})` : ""} and ${esc(r.high_label.split(" / ")[0])} ${fmt(r.high, 0)}${r.high_futures != null ? ` (${esc(root)} ${fmt(r.high_futures, 0)})` : ""}`)}
+      ${card("Breaks out of it", pc0(1 - r.stay_inside), "touches at least one of the two levels before 16:00")}</div>` : ""}
+    <h3>What's driving it</h3><div class="scroll"><table><tr><th>Data</th><th>Reading</th><th>What it means for the move</th></tr>
+      ${mv.drivers.map(d => `<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.reading)}</td><td>${esc(d.effect)}</td></tr>`).join("")}</table></div>
+    <p class="hint">${esc(mv.note)}</p>`;
+}
+
 Object.assign(R, {
   // ---- HOD / LOD ------------------------------------------------------------------------------------------------------
   async hodlod() {
@@ -48,6 +70,7 @@ Object.assign(R, {
         ${card("Projected HOD", pr ? fmt(pr.hod.p50, 2) : "-", pr ? `80%: ${fmt(pr.hod.p80, 2)}, 95%: ${fmt(pr.hod.p95, 2)}` : "session closed")}
         ${card("Projected LOD", pr ? fmt(pr.lod.p50, 2) : "-", pr ? `80%: ${fmt(pr.lod.p80, 2)}, 95%: ${fmt(pr.lod.p95, 2)}` : "session closed")}
         ${card("Time left", fmt(D.minutes_left, 0) + " min", d.sigma_remaining ? `remaining 1 sd ${fmt(d.sigma_remaining, 1)} pts` : "")}</div>
+      ${movesBlock(D.moves, root)}
       <div id="hlc" class="chart"></div>
       <h3>The ladder</h3><div class="scroll"><table class="hot"><tr><th>Step</th><th>Price</th><th>${esc(root || "Futures")}</th><th>Chance at the open</th><th>Chance now</th><th></th></tr>
         ${rowsUp.map(x => row(x, 1)).join("")}${spotRow}${dn.map(x => row(x, -1)).join("")}</table></div>
@@ -89,7 +112,10 @@ Object.assign(R, {
         <td class="num" style="color:#3fb96a"><b>${pc0(r.long.win)}</b></td><td class="num dim">${pc0(r.long.stop)} / ${pc0(r.long.neither)}</td><td class="num">${(r.long.ev_r >= 0 ? "+" : "") + fmt(r.long.ev_r, 2)}</td>
         <td class="num" style="color:#e5534b"><b>${pc0(r.short.win)}</b></td><td class="num dim">${pc0(r.short.stop)} / ${pc0(r.short.neither)}</td><td class="num">${(r.short.ev_r >= 0 ? "+" : "") + fmt(r.short.ev_r, 2)}</td>
         <td class="num dim">${pc0(r.no_clock)}</td></tr>`).join("") : "";
-    const mcBlock = !mc.available ? note(mc.reason) : `<div class="scroll"><table><tr><th>Target</th><th>${esc(root)} pts</th><th>Long: target first</th><th>stop / neither</th><th>Long avg R</th><th>Short: target first</th><th>stop / neither</th><th>Short avg R</th><th>No clock</th></tr>${mcRows}</table></div>
+    const mcBlock = !mc.available ? note(mc.reason) : `<div id="qfan" class="chart" style="height:520px"></div>
+      <p class="hint">Each thin line is one simulated path of ${esc(D.futures_root || "the index")} from now to the 16:00 close (${mc.fan.paths.length} of ${mc.paths} drawn). Green paths finish above today's price, red below.
+        The white line is the middle path, the dashed lines hold 90% of the paths and the dotted lines 50%. The bars on the right show where all ${mc.paths} paths finished.</p>
+      <div class="scroll"><table><tr><th>Target</th><th>${esc(root)} pts</th><th>Long: target first</th><th>stop / neither</th><th>Long avg R</th><th>Short: target first</th><th>stop / neither</th><th>Short avg R</th><th>No clock</th></tr>${mcRows}</table></div>
       <div id="qmc" class="chart"></div>
       <div class="grid">${card("Paths end the day with HOD", fmt(mc.hod.p50, 2), `half the time; 80%: ${fmt(mc.hod.p80, 2)}, 95%: ${fmt(mc.hod.p95, 2)}`)}${card("Paths end the day with LOD", fmt(mc.lod.p50, 2), `half the time; 20%: ${fmt(mc.lod.p20, 2)}, 5%: ${fmt(mc.lod.p05, 2)}`)}
         ${card("Model", esc(mc.model), `${mc.paths} paths x ${mc.steps} steps, ${fmt(mc.minutes_left, 0)} min left, remaining 1 sd ${fmt(mc.sigma_remaining, 1)} pts`)}</div>
@@ -113,6 +139,17 @@ Object.assign(R, {
     $("qgo").onclick = go; $("qmodel").onchange = go; $("qstop").onkeydown = e => { if (e.key === "Enter") go(); };
     wirePine("qpine", "qpinedl");
     if (mc.available) {
+      const k = D.ratio || 1, f = mc.fan, t0 = new Date(m.calculated_at || Date.now()).getTime(), tl = f.minutes.map(mn => new Date(t0 + mn * 60000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }));
+      const tr = f.paths.map(pth => ({ type: "scatter", mode: "lines", x: tl, y: pth.map(v => v * k), line: { width: 1, color: pth[pth.length - 1] >= f.start ? "rgba(63,185,106,.28)" : "rgba(229,83,75,.28)" }, hoverinfo: "skip", showlegend: false }));
+      const band = (key, dash, w, col, name) => ({ type: "scatter", mode: "lines", x: tl, y: f.bands[key].map(v => v * k), name, line: { dash, width: w, color: col }, hovertemplate: `${name} %{y:,.2f}<extra></extra>` });
+      tr.push(band("p05", "dash", 1.6, "#e6b422", "5% (low end)"), band("p95", "dash", 1.6, "#e6b422", "95% (high end)"), band("p25", "dot", 1.4, "#cfd6e0", "25%"), band("p75", "dot", 1.4, "#cfd6e0", "75%"), band("p50", "solid", 2.6, "#ffffff", "Middle path"));
+      const h = f.final_hist, mids = h.counts.map((_, i) => (h.lo + (i + 0.5) * h.width) * k);
+      tr.push({ type: "bar", orientation: "h", x: h.counts, y: mids, xaxis: "x2", yaxis: "y", marker: { color: mids.map(v => v >= f.start * k ? "#3fb96a" : "#e5534b") }, showlegend: false, hovertemplate: "%{x} paths finished near %{y:,.0f}<extra></extra>" });
+      const sp = f.start * k, st = mc.stop * k, r3 = 3 * st, hl = (y, col, txt) => ({ type: "line", xref: "paper", x0: 0, x1: 0.84, y0: y, y1: y, line: { color: col, width: 1, dash: "dash" }, label: { text: txt, font: { color: col, size: 10 }, textposition: "start" } });
+      plot("qfan", tr, LAY(`Monte Carlo: ${mc.paths} possible paths to the close`, { showlegend: true, legend: { orientation: "h", y: -0.12 }, hovermode: "closest",
+        xaxis: { domain: [0, 0.84], gridcolor: "#1c2229", type: "category", nticks: 10 }, xaxis2: { domain: [0.86, 1], showgrid: false, showticklabels: false, zeroline: false },
+        yaxis: { gridcolor: "#1c2229", tickformat: ",.0f", side: "left" },
+        shapes: [hl(sp, "#9aa3ad", "now"), hl(sp - st, "#e5534b", "long stop (-" + fmt(st, 2) + ")"), hl(sp + st, "#e5534b", "short stop (+" + fmt(st, 2) + ")"), hl(sp + r3, "#3fb96a", "long 3 R target"), hl(sp - r3, "#3fb96a", "short 3 R target")] }));
       const xs = mc.rows.map(r => r.r + " R");
       plot("qmc", [{ type: "bar", x: xs, y: mc.rows.map(r => r.long.win * 100), name: "Long", marker: { color: "#3fb96a" } },
         { type: "bar", x: xs, y: mc.rows.map(r => r.short.win * 100), name: "Short", marker: { color: "#e5534b" } },

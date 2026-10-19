@@ -33,6 +33,13 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.9
+
+- **HOD / LOD: moves we may encounter.** The path up and the path down through the key levels, each with its respect / chop / disrespect call, the chance of a touch and why; the chance of staying between the nearest levels until the close; and the data behind it (gamma regime, range used, time left, charm into the close, vanna, dealer delta, scheduled events) with what each means for the move.
+- **Charm and vanna in NQ points.** Every bar's hover shows the NQ price, the NDX strike and the size; the zones table has an NQ column. With no NQ price or basis saved, NQ prices are the fair value implied by the option chain (put-call parity carried to the futures expiry). The same conversion now feeds the HOD / LOD, Level map, Quant lab and Chart read tabs.
+- **Tap to control the charm and vanna charts.** They start locked so scrolling the page never gets caught by a chart; tap a chart to zoom or drag it, tap outside to lock it again. Hover works either way.
+- **Monte Carlo fan.** The Quant lab now draws the simulated paths to the close, the 5/25/50/75/95% bands, the stop and 3 R lines, and where all the paths finished.
+
 ## New in 1.8
 
 - **Chart read tab**: paste (Ctrl+V), drop or choose a screenshot of your TradingView chart and get it back marked up: every Q DATA level tagged RESPECT, CHOP or DISRESPECT, what your candles already did at each one, and projected candles after your last candle acting the calls out, plus a downloadable marked-up image. Claude reads the picture through your own Anthropic API key (add it once on the tab; it is stored only in your .env as ANTHROPIC_API_KEY, a few cents per read; CHART_READ_MODEL picks the model). Q DATA makes the calls from today's options data, the same way as the Level map.

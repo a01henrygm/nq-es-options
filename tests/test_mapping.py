@@ -76,3 +76,25 @@ def test_typed_basis_mapping_and_staleness():
     assert old["status"] == "stale" and old["mapped"] == pytest.approx(29884.5)
     etf = map_with_typed_basis(500.0, "QQQ", 500.0, 260.0, NOW, NOW)
     assert etf["status"] == "invalid" and etf["mapped"] is None
+
+
+def test_options_implied_fair_value_ratio():
+    """Put-call parity: a chain priced with a forward 0.5% above spot over 60 days gives that carry, extended to the futures expiry."""
+    import math
+    from datetime import date, datetime
+    from backend.models import OptionContract
+    from backend.services.analytics import year_fraction
+    from backend.services.mapping import implied_forward_ratio
+    from backend.timeutil import UTC
+    now, spot, exp = datetime(2026, 10, 14, 15, 0, tzinfo=UTC), 20000.0, date(2026, 12, 18)
+    T = year_fraction(exp, now)
+    fwd = spot * math.exp(0.03 * T)
+    cons = []
+    for k in (19900.0, 20000.0, 20100.0):
+        p = 300.0
+        c = p + fwd - k
+        cons += [OptionContract(ticker=f"C{k}", right="C", strike=k, expiry=exp, bid=c - 1, ask=c + 1),
+                 OptionContract(ticker=f"P{k}", right="P", strike=k, expiry=exp, bid=p - 1, ask=p + 1)]
+    r = implied_forward_ratio(cons, spot, now, exp)
+    assert abs(r["carry"] - 0.03) < 1e-6 and abs(r["ratio"] - math.exp(0.03 * (exp - now.date()).days / 365.25)) < 1e-4
+    assert implied_forward_ratio(cons, spot, now, None) is None

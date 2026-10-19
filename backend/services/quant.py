@@ -201,11 +201,16 @@ def monte_carlo(spot, sigma_rem, stop, rs=DEFAULT_RS, paths=None, minutes_left=3
     end_long, end_short = [], []                  # where the close left the trade when neither target nor stop was hit
     stopped_long, stopped_short = [], []
     highs, lows = [], []
-    for _ in range(paths):
+    every = max(1, steps // 60)                      # keep about 60 points of each path for the fan chart
+    marks = [i for i in range(steps) if (i + 1) % every == 0 or i == steps - 1]
+    track = {i: [] for i in marks}
+    keep, sample = [], min(150, paths)
+    for n_path in range(paths):
         p, mx, mn = spot, spot, spot
+        line = [spot] if n_path < sample else None
         best_l = best_s = 0.0
         sl = ss = False
-        for _ in range(steps):
+        for st in range(steps):
             q = p + (k * (mean - p) if k else 0.0) + sd * gauss(0, 1)
             d2 = (q - p) * (q - p)
             top = (p + q + sqrt(d2 - var2 * log(1.0 - rnd()))) / 2         # the step's high and low (Brownian bridge)
@@ -225,6 +230,12 @@ def monte_carlo(spot, sigma_rem, stop, rs=DEFAULT_RS, paths=None, minutes_left=3
                 elif spot - bot > best_s:
                     best_s = spot - bot
             p = q
+            if st in track:
+                track[st].append(p)
+                if line is not None:
+                    line.append(p)
+        if line is not None:
+            keep.append(line)
         hit_long.append(best_l)
         hit_short.append(best_s)
         stopped_long.append(sl)
@@ -247,9 +258,22 @@ def monte_carlo(spot, sigma_rem, stop, rs=DEFAULT_RS, paths=None, minutes_left=3
     highs.sort()
     lows.sort()
     q = lambda arr, f: arr[min(len(arr) - 1, int(f * len(arr)))]
+    t_min = [0.0] + [(i + 1) * step_min for i in marks]
+    bands = {}
+    for f in (0.05, 0.25, 0.5, 0.75, 0.95):
+        bands[f"p{int(f * 100):02d}"] = [spot] + [q(sorted(track[i]), f) for i in marks]
+    finals = sorted(track[marks[-1]])
+    lo_f, hi_f = finals[0], finals[-1]
+    nb = 40
+    width = (hi_f - lo_f) / nb or 1.0
+    hist = [0] * nb
+    for v in finals:
+        hist[min(nb - 1, int((v - lo_f) / width))] += 1
+    fan = {"minutes": t_min, "paths": [[round(v, 2) for v in ln] for ln in keep], "bands": {k2: [round(v, 2) for v in b] for k2, b in bands.items()},
+           "final_hist": {"lo": lo_f, "width": width, "counts": hist}, "start": spot}
     return {"available": True, "paths": paths, "steps": steps, "sigma_remaining": sigma_rem, "stop": stop, "rows": rows,
             "model": "pulled to the average (OU)" if k else "random walk", "half_life_minutes": half_life_minutes if k else None, "minutes_left": minutes_left,
-            "hod": {"p50": q(highs, 0.5), "p80": q(highs, 0.8), "p95": q(highs, 0.95)}, "lod": {"p50": q(lows, 0.5), "p20": q(lows, 0.2), "p05": q(lows, 0.05)},
+            "fan": fan, "hod": {"p50": q(highs, 0.5), "p80": q(highs, 0.8), "p95": q(highs, 0.95)}, "lod": {"p50": q(lows, 0.5), "p20": q(lows, 0.2), "p05": q(lows, 0.05)},
             "note": "No-clock is the textbook chance for a driftless walk with no time limit, 1 / (1 + R). The clock (the 16:00 close) and the "
                     "pull to the average are what move the odds away from it. A target and stop touched inside the same step count as a stop."}
 
@@ -342,3 +366,102 @@ def hodlod(open_px, hi, lo, spot, sigma_open, sigma_rem, ks=LADDER, walls=None):
             "note": "Ladder: the open +/- k standard deviations of the day (from the expected move at the open), fixed for the session. "
                     "Chance = how often a random walk touches that far: 2 x (1 - N(distance / sd)). 'Now' re-runs it from the current price with the "
                     "remaining expected move. Real days have fatter tails than this, especially in short gamma."}
+
+
+# ---- the moves we may encounter (HOD / LOD tab) ----------------------------------------------------------------------
+TYPICAL_RANGE_SD = 2 * math.sqrt(2 / math.pi)      # a random walk's average full-day range is about 1.6 standard deviations
+
+
+def stay_inside(x, lo, hi, sigma):
+    """Chance a driftless random walk starting at x stays strictly between lo and hi until the close (sigma = remaining 1 sd).
+    The classic two-barrier series: sum over odd n of 4/(n pi) sin(n pi u / L) exp(-(n pi sigma / L)^2 / 2)."""
+    if sigma is None or sigma <= 0 or not lo < x < hi:
+        return None
+    L, u = hi - lo, x - lo
+    tot = 0.0
+    for n in range(1, 400, 2):
+        term = 4 / (n * math.pi) * math.sin(n * math.pi * u / L) * math.exp(-0.5 * (n * math.pi * sigma / L) ** 2)
+        tot += term
+        if abs(term) < 1e-9:
+            break
+    return min(1.0, max(0.0, tot))
+
+
+def move_map(spot, hi, lo, open_px, sigma_open, sigma_rem, levels, state, greeks=None, events=None, mins_left=None, to_fut=None):
+    """What can happen from here: the path up and the path down through the levels (each with its call and touch chance), the
+    chance of staying between the nearest levels until the close, and the data behind it, each with what it means for the move."""
+    to_fut = to_fut or (lambda v: None)
+    if not sigma_rem or not sigma_open:
+        return {"available": False, "reason": "Needs the expected move (the session has closed or no expiry is priced)."}
+    above = sorted((l for l in levels if l["value"] > spot), key=lambda l: l["value"])[:4]
+    below = sorted((l for l in levels if l["value"] < spot), key=lambda l: -l["value"])[:4]
+    word = {"RESPECT": "should reject", "CHOP": "should stall and chop", "DISRESPECT": "should break and run"}
+
+    def chain(lv, d):
+        out, stop = [], None
+        for i, l in enumerate(lv):
+            dist = abs(l["value"] - spot)
+            row = {"price": l["value"], "futures": to_fut(l["value"]), "label": l["label"], "call": l["call"], "why": l["why"],
+                   "points": dist, "sd": dist / sigma_rem, "chance": touch_prob(dist, sigma_rem)}
+            if stop is None and l["call"] == "RESPECT":
+                stop = i
+                row["note"] = f"First level that {word['RESPECT']}: the likely {'high' if d > 0 else 'low'} of the day if price gets here."
+            elif stop is not None:
+                row["note"] = "Only in play if the level before it gives way."
+            elif l["call"] == "DISRESPECT":
+                row["note"] = "Price should go through this one; it adds speed toward the next level."
+            else:
+                row["note"] = "Expect overlap and two-way wicks here before price picks a side."
+            out.append(row)
+        return out
+    up, dn = chain(above, 1), chain(below, -1)
+    rng = None
+    if above and below:
+        p_in = stay_inside(spot, below[0]["value"], above[0]["value"], sigma_rem)
+        rng = {"low": below[0]["value"], "high": above[0]["value"], "low_futures": to_fut(below[0]["value"]), "high_futures": to_fut(above[0]["value"]),
+               "low_label": below[0]["label"], "high_label": above[0]["label"], "stay_inside": p_in}
+    used = (hi - lo) / sigma_open if hi is not None and lo is not None else None
+    drivers = []
+    if state == "short":
+        drivers.append({"name": "Gamma regime", "reading": "Short gamma (dealers short gamma at price)", "effect": "Dealers hedge with the move, so ranges tend to run past the expected move. Favour the break of the first level and aim far."})
+    elif state == "long":
+        drivers.append({"name": "Gamma regime", "reading": "Long gamma (dealers long gamma at price)", "effect": "Dealers hedge against the move, so moves fade at levels. Favour rejections and the range; keep targets small."})
+    else:
+        drivers.append({"name": "Gamma regime", "reading": "At the 0DTE flip" if state == "transition" else "Unknown", "effect": "The regime can switch on a small move. Wait for price to leave the flip."})
+    if used is not None:
+        frac = used / TYPICAL_RANGE_SD
+        drivers.append({"name": "Range used", "reading": f"{hi - lo:,.0f} points, {used:.2f} sd ({frac * 100:.0f}% of a typical day's range)",
+                        "effect": ("Most of a normal day's range is done; new highs or lows need extra fuel." if frac >= 0.9 else
+                                   "Plenty of range left for a normal day." if frac <= 0.5 else "About an average amount of range left.")})
+    drivers.append({"name": "Time left", "reading": f"{mins_left:.0f} minutes, 1 sd still to come = {sigma_rem:,.1f} points" if mins_left else f"1 sd = {sigma_rem:,.1f} points",
+                    "effect": "The chances below shrink as the clock runs: the same distance gets harder to reach later in the day."})
+    if greeks:
+        dr, t = greeks.get("drift_to_close") or 0.0, greeks.get("totals") or {}
+        if dr:
+            drivers.append({"name": "Charm into the close", "reading": f"Dealers {'sell' if dr > 0 else 'buy'} about ${abs(dr) / 1e9:,.2f} billion by 16:00 if price and IV hold",
+                            "effect": f"A {'downward' if dr > 0 else 'upward'} drift as the day goes on, strongest in the last hour. It {'helps the LOD side' if dr > 0 else 'helps the HOD side'}."})
+        if t.get("vanna"):
+            v = t["vanna"]
+            drivers.append({"name": "Vanna (IV moves)", "reading": f"If IV falls 1 point dealers {'buy' if v > 0 else 'sell'} about ${abs(v) / 1e9:,.2f} billion",
+                            "effect": f"A volatility crush (calm tape, after an event) pushes price {'up' if v > 0 else 'down'}; a volatility spike does the reverse."})
+        if t.get("dex"):
+            drivers.append({"name": "Dealer delta", "reading": f"Dealers net {'long' if t['dex'] > 0 else 'short'} ${abs(t['dex']) / 1e9:,.1f} billion",
+                            "effect": "Context for how much hedging is already on; large and one-sided positioning makes squeezes bigger."})
+    for e in events or []:
+        drivers.append({"name": "Scheduled event", "reading": f"{e['name']}{' ' + e['time'] + ' ET' if e.get('time') else ''}",
+                        "effect": "A big release can blow through any level and any regime. Expect the calls to be less reliable around it."})
+    up_first = next((r for r in up if r["call"] == "RESPECT"), up[-1] if up else None)
+    dn_first = next((r for r in dn if r["call"] == "RESPECT"), dn[-1] if dn else None)
+    summary = []
+    if up_first:
+        summary.append(f"Upside: the likely ceiling is {up_first['label'].split(' / ')[0]} at {up_first['price']:,.0f}" +
+                       (f" ({up_first['futures']:,.0f} futures)" if up_first.get("futures") else "") + f", a {up_first['chance'] * 100:.0f}% chance to be touched.")
+    if dn_first:
+        summary.append(f"Downside: the likely floor is {dn_first['label'].split(' / ')[0]} at {dn_first['price']:,.0f}" +
+                       (f" ({dn_first['futures']:,.0f} futures)" if dn_first.get("futures") else "") + f", a {dn_first['chance'] * 100:.0f}% chance to be touched.")
+    if rng and rng["stay_inside"] is not None:
+        pin = "under 1%" if rng["stay_inside"] < 0.005 else "over 99%" if rng["stay_inside"] > 0.995 else f"{rng['stay_inside'] * 100:.0f}%"
+        summary.append(f"A {pin} chance price stays between {rng['low']:,.0f} and {rng['high']:,.0f} until the close.")
+    return {"available": True, "up": up, "down": dn, "range": rng, "drivers": drivers, "summary": summary,
+            "note": "Chances use the remaining expected move and the running-maximum rule for a random walk; calls come from the gamma regime and the "
+                    "dealer gamma at each level (the Level map rules). Real days have fatter tails, especially in short gamma. Scenarios, not forecasts."}

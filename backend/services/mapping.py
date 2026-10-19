@@ -12,6 +12,7 @@ When enough paired observations are stored, evaluate_methods() measures how well
 futures price, so you can pick by measured error instead of assumption.
 """
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -158,3 +159,40 @@ def evaluate_methods(pairs: list) -> dict:
         out[k] = {"mae": sum(abs(e) for e in errs) / len(errs), "bias": sum(errs) / len(errs)}
     out["best"] = min(("ratio", "basis"), key=lambda k: out[k]["mae"])
     return out
+
+
+def implied_forward_ratio(contracts, spot, now, fut_expiry, near=3, min_days=3.0):
+    """Futures fair value / index, from the option chain itself (put-call parity), for index options (NDX -> NQ, SPX -> ES).
+
+    For each expiry: forward = strike + call mid - put mid at the strikes nearest price (median of a few). The carry
+    (financing minus dividends) is ln(forward / spot) / time. It is taken from the longest expiry at least `min_days` out and
+    extended to the futures contract's own expiry: ratio = exp(carry x time to the futures expiry). An ESTIMATE of fair value;
+    the traded futures price can sit a few points away from it. Returns {ratio, carry, from_expiry, futures_expiry} or None."""
+    from statistics import median
+    from .analytics import year_fraction
+    if not spot or not fut_expiry:
+        return None
+    by = {}
+    for c in contracts:
+        if c.bid and c.ask and c.ask >= c.bid > 0:
+            by.setdefault(c.expiry, {}).setdefault(c.strike, {})[c.right] = (c.bid + c.ask) / 2
+    best = None
+    for e, rows in by.items():
+        T = year_fraction(e, now)
+        if T * 365.25 < min_days:
+            continue
+        pairs = sorted((k for k, v in rows.items() if "C" in v and "P" in v), key=lambda k: abs(k - spot))[:near]
+        if len(pairs) < 2:
+            continue
+        fwd = median(k + rows[k]["C"] - rows[k]["P"] for k in pairs)
+        if fwd <= 0 or abs(fwd / spot - 1) > 0.05:
+            continue
+        if best is None or T > best[1]:
+            best = (fwd, T, e)
+    if best is None:
+        return None
+    carry = math.log(best[0] / spot) / best[1]
+    if not -0.05 <= carry <= 0.15:                       # outside any sensible financing-minus-dividend rate: the quotes are off
+        return None
+    Tf = max(0.0, (fut_expiry - now.date()).days / 365.25)
+    return {"ratio": math.exp(carry * Tf), "carry": carry, "from_expiry": best[2].isoformat(), "futures_expiry": fut_expiry.isoformat()}

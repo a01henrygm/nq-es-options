@@ -17,6 +17,7 @@ from .services import intraday as idy
 from .config import DATA
 from .services import behavior as bh
 from .services import chart_read as cr
+from .services import flows as fl
 from .services import quant as qt
 from .services.hodlod_pine import build_hodlod_pine
 from .services.mapping import FUTURES_FOR, INDEX_GROUP
@@ -117,17 +118,17 @@ def register(app, h):
             elif sig_open:
                 sig_rem = sig_open * (mins_left / 390) ** 0.5
         z = idy.zero_dte(snap.contracts, snap.spot, now, convention)
-        mapper, mapping = h.futures_mapper(u, snap, now, "auto")
+        to_f, finfo = h.futures_converter(u, snap, now)
+        mapping = {"futures_root": finfo.get("root")}
 
         def conv(v):
-            if v is None or not mapper:
+            if v is None or not to_f:
                 return None
-            r = mapper(v)
-            return r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None
+            return to_f(v)
         spot_f = conv(snap.spot)
         return {"snap": snap, "m": m, "now": now, "day": day, "rth": rth, "rows": rows, "open": open_px, "open_note": open_note, "hi": hi, "lo": lo,
                 "sig_open": sig_open, "sig_rem": sig_rem, "mins_left": mins_left, "z": z, "conv": conv, "spot_f": spot_f,
-                "root": mapping.get("futures_root"), "ratio": (spot_f / snap.spot) if spot_f else None,
+                "root": mapping.get("futures_root"), "ratio": (spot_f / snap.spot) if spot_f else None, "futures_info": finfo,
                 "gamma_series": [{"t": r["t"], "value": r["value"]} for r in series(u, "gamma0_at_spot", day)]}
 
     def step_minutes(rows):
@@ -144,6 +145,15 @@ def register(app, h):
         walls = {"call_wall": z.get("call_wall"), "put_wall": z.get("put_wall"), "flip": z.get("flip")} if z.get("available") else None
         d = qt.hodlod(c["open"], c["hi"], c["lo"], snap.spot, c["sig_open"], c["sig_rem"], walls=walls)
         pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        try:
+            _c, _pb, lv = calls_for(u, convention, c)
+            g = fl.greek_exposure(snap.contracts, snap.spot, c["now"], convention)
+            day_iso = c["day"].isoformat()
+            evs = [e for e in db.list_events(day_iso) if e["date"] == day_iso and e.get("importance") == "high"]
+            moves = qt.move_map(snap.spot, c["hi"], c["lo"], c["open"], c["sig_open"], c["sig_rem"], lv, pb["state"], g, evs, c["mins_left"],
+                                (lambda v: fut(c, v)) if c["spot_f"] is not None else None)
+        except HTTPException as e:
+            moves = {"available": False, "reason": str(e.detail)}
         if d.get("available"):
             for row in d["up"] + d["down"] + d["walls"]:
                 row["futures"] = fut(c, row["price"])
@@ -152,7 +162,7 @@ def register(app, h):
                     d["projection"][side + "_futures"] = {k: fut(c, v) for k, v in d["projection"][side].items()}
             d["open_futures"], d["high_futures"], d["low_futures"] = fut(c, d["open"]), fut(c, d["high"]), fut(c, d["low"])
             d["sigma_open_futures"] = d["sigma_open"] * c["ratio"] if c["ratio"] else None
-        return c, {"hodlod": d, "playbook": pb, "open_note": c["open_note"], "minutes_left": c["mins_left"], "futures_root": c["root"],
+        return c, {"hodlod": d, "playbook": pb, "moves": moves, "open_note": c["open_note"], "minutes_left": c["mins_left"], "futures_root": c["root"],
                    "mapped": c["spot_f"] is not None, "spot_futures": c["spot_f"]}
 
     @app.get("/api/analytics/hodlod")
@@ -262,8 +272,8 @@ def register(app, h):
                                           "coarser than TradingView's. Projected candles picture the calls; they are scenarios, not forecasts.")}
 
     # ---- chart read: a screenshot of your chart, marked up --------------------------------------------------------------
-    def calls_for(u, convention):
-        c = context(u, convention)
+    def calls_for(u, convention, c=None):
+        c = c or context(u, convention)
         snap, z, now = c["snap"], c["z"], c["now"]
         pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
         j = h.levels_payload(u, convention, "auto", None, key=14)

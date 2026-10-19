@@ -425,7 +425,15 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         m, _, now = meta(snap, {"convention": convention})
         g = fl.greek_exposure(cons, snap.spot, now, convention)
         zones = {k: fl.signed_zones(g["strikes"], k, snap.spot, 3) for k in ("charm", "vanna", "dex")}
-        return {"meta": m, "data": g, "zones": zones,
+        nq, fut = futures_converter(underlying_ok(underlying), snap, now)
+        if nq:
+            for s_ in g["strikes"]:
+                s_["nq"] = nq(s_["strike"])
+            for zs in zones.values():
+                for z in zs:
+                    z["nq_center"], z["nq_low"], z["nq_high"] = nq(z["center"]), nq(z["low"]), nq(z["high"])
+            fut["spot"] = nq(snap.spot)
+        return {"meta": m, "data": g, "zones": zones, "futures": fut,
                 "note": "Modeled estimates. The dealer side comes from the positioning assumption in Settings, not from observed positions."}
 
     @app.get("/api/analytics/activity")
@@ -491,6 +499,33 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
             return mp, mapping
         mapping["note"] = f"Enter a {root} price on the dashboard to see levels in futures points."
         return None, mapping
+
+    def futures_converter(u, snap, now):
+        """(convert, info): index price -> futures price. Your saved futures price or basis when there is one; otherwise the futures
+        fair value implied by the option chain (put-call parity carried to the futures contract's expiry). (None, info) if neither works."""
+        root = FUTURES_FOR.get(u)
+        info = {"root": root, "available": False}
+        if not root:
+            info["note"] = "This symbol has no futures contract mapped."
+            return None, info
+        mapper, mapping = futures_mapper(u, snap, now, "auto")
+        if mapper and mapper(snap.spot).get("mapped") is not None:
+            def conv(v):
+                r = mapper(v)
+                return r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None
+            info.update(available=True, method="your saved " + root + " price or basis")
+            return conv, info
+        if u in SAME_SCALE:
+            from .services.mapping import contract_expiry, implied_forward_ratio
+            fexp = contract_expiry(settings.futures_contracts.get(root, ""), now.date())
+            iv = implied_forward_ratio(snap.contracts, snap.spot, now, fexp)
+            if iv:
+                info.update(available=True, method="options-implied fair value", ratio=iv["ratio"], from_expiry=iv["from_expiry"], futures_expiry=iv["futures_expiry"],
+                            note=f"No {root} price or basis is saved, so {root} prices are the fair value implied by the option chain (put-call parity, "
+                                 f"carried to the {settings.futures_contracts.get(root, '')} expiry). The traded price can sit a few points away; save a basis on Key levels for exact prices.")
+                return (lambda v: v * iv["ratio"]), info
+        info["note"] = f"Save a {root} price or basis on the Key levels tab to see {root} prices."
+        return None, info
 
     _poi = {}
 
@@ -884,7 +919,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                                        oi_change=oi_change, reactions=reactions))
     from .api_quant import register as register_quant
     register_quant(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok,
-                                        futures_mapper=futures_mapper, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions))
+                                        futures_mapper=futures_mapper, futures_converter=futures_converter, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions))
 
     @app.middleware("http")
     async def never_serve_stale_pages(request, call_next):

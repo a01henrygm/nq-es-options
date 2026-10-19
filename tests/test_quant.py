@@ -96,7 +96,7 @@ def test_hodlod_and_quant_endpoints_on_a_simulated_day():
     assert j["data"]["playbook"]["state"] in ("short", "long", "transition") and j["price"]
     q = c.get("/api/analytics/quant", params={"underlying": "_NDX", "stop": 25}).json()["data"]
     assert q["playbook"]["state"] == j["data"]["playbook"]["state"]
-    assert q["monte_carlo"]["available"] and q["monte_carlo"]["stop"] == 25 and len(q["monte_carlo"]["rows"]) == 6
+    assert q["monte_carlo"]["available"] and abs(q["monte_carlo"]["stop_futures"] - 25) < 1e-9 and len(q["monte_carlo"]["rows"]) == 6
     assert not q["pca"]["available"] and "SPX" in q["pca"]["reason"]                     # only NDX is tracked in this simulation
     assert c.get("/api/analytics/quant", params={"underlying": "_NDX", "model": "nope"}).status_code == 422
 
@@ -116,3 +116,44 @@ def test_pine_builder_handles_missing_values():
     code = build_hodlod_pine(0, "weird", None, None, None, [], 'a "quoted" source', "units", datetime(2026, 10, 14, 9, 0, tzinfo=ET), date(2026, 10, 14), "_SPX")
     assert '_QD_STATE   = "unknown"' in code and "_QD_CALL    = na" in code and "array.from(0)" in code and 'array.from("none")' in code
     assert '"quoted"' not in code
+
+
+def test_stay_inside_matches_the_two_barrier_value():
+    assert abs(qt.stay_inside(100, 90, 110, 5) - 0.909) < 0.002                       # +/-2 sd box: about 91% never touch either side
+    assert qt.stay_inside(100, 90, 110, 0.5) > 0.999 and qt.stay_inside(100, 100, 110, 5) is None
+
+
+def test_monte_carlo_returns_a_fan_of_paths():
+    m = qt.monte_carlo(1000.0, 30.0, 5.0, minutes_left=200)
+    f = m["fan"]
+    assert len(f["paths"]) == 150 and len(f["paths"][0]) == len(f["minutes"]) and f["minutes"][0] == 0 and abs(f["minutes"][-1] - 200) < 1e-6
+    b = f["bands"]
+    assert b["p05"][-1] < b["p25"][-1] < b["p50"][-1] < b["p75"][-1] < b["p95"][-1]
+    assert abs((b["p95"][-1] - b["p05"][-1]) - 2 * 1.645 * 30) < 8                      # the 90% spread is about 3.3 sd
+    assert sum(f["final_hist"]["counts"]) == m["paths"]
+
+
+def test_move_map_walks_the_levels_with_reasons():
+    lv = [{"value": 1010.0, "label": "Call wall", "call": "DISRESPECT", "why": "a"}, {"value": 1020.0, "label": "Move zone", "call": "RESPECT", "why": "b"},
+          {"value": 990.0, "label": "Put wall", "call": "RESPECT", "why": "c"}]
+    g = {"drift_to_close": -2e9, "totals": {"vanna": 1e9, "dex": 5e9}}
+    mv = qt.move_map(1000.0, 1004.0, 996.0, 1000.0, 20.0, 15.0, lv, "long", g, [{"name": "CPI", "time": "08:30"}], 200, lambda v: v + 50)
+    assert [r["price"] for r in mv["up"]] == [1010.0, 1020.0] and mv["up"][1]["note"].startswith("First level that should reject")
+    assert mv["up"][0]["chance"] > mv["up"][1]["chance"] and mv["up"][0]["futures"] == 1060.0
+    assert mv["range"]["low"] == 990.0 and mv["range"]["high"] == 1010.0 and 0 < mv["range"]["stay_inside"] < 1
+    names = [d["name"] for d in mv["drivers"]]
+    assert names[:3] == ["Gamma regime", "Range used", "Time left"] and "Charm into the close" in names and "Scheduled event" in names
+    assert "upward" in next(d for d in mv["drivers"] if d["name"] == "Charm into the close")["effect"]
+    assert "Upside" in mv["summary"][0] and "Move zone" in mv["summary"][0]
+
+
+def test_charm_vanna_prices_come_in_futures_points():
+    c, db, now = simulated_day()
+    j = c.get("/api/analytics/greeks", params={"underlying": "_NDX"}).json()
+    assert j["futures"]["available"] and j["futures"]["root"] == "NQ" and "implied" in j["futures"]["method"]
+    s0 = j["data"]["strikes"][0]
+    assert abs(s0["nq"] / s0["strike"] - j["futures"]["ratio"]) < 1e-9 and j["futures"]["spot"]
+    z = next(z for zs in j["zones"].values() for z in zs)
+    assert z["nq_low"] <= z["nq_center"] <= z["nq_high"]
+    mv = c.get("/api/analytics/hodlod", params={"underlying": "_NDX"}).json()["data"]["moves"]
+    assert mv["available"] and mv["drivers"]

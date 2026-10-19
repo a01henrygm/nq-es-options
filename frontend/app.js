@@ -131,23 +131,37 @@ function showError(e) {
   ${e.last ? `<p class="dim">Last provider error: ${esc(e.last.kind)}: ${esc(e.last.message)}</p>` : ""}
   <p class="dim">Nothing is drawn when there is no real data. Open the Status tab for details.</p></div>`;
 }
-function plot(div, traces, layout) {
+function plot(div, traces, layout, opts) {
   const el = $(div);
   if (!window.Plotly) { el.textContent = "Chart library did not load (needs internet access for the chart script)."; return; }
   const key = S.tab + ":" + S.u + ":" + div, z = ZOOM[key], L = Object.assign({}, layout);
-  el._origLayout = layout; el._zkey = key;
+  el._origLayout = layout; el._zkey = key; el._gate = !!(opts && opts.gate);
+  const locked = el._gate && !el._live;
+  if (locked) L.dragmode = false;
   if (z) {
     if (z.x) L.xaxis = Object.assign({}, L.xaxis, { range: z.x, autorange: false });
     if (z.y) L.yaxis = Object.assign({}, L.yaxis, { range: z.y, autorange: false });
     if (z.cam) L.scene = Object.assign({}, L.scene, { camera: z.cam });
   }
   wrapChart(el);
-  Plotly.react(el, traces, L, PCFG).then(() => {
+  Plotly.react(el, traces, L, locked ? Object.assign({}, PCFG, { scrollZoom: false }) : PCFG).then(() => {
     if (!el._hooked) { el._hooked = true; hookChart(el); }
     const h = el.parentNode.querySelector(".zh");
-    if (h) h.textContent = el._fullLayout && el._fullLayout.scene ? "Drag to rotate. Scroll to zoom." : "Scroll to zoom. Drag to select an area. Double-click to reset.";
+    el.parentNode.classList.toggle("live", el._gate && !!el._live);
+    if (h) h.textContent = locked ? "Tap the chart to move or zoom it. Hover still shows the values." : el._gate ? "Chart unlocked: scroll to zoom, drag to select. Tap outside the chart to lock it again."
+      : el._fullLayout && el._fullLayout.scene ? "Drag to rotate. Scroll to zoom." : "Scroll to zoom. Drag to select an area. Double-click to reset.";
   });
+  if (el._gate && !el._gateHooked) {
+    el._gateHooked = true;
+    el.addEventListener("click", () => { if (!el._live) { el._live = true; plot(div, el.data, el._origLayout, { gate: true }); } });
+  }
 }
+document.addEventListener("click", e => {                 // tapping anywhere outside an unlocked chart locks it again
+  document.querySelectorAll(".chartwrap.live").forEach(w => {
+    const c = w.querySelector(".js-plotly-plot");
+    if (c && c._live && !w.contains(e.target)) { c._live = false; plot(c.id, c.data, c._origLayout, { gate: true }); }
+  });
+}, true);
 function wrapChart(el) {
   if (el.parentNode.classList.contains("chartwrap")) return;
   const w = document.createElement("div"); w.className = "chartwrap";
@@ -412,12 +426,14 @@ const R = {
         shapes, annotations: ann }));
   },
   async flows() {
-    const j = await api("/analytics/greeks", base()), d = j.data, m = j.meta, K = d.strikes.map(s => s.strike);
+    const j = await api("/analytics/greeks", base()), d = j.data, m = j.meta, F = j.futures || {}, nqOn = !!F.available, root = F.root || "NQ";
+    const K = d.strikes.map(s => nqOn ? s.nq : s.strike), ix = uName(S.u), px = nqOn ? F.spot : m.spot;
     const t = d.totals, dr = d.drift_to_close;
     const sideTxt = { charm: { positive: "dealers sell as time passes", negative: "dealers buy as time passes" }, vanna: { positive: "dealers buy if IV falls", negative: "dealers sell if IV falls" }, dex: { positive: "dealers long delta", negative: "dealers short delta" } };
     const zrows = ["charm", "vanna", "dex"].flatMap(k => j.zones[k].map(z => ({ k, ...z }))).sort((a, b) => b.center - a.center).map(z =>
       `<tr><td><span class="dot" style="background:${{ charm: { positive: "#e76f51", negative: "#2a9d8f" }, vanna: { positive: "#c77dff", negative: "#ffb703" }, dex: { positive: "#4cc9f0", negative: "#f72585" } }[z.k][z.side]}"></span>${{ charm: "Charm", vanna: "Vanna", dex: "Dealer delta" }[z.k]}</td>
-      <td class="num"><b>${fmt(z.center, 0)}</b><br><span class="dim">${fmt(z.low, 0)} to ${fmt(z.high, 0)}</span></td><td>${esc(sideTxt[z.k][z.side])}</td><td class="num">${big(z.magnitude)}</td></tr>`).join("");
+      <td class="num">${z.nq_center != null ? `<b>${fmt(z.nq_center, 2)}</b><br><span class="dim">${fmt(z.nq_low, 2)} to ${fmt(z.nq_high, 2)}</span>` : "-"}</td>
+      <td class="num">${fmt(z.center, 0)}<br><span class="dim">${fmt(z.low, 0)} to ${fmt(z.high, 0)}</span></td><td>${esc(sideTxt[z.k][z.side])}</td><td class="num">${big(z.magnitude)}</td></tr>`).join("");
     const vSent = t.vanna === 0 ? "" : `If IV falls 1 point, dealers would need to ${t.vanna > 0 ? "BUY" : "SELL"} about $${big(Math.abs(t.vanna))} of ${esc(S.u.replace(/^_/, ""))} to stay hedged (the reverse if IV rises).`;
     $("view").innerHTML = panel(`Charm and vanna, ${S.u}`, m, `<div class="grid">
       <div class="card ${dr > 0 ? "bear" : dr < 0 ? "bull" : ""}">Charm drift to the close<b>${dr === 0 ? "none" : (dr > 0 ? "Sell " : "Buy ") + "$" + big(Math.abs(dr))}</b><span class="dim">${fmt(d.hours_to_close, 1)} hours left</span></div>
@@ -426,11 +442,15 @@ const R = {
       <div class="card">Dealer delta now<b>$${big(t.dex)}</b><span class="dim">${t.dex > 0 ? "dealers net long" : "dealers net short"}</span></div></div>
       <div class="readout">${esc(d.drift_note)} ${vSent}</div>
       <div id="c1" class="chart"></div><div id="c2" class="chart"></div><div id="c3" class="chart"></div>
-      <h3>Zones</h3><div class="scroll"><table><tr><th>Kind</th><th>Strike (band)</th><th>What it means</th><th>Size</th></tr>${zrows || "<tr><td colspan=4>None</td></tr>"}</table></div>
+      ${nqOn ? `<p class="hint">Prices are shown as ${esc(root)} (${esc(F.method)}). Hover any bar for its ${esc(root)} price, the ${esc(ix)} strike and the size.${F.note ? " " + esc(F.note) : ""}</p>` : note(F.note || `Save a ${root} price or basis on the Key levels tab to see ${root} prices.`)}
+      <h3>Zones</h3><div class="scroll"><table><tr><th>Kind</th><th>${esc(root)} price (band)</th><th>${esc(ix)} strike (band)</th><th>What it means</th><th>Size</th></tr>${zrows || "<tr><td colspan=5>None</td></tr>"}</table></div>
       ${note(j.note)}<p class="hint">${esc(d.rules.charm)}</p><p class="hint">${esc(d.rules.vanna)}</p><p class="hint">${esc(d.rules.dex)} Contracts used: ${fmt(d.contracts_used)}. These zones are also level types on Key levels and in the TradingView paste text, each with its own settings group.</p>`);
-    const spotLine = [{ type: "line", xref: "x", yref: "paper", x0: m.spot, x1: m.spot, y0: 0, y1: 1, line: { color: "#ffd34d", dash: "dot" } }];
-    const bars = (div, key, title, pos, neg) => plot(div, [{ type: "bar", x: K, y: d.strikes.map(s => s[key]), marker: { color: d.strikes.map(s => s[key] >= 0 ? pos : neg) }, hovertemplate: "Strike %{x}<br>%{y:,.3s}<extra></extra>" }],
-      LAY(title, { shapes: spotLine, showlegend: false, xaxis: { title: "Strike", gridcolor: "#1E2840" }, yaxis: { gridcolor: "#1E2840", title: "$ delta" } }));
+    const spotLine = [{ type: "line", xref: "x", yref: "paper", x0: px, x1: px, y0: 0, y1: 1, line: { color: "#ffd34d", dash: "dot" } }];
+    const cd = d.strikes.map(s => [s.strike, s.nq]);
+    const hov = nqOn ? `<b>${root} %{customdata[1]:,.2f}</b><br>${ix} strike %{customdata[0]:,.0f}<br>%{y:,.3s}<extra></extra>` : `${ix} strike %{x:,.0f}<br>%{y:,.3s}<extra></extra>`;
+    const bars = (div, key, title, pos, neg) => plot(div, [{ type: "bar", x: K, y: d.strikes.map(s => s[key]), customdata: cd, marker: { color: d.strikes.map(s => s[key] >= 0 ? pos : neg) }, hovertemplate: hov }],
+      LAY(title, { shapes: spotLine, showlegend: false, hovermode: "closest", annotations: [{ x: px, y: 1, yref: "paper", text: `${nqOn ? root : ix} ${fmt(px, 2)}`, showarrow: false, yanchor: "bottom", font: { color: "#ffd34d", size: 11 } }],
+        xaxis: { title: nqOn ? `${root} price` : `${ix} strike`, gridcolor: "#1E2840", tickformat: ",.0f" }, yaxis: { gridcolor: "#1E2840", title: "$ delta" } }), { gate: true });
     bars("c1", "charm", "Charm by strike ($ delta per day; up = dealers sell as time passes)", "#e76f51", "#2a9d8f");
     bars("c2", "vanna", "Vanna by strike ($ delta per 1 IV point; up = dealers buy if IV falls)", "#c77dff", "#ffb703");
     bars("c3", "dex", "Dealer delta by strike ($ of underlying)", "#4cc9f0", "#f72585");
