@@ -362,3 +362,49 @@ Object.assign(R, {
       margin: { l: 60, r: 170, t: 40, b: 40 } }));
   }
 });
+
+// ---- Game plan (1.12): the whole team votes, the best two or three setups come out -------------------------------------
+const GRADECOL = { A: ["#0f6e56", "#9FE1CB"], B: ["#185FA5", "#B5D4F4"], C: ["#854f0b", "#FAC775"], "No trade": ["#5f5e5a", "#D3D1C7"] };
+Object.assign(R, {
+  async gameplan() {
+    const j = await api("/analytics/game-plan", { underlying: S.u, convention: $("conv").value }), m = j.meta;
+    if (!j.available) { $("view").innerHTML = panel(`Game plan, ${S.u}`, m, note(j.reason)); return; }
+    const root = j.futures_root || "NQ", nqOn = j.spot_futures != null, k = nqOn ? j.spot_futures / j.spot : 1, F = v => v == null ? "-" : fmt(v * k, 2), rg = j.regime;
+    const icon = v => v === true ? '<b style="color:#3fb96a">&#10003;</b>' : v === false ? '<b style="color:#e5534b">&#10007;</b>' : '<span class="dim">&ndash;</span>';
+    const gb = g => `<span style="background:${GRADECOL[g][0]};color:${GRADECOL[g][1]};padding:4px 12px;border-radius:6px;font-weight:800;font-size:1.1em">${g === "No trade" ? "NO TRADE" : "GRADE " + g}</span>`;
+    const card_ = (c, i) => {
+      const col = c.side === "LONG" ? "#3fb96a" : "#e5534b", stopPts = c.stop_dist * k, tgtPts = Math.abs(c.target - c.entry) * k;
+      return `<div class="gpcard" style="border-top:4px solid ${col}">
+        <div class="gphead">${gb(c.grade)}<span class="gpnum">#${i + 1}</span><b style="font-size:1.35em;color:${col}">${c.side} ${c.kind === "fade" ? "FADE" : "BREAK"}</b>
+          <span>at the ${esc(c.label)} ${c.source === "stack" ? `(${c.kinds}-kind stack, ${c.call === "RESPECT" ? "HOLD" : "BREAK"})` : `(${c.call === "RESPECT" ? "HOLD" : "BREAK"} level)`}</span></div>
+        <div class="gpnums">
+          <div><span class="dim">${c.kind === "fade" ? "Entry (limit at the level)" : "Entry (on a push through)"}</span><b>${F(c.entry)}</b></div>
+          <div><span class="dim">Stop</span><b style="color:#e5534b">${F(c.stop)}</b><span class="dim">${fmt(stopPts, 1)} pts</span></div>
+          <div><span class="dim">Target</span><b style="color:#3fb96a">${F(c.target)}</b><span class="dim">${fmt(tgtPts, 1)} pts = ${fmt(c.r, 1)} R</span></div>
+          <div><span class="dim">Price gets to the entry today</span><b>${pc0(c.chance)}</b></div>
+          <div><span class="dim">Target before stop and close</span><b>${c.p_win == null ? "-" : pc0(c.p_win)}</b><span class="dim">${c.ev_r == null ? "" : "average " + (c.ev_r >= 0 ? "+" : "") + fmt(c.ev_r, 2) + " R"}</span></div></div>
+        <div class="gpvotes"><b>The team: ${c.yes} for, ${c.no} against</b>
+          ${c.votes.map(v => `<div>${icon(v.vote)} <b>${esc(v.name)}</b> <span class="${v.vote == null ? "dim" : ""}">${esc(v.reason)}</span></div>`).join("")}</div>
+        <p class="dim" style="margin:8px 0 0">${esc(c.why)}</p></div>`;
+    };
+    const rc = j.record, ai = j.already_in;
+    const recRows = rc.by_grade.map(g => `<tr><td>${gb(g.grade)}</td><td class="num">${g.cards}</td><td class="num">${g.target}</td><td class="num">${g.stop}</td><td class="num">${g.open + g.not_filled}</td>
+      <td class="num"><b>${g.win_rate == null ? "-" : pc0(g.win_rate)}</b></td><td class="num">${g.avg_r == null ? "-" : (g.avg_r >= 0 ? "+" : "") + fmt(g.avg_r, 2) + " R"}</td></tr>`).join("");
+    const outc = { target: '<b style="color:#3fb96a">target</b>', stop: '<b style="color:#e5534b">stop</b>', open: "filled, still open", "not filled": '<span class="dim">not filled</span>' };
+    $("view").innerHTML = panel(`Game plan, ${S.u}`, m, `
+      <div class="msg" style="border-color:${rg.color};background:#0f1318"><b style="font-size:1.3em;color:${rg.color}">${esc(rg.title)}</b> <span class="dim">${esc(rg.tagline)} Targets ${esc(rg.r_range)}.</span>
+        <p style="margin:6px 0 0">Price ${F(j.spot)} ${nqOn ? esc(root) : ""} &middot; ${fmt(j.minutes_left, 0)} min left${ai ? ` &middot; high ${pc0(ai.high)} already in, low ${pc0(ai.low)} already in` : ""}</p></div>
+      ${j.cards.length ? `<h3>Top ${j.cards.length} setup${j.cards.length > 1 ? "s" : ""} right now</h3><div class="gpgrid">${j.cards.map(card_).join("")}</div>`
+        : `<h3>No trade right now</h3>${note(j.no_trade || "Nothing has more of the team for it than against it.")}`}
+      ${j.more.length ? `<details class="adv" data-k="gp-more"><summary>${j.more.length} more setup${j.more.length > 1 ? "s" : ""} (lower ranked)</summary><div class="body gpgrid">${j.more.map((c, i) => card_(c, i + 3)).join("")}</div></details>` : ""}
+      ${j.avoid.length ? `<h3>Stay away</h3><div class="scroll"><table><tr><th>Area</th><th>Why not</th></tr>${j.avoid.map(a => `<tr><td class="num"><b>${F(a.level ?? a.price)}</b><br><span class="dim">${esc(a.label)}</span></td>
+        <td>${a.reason ? esc(a.reason) : `${a.side} ${a.kind}: ${a.yes} for, ${a.no} against. ` + a.votes.filter(v => v.vote === false).map(v => esc(v.name + ": " + v.reason)).join("; ")}</td></tr>`).join("")}</table></div>` : ""}
+      <h3>Track record of the cards</h3>
+      ${rc.cards ? `<div class="scroll"><table><tr><th>Grade</th><th>Cards</th><th>Hit target</th><th>Hit stop</th><th>Open or not filled</th><th>Win rate</th><th>Average</th></tr>${recRows}</table></div>
+        <details class="adv" data-k="gp-recent"><summary>Latest cards and what happened</summary><div class="body scroll"><table><tr><th>Time</th><th>Card</th><th>Entry / stop / target</th><th>Result</th></tr>
+        ${rc.recent.map(r => `<tr><td>${esc(etx(r.t).slice(5, 16))}</td><td>${esc(r.grade)} ${esc(r.side)} ${esc(r.kind)}<br><span class="dim">${esc(r.label)}</span></td><td class="num">${F(r.entry)} / ${F(r.stop)} / ${F(r.target)}</td><td>${outc[r.outcome] || esc(r.outcome)}</td></tr>`).join("")}</table></div></details>
+        <p class="hint">${esc(rc.note)}</p>` : `<p class="dim">No cards logged yet. Every top card is saved once per half hour while the app runs and graded against what price did next.</p>`}
+      <details class="adv" data-k="gp-rule"><summary>How the team votes</summary><div class="body"><pre style="white-space:pre-wrap;font:inherit" class="dim">${esc(j.rule)}</pre></div></details>
+      <p class="hint">${esc(j.note)}</p>`);
+  }
+});

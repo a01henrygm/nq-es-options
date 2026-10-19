@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.12
+
+- **Game plan tab** (second in the menu). Every tool works as one team: each possible trade at the stacked areas and key levels gets a vote from the Coach (gamma regime), Scout (how stacked), Reach (chance price gets there), Timekeeper (is the high or low already in), Referee (mean-reversion test), Odds maker (Monte Carlo from the entry), 2nd opinion (NQ against ES), Clock (charm into the close) and Film room (how that level type has held). The best two or three come out as cards with entry, stop and target in NQ, the odds and a grade (A, B, C); areas to stay away from are listed with the reasons. Every top card is logged once per half hour and graded against what price did next, so the track record shows whether A cards really beat C cards. My own rules, not backtested.
+
 ## New in 1.11
 
 - **Stack map tab.** Every level the app makes goes in (GEX, walls, the gamma flip, open interest, volume, expected moves, charm, vanna, dealer delta, new positions, the HOD/LOD ladder and projections, yesterday's high, low and close, today's open, high and low, activity hot spots, your own levels). Only areas where several DIFFERENT kinds line up are shown, on a chart and as a list with the HOLD / CHOP / BREAK call, the plan and the chance price gets there. A kind counts once, so a stack means different reasons lining up.

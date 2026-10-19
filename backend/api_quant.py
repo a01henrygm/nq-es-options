@@ -18,6 +18,7 @@ from .config import DATA
 from .services import behavior as bh
 from .services import chart_read as cr
 from .services import flows as fl
+from .services import gameplan as gp
 from .services import stack as sk
 from .services import quant as qt
 from .services.hodlod_pine import build_hodlod_pine
@@ -582,3 +583,131 @@ def register(app, h):
                            "tolerance_points": tol, "min_families": min_families},
                 "price": [{"t": iso(t), "price": p} for t, p in c["rows"]], "rule": sk.RULE,
                 "note": "Only areas where at least " + str(min_families) + " different kinds of levels sit within " + f"{tol:,.0f}" + " points of each other are shown. Not backtested."}
+
+    # ---- game plan: every tool votes, the best two or three setups come out -------------------------------------------
+    GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "No trade": 3}
+
+    @app.get("/api/analytics/game-plan")
+    def game_plan(underlying: str, convention: str = "standard"):
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = context(u, convention)
+        snap, now = c["snap"], c["now"]
+        spot, sig_o, sig_r = snap.spot, c["sig_open"], c["sig_rem"]
+        if not sig_o or not sig_r or c["mins_left"] <= 0:
+            return {"meta": c["m"], "available": False, "reason": "The game plan runs during the regular session (9:30 to 16:00 ET) when the expected move is priced."}
+        sm = stack_map(u, convention, 3, 0.05)
+        lm = level_map(u, convention, 40)
+        src = c["rth"] if len(c["rth"]) >= 30 else c["rows"]
+        mr = qt.mean_reversion([p for _, p in src], step_minutes(src))
+        sib = sibling(u)
+        if sib:
+            nq_first = INDEX_GROUP.get(u) == "Nasdaq 100"
+            al = qt.align(c["rows"], day_rows(sib, c["day"]))
+            pc = qt.pca_pair(al if nq_first else [(t, y, x) for t, x, y in al])
+        else:
+            pc = {"available": False}
+        drift = fl.greek_exposure(snap.contracts, spot, now, convention).get("drift_to_close")
+        try:
+            rec_all = {r["category"]: r for r in h.reactions(u, 30, 0.05)["summary"]}
+        except HTTPException:
+            rec_all = {}
+        state = lm["regime"]["state"]
+        cands = []
+        for st in sm["stacks"]:
+            cands.append({"price": st["center"], "low": st["low"], "high": st["high"], "call": st["call"], "kinds": len(st["families"]),
+                          "label": " / ".join(st["family_names"][:3]) + (" +" + str(len(st["family_names"]) - 3) if len(st["family_names"]) > 3 else ""),
+                          "why": st["why"], "cats": [m["category"] for m in st["members"]], "source": "stack"})
+        tol = 0.0005 * spot
+        singles = sorted((l for l in lm["levels"] if (l.get("chance") or 0) >= 0.08 and not any(abs(l["value"] - x["price"]) <= tol for x in cands)),
+                         key=lambda l: -((l.get("chance") or 0) * (0.3 + l["strength"])))
+        for l in singles[:max(0, 6 - len(cands))]:
+            cands.append({"price": l["value"], "low": l.get("low") or l["value"], "high": l.get("high") or l["value"], "call": l["call"], "kinds": 1,
+                          "label": l["label"], "why": l["why"], "cats": [l["category"]], "source": "level"})
+        prices = sorted({x["price"] for x in cands} | {l["value"] for l in lm["levels"]})
+        pull = state == "long" and mr.get("significant")
+        cards, avoid = [], []
+        for cd in cands:
+            t = gp.trade_for(cd, spot, sig_o, prices)
+            if t is None:
+                avoid.append({**cd, "reason": "CHOP: expect two-way trade here, no edge either way.", "futures": c["conv"](cd["price"])})
+                continue
+            if (t["entry"] - spot) * (1 if cd["price"] > spot else -1) < 0:
+                continue
+            mc = qt.monte_carlo(t["entry"], sig_r, t["stop_dist"], rs=(round(t["r"], 2),), paths=600, minutes_left=c["mins_left"],
+                                half_life_minutes=mr.get("half_life_minutes") if pull else None, mean=mr.get("mean") if pull else None)
+            row = mc["rows"][0][t["side"].lower()] if mc.get("available") else None
+            rec = None
+            for cat in cd["cats"]:
+                r_ = rec_all.get(cat)
+                if r_ and r_.get("measured_30") and (rec is None or r_["measured_30"] > rec["n"]):
+                    rec = {"held_pct": r_["held_pct_30"], "n": r_["measured_30"]}
+            ctx = {"state": state, "already_in": sm["already_in"], "mr": mr, "pca": pc, "drift": drift, "record": rec,
+                   "chance": qt.touch_prob(abs(t["entry"] - spot), sig_r), "ev_r": row["ev_r"] if row else None, "p_win": row["win"] if row else None}
+            votes = gp.votes_for(t, cd, ctx)
+            g, yes, no = gp.grade(votes)
+            card = {**t, "grade": g, "yes": yes, "no": no, "votes": [{"name": n, "vote": v, "reason": r} for n, v, r in votes],
+                    "level": cd["price"], "label": cd["label"], "call": cd["call"], "kinds": cd["kinds"], "source": cd["source"], "why": cd["why"],
+                    "chance": ctx["chance"], "p_win": ctx["p_win"], "ev_r": ctx["ev_r"],
+                    "f": {k_: c["conv"](t[k_]) for k_ in ("entry", "stop", "target")}, "stop_points_f": c["conv"](t["entry"]) - c["conv"](t["entry"] - t["stop_dist"]) if c["spot_f"] else None}
+            (cards if g != "No trade" else avoid).append(card)
+        cards.sort(key=lambda x: (GRADE_ORDER[x["grade"]], -(x["yes"] - x["no"]), -(x["chance"] or 0)))
+        top = cards[:3]
+        day = c["day"].isoformat()
+        block = to_et(now).hour * 2 + to_et(now).minute // 30
+        for cd in top:                                       # log each card once per half hour so the record can grade it later
+            key = f"gp:{u}:{day}:{block}:{cd['side']}:{round(cd['entry'])}"
+            if not db.get_meta(key):
+                db.save_metric(snap.snapshot_id, u, "game_plan_card", cd["yes"] - cd["no"],
+                               {k_: cd[k_] for k_ in ("grade", "side", "kind", "entry", "stop", "target", "r", "label", "call")}, now)
+                db.set_meta(key, "1")
+        no_trade_reason = None
+        if not top:
+            no_trade_reason = ("No setup has more of the team for it than against it right now. " +
+                               ("; ".join(f"{a.get('side', 'Area')} at {a.get('level', a.get('price')):,.0f}: " + ", ".join(v["reason"] for v in a.get("votes", []) if v["vote"] is False)[:200]
+                                          for a in avoid[:2] if a.get("votes")) or "The nearby areas are CHOP."))
+        return {"meta": c["m"], "available": True, "cards": top, "more": cards[3:6], "avoid": avoid[:5], "no_trade": no_trade_reason,
+                "regime": {k_: lm["regime"][k_] for k_ in ("state", "title", "tagline", "color", "r_range")}, "already_in": sm["already_in"],
+                "spot": spot, "spot_futures": c["spot_f"], "futures_root": c["root"], "minutes_left": c["mins_left"], "record": game_record(u),
+                "rule": gp.RULE, "note": "The team's votes use my own thresholds and are not backtested. The record below grades every logged card against what price did next."}
+
+    def game_record(u):
+        rows = db.metric_series(u, "game_plan_card", limit=3000)
+        if not rows:
+            return {"cards": 0, "by_grade": [], "recent": []}
+        px_all = []
+        for r in db.price_history(u, 20000):
+            t = parse_ts(r["source_ts"] or r["retrieved_at"])
+            if t:
+                px_all.append((t, r["price"]))
+        px_all.sort()
+        res, by = [], {}
+        for r in rows:
+            d = r["detail"] or {}
+            t0 = parse_ts(r["t"])
+            if not t0 or "entry" not in d:
+                continue
+            close = datetime.combine(to_et(t0).date(), RTH_CLOSE, ET)
+            after = [(t, p) for t, p in px_all if t0 < t <= close]
+            o = gp.outcome(d, after)
+            res.append({"t": r["t"], **d, "outcome": o})
+            g = by.setdefault(d.get("grade", "?"), {"grade": d.get("grade", "?"), "cards": 0, "target": 0, "stop": 0, "open": 0, "not_filled": 0, "r_sum": 0.0})
+            g["cards"] += 1
+            if o == "target":
+                g["target"] += 1
+                g["r_sum"] += d.get("r") or 0
+            elif o == "stop":
+                g["stop"] += 1
+                g["r_sum"] -= 1
+            elif o == "open":
+                g["open"] += 1
+            else:
+                g["not_filled"] += 1
+        for g in by.values():
+            done = g["target"] + g["stop"]
+            g["win_rate"] = g["target"] / done if done else None
+            g["avg_r"] = g["r_sum"] / done if done else None
+        return {"cards": len(res), "by_grade": sorted(by.values(), key=lambda g: GRADE_ORDER.get(g["grade"], 9)), "recent": res[-15:][::-1],
+                "note": "Each card is logged once per half hour. Filled = price reached the entry after the card was made; then whichever of the target or stop came first. "
+                        "Uses the app's stored prices (about every 2 minutes), so very fast moves can be judged loosely. Needs weeks of cards to mean anything."}
