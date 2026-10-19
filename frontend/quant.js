@@ -164,53 +164,34 @@ const CALLCOL = { RESPECT: ["#0f6e56", "#9FE1CB", "#5DCAA5"], CHOP: ["#854f0b", 
 const CALLWORD = { RESPECT: "rejects", CHOP: "chops", DISRESPECT: "breaks" };
 Object.assign(R, {
   async levelmap() {
-    const tf = S.lmtf || 2, j = await api("/charts/level-map", { underlying: S.u, convention: $("conv").value, tf }), m = j.meta;
-    const fut = S.lmfut && j.mapped && j.ratio, k = fut ? j.ratio : 1, root = j.futures_root || "fut", unit = fut ? root : uName(S.u);
-    const pf = v => fmt(v * k, 2), rg = j.regime, P = j.projection;
-    const ctl = `<div class="toolbar">
-      <label>Candles<select id="lmtf"><option value="1">1 min</option><option value="2">2 min</option><option value="5">5 min</option><option value="10">10 min</option></select></label>
-      <label><input type="checkbox" id="lmalt" ${S.lmalt !== false ? "checked" : ""}> Alternate path</label>
-      <label title="${j.mapped ? "" : "Save a futures price or basis to convert"}"><input type="checkbox" id="lmfut" ${fut ? "checked" : ""} ${j.mapped ? "" : "disabled"}> ${esc(root)} points</label>
-      <span class="dim">Solid = real, outlined = projected. Each level's tag is what price should do there.</span></div>`;
-    const pill = c => `<span style="background:${CALLCOL[c][0]};color:${CALLCOL[c][1]};padding:2px 8px;border-radius:4px;font-weight:600;font-size:.85em;white-space:nowrap">${c}</span>`;
-    const rows = j.levels.map(l => `<tr><td class="num"><b>${pf(l.value)}</b>${l.low != null ? `<br><span class="dim">${pf(l.low)} to ${pf(l.high)}</span>` : ""}</td>
-      <td>${esc(l.label)}<br><span class="dim">${l.side} price, ${fmt(Math.abs(l.value - j.spot) * k, 1)} pts</span></td><td>${pill(l.call)}</td>
-      <td><span class="share"><i style="width:${Math.round(l.strength * 100)}%;background:${CALLCOL[l.call][2]}"></i></span></td>
-      <td class="dim">${esc(l.why)}</td>
-      <td class="num">${l.record ? `${pct(l.record.held_pct)} held<br><span class="dim">${l.record.n} touches${l.record.enough ? "" : ", small sample"}</span>` : '<span class="dim">no touches logged yet</span>'}</td></tr>`).join("");
-    const ev = P.main ? P.main.events.map(e => `${CALLWORD[e.call]} at ${pf(e.value)} (${esc(e.label.split(" / ")[0])})`).join(", then ") : "";
-    $("view").innerHTML = panel(`Level map, ${S.u}`, m, `${ctl}
-      <div class="msg" style="border-color:${rg.color};background:#0f1318"><b style="font-size:1.4em;color:${rg.color}">${esc(rg.title)}</b> <span class="dim">${esc(rg.tagline)}</span>
-        ${ev ? `<p style="margin:6px 0 0">Main path: ${ev}.</p>` : ""}</div>
-      <div id="lmc" class="chart" style="height:620px"></div>
-      <h3>What each level should do</h3><div class="scroll"><table><tr><th>Price (${esc(unit)})</th><th>Level</th><th>Call</th><th>Strength</th><th>Why</th><th>Track record</th></tr>${rows || '<tr><td colspan="6" class="dim">No key levels within 1.5% of price.</td></tr>'}</table></div>
+    const j = await api("/charts/level-map", { underlying: S.u, convention: $("conv").value }), m = j.meta, rg = j.regime, root = j.futures_root || "NQ", ix = uName(S.u);
+    const nqOn = j.spot_futures != null, F = v => v == null ? "-" : fmt(v, 2);
+    const flt = S.lmcall || "ALL", near = S.lmnear !== false;
+    const keep = l => (flt === "ALL" || l.call === flt) && (!near || l.chance == null || l.chance >= 0.03);
+    const pill = c => `<span style="background:${CALLCOL[c][0]};color:${CALLCOL[c][1]};padding:3px 10px;border-radius:4px;font-weight:700;font-size:.85em;white-space:nowrap">${c}</span>`;
+    const row = l => `<div class="lmrow" style="border-left:4px solid ${CALLCOL[l.call][2]}">
+      <div class="lmprice"><b>${nqOn ? F(l.futures) : F(l.value)}</b><span class="dim">${nqOn ? `${esc(ix)} ${fmt(l.value, 0)}` : esc(ix)}</span>
+        <span class="dim">${l.points > 0 ? "+" : ""}${fmt(l.points * (nqOn ? j.spot_futures / j.spot : 1), 1)} pts${l.sd != null ? `, ${fmt(l.sd, 2)} sd` : ""}</span></div>
+      <div class="lmbody"><div>${pill(l.call)} <b>${esc(l.headline)}</b> <span class="dim">at ${esc(l.label)}</span></div>
+        <p>${esc(l.plan)}</p><p class="dim">${esc(l.why)}${l.record ? ` Track record: held ${pct(l.record.held_pct)} of ${l.record.n} logged touches${l.record.enough ? "" : " (small sample)"}.` : ""}</p></div>
+      <div class="lmchance"><span class="dim">Chance price gets there today</span><b>${l.chance == null ? "-" : pc0(l.chance)}</b>
+        <span class="share"><i style="width:${Math.round((l.chance || 0) * 100)}%;background:${CALLCOL[l.call][2]}"></i></span></div></div>`;
+    const above = j.levels.filter(l => l.value > j.spot && keep(l)), below = j.levels.filter(l => l.value <= j.spot && keep(l));
+    const hidden = j.levels.length - above.length - below.length;
+    const btn = (v, t) => `<button class="${flt === v ? "go" : ""}" data-lm="${v}">${t}</button>`;
+    $("view").innerHTML = panel(`Level map, ${S.u}`, m, `
+      <div class="msg" style="border-color:${rg.color};background:#0f1318"><b style="font-size:1.4em;color:${rg.color}">${esc(rg.title)}</b> <span class="dim">${esc(rg.tagline)} Targets ${esc(rg.r_range)}.</span>
+        <p style="margin:6px 0 0">${j.levels.length} levels: <b style="color:${CALLCOL.RESPECT[2]}">${j.counts.RESPECT} should hold</b>, <b style="color:${CALLCOL.CHOP[2]}">${j.counts.CHOP} should chop</b>, <b style="color:${CALLCOL.DISRESPECT[2]}">${j.counts.DISRESPECT} should break</b>.</p></div>
+      <div class="toolbar"><span class="actions">${btn("ALL", "All levels")}${btn("RESPECT", "Hold")}${btn("CHOP", "Chop")}${btn("DISRESPECT", "Break")}</span>
+        <label><input type="checkbox" id="lmnear" ${near ? "checked" : ""}> Only levels price can reach today (3%+ chance)</label>
+        <span class="dim">${nqOn ? `Prices in ${esc(root)} (${esc((j.futures_info || {}).method || "")}).` : `Prices in ${esc(ix)}.`}${hidden ? ` ${hidden} hidden by the filters.` : ""}</span></div>
+      <div class="lm">${above.map(row).join("")}
+        <div class="lmnow"><b>PRICE NOW ${nqOn ? F(j.spot_futures) : F(j.spot)}</b><span class="dim">${nqOn ? `${esc(ix)} ${fmt(j.spot, 2)}, ` : ""}${fmt(j.minutes_left, 0)} min left${j.sigma_remaining ? `, 1 sd still to come about ${fmt(j.sigma_remaining * (nqOn ? j.spot_futures / j.spot : 1), 0)} pts` : ""}</span></div>
+        ${below.map(row).join("")}</div>
       <details class="adv" data-k="lm-rule"><summary>How the calls are made</summary><div class="body"><pre style="white-space:pre-wrap;font:inherit" class="dim">${esc(j.rule)}</pre></div></details>
       <p class="hint">${esc(j.note)}</p>`);
-    $("lmtf").value = String(tf);
-    $("lmtf").onchange = () => { S.lmtf = +$("lmtf").value; saveUI(); render(); };
-    $("lmalt").onchange = () => { S.lmalt = $("lmalt").checked; saveUI(); render(); };
-    $("lmfut").onchange = () => { S.lmfut = $("lmfut").checked; saveUI(); render(); };
-    const hm = t => etx(t).slice(11, 16), C = j.candles, T = C.map(c => hm(c.t));
-    const cs = (name, t, arr, inc, dec, op, fill) => ({ type: "candlestick", name, x: t, open: arr.map(c => c.o * k), high: arr.map(c => c.h * k), low: arr.map(c => c.l * k), close: arr.map(c => c.c * k),
-      increasing: { line: { color: inc, width: 1 }, fillcolor: fill ? inc : "rgba(0,0,0,0)" }, decreasing: { line: { color: dec, width: 1 }, fillcolor: fill ? dec : "rgba(0,0,0,0)" }, opacity: op, whiskerwidth: 0, hoverinfo: "x+y" });
-    const tr = [];
-    if (C.length) tr.push(cs("Real", T, C, "#1D9E75", "#E24B4A", 1, true));
-    const PT = P.times.map(hm);
-    if (P.alt && S.lmalt !== false) tr.push(cs("Alternate", PT.slice(0, P.alt.candles.length), P.alt.candles, "#8a8f98", "#5f5e5a", 0.45, false));
-    if (P.main) tr.push(cs("Projected", PT.slice(0, P.main.candles.length), P.main.candles, "#5DCAA5", "#F09595", 0.95, false));
-    const sh = [], an = [];
-    j.levels.forEach(l => {
-      const col = CALLCOL[l.call][2];
-      if (l.low != null && l.high > l.low && (l.high - l.low) / j.spot < 0.0025) sh.push({ type: "rect", xref: "paper", x0: 0, x1: 1, y0: l.low * k, y1: l.high * k, fillcolor: col, opacity: 0.07, line: { width: 0 } });
-      sh.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: l.value * k, y1: l.value * k, line: { color: col, width: 1.4, dash: l.call === "CHOP" ? "dash" : "solid" } });
-      an.push({ xref: "paper", x: 1, xanchor: "left", y: l.value * k, text: `<b>${l.call}</b> ${pf(l.value)}`, showarrow: false, font: { color: CALLCOL[l.call][1], size: 11 }, bgcolor: CALLCOL[l.call][0], borderpad: 3 });
-      an.push({ xref: "paper", x: 0.005, xanchor: "left", y: l.value * k, yanchor: "bottom", text: esc(l.label.split(" / ")[0]), showarrow: false, font: { color: col, size: 10 } });
-    });
-    if (P.main) P.main.events.forEach(e => { const t = PT[e.i]; if (t) an.push({ x: t, y: e.value * k, text: CALLWORD[e.call], showarrow: true, arrowhead: 0, ax: 0, ay: e.call === "RESPECT" ? -28 : 28, font: { color: CALLCOL[e.call][1], size: 11 }, arrowcolor: CALLCOL[e.call][2] }); });
-    if (T.length) sh.push(vline(T[T.length - 1], "#9aa3ad", "dot"));
-    if (j.open) sh.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: j.open * k, y1: j.open * k, line: { color: "#c7a96b", width: 1, dash: "dot" } });
-    plot("lmc", tr, LAY(`${uName(S.u)} ${tf}m${fut ? ` in ${root} points` : ""}`, { shapes: sh, annotations: an, showlegend: true, legend: { orientation: "h", y: 1.06, x: 0.35 },
-      xaxis: { rangeslider: { visible: false }, gridcolor: "#1c2229", type: "category", nticks: 14, tickangle: 0 }, yaxis: { side: "right", gridcolor: "#1c2229", tickformat: ",.0f" }, margin: { l: 10, r: 150, t: 40, b: 40 } }));
+    document.querySelectorAll("[data-lm]").forEach(b => b.onclick = () => { S.lmcall = b.dataset.lm; saveUI(); render(); });
+    $("lmnear").onchange = () => { S.lmnear = $("lmnear").checked; saveUI(); render(); };
   }
 });
 

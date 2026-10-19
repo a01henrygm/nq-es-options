@@ -16,8 +16,8 @@ const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
 const pickIdx = (n, m) => n <= m ? [...Array(n).keys()] : [...new Set([...Array(m).keys()].map(i => Math.round(i * (n - 1) / (m - 1))))];
 const cleanNote = c => `Cleaning: ${esc(c.method)} Used ${fmt(c.stats.used)} contracts; dropped ${fmt(c.stats.zero_bid)} with zero bid, ${fmt(c.stats.wide_spread)} with wide spreads, ${fmt(c.stats.no_iv)} without IV, ${fmt(c.stats.bad_iv)} with out-of-range IV, ${fmt(c.stats.itm_skipped)} in-the-money.`;
-const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", hmm: "oi_change", hmx: "8", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext", "charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, qstop: null, qmodel: "auto", lmtf: 2, lmalt: true, lmfut: true, zoom: 1, det: {}, touch: 0 };
-const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "hmm", "hmx", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "qstop", "qmodel", "lmtf", "lmalt", "lmfut", "zoom"];
+const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", hmm: "oi_change", hmx: "8", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext", "charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, qstop: null, qmodel: "auto", lmcall: "ALL", lmnear: true, hday: "", hmet: "total_net_gex", zoom: 1, det: {}, touch: 0 };
+const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "hmm", "hmx", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "qstop", "qmodel", "lmcall", "lmnear", "hmet", "zoom"];
 function loadUI() {
   try {
     const j = JSON.parse(localStorage.getItem("nqes.ui") || "{}");
@@ -68,7 +68,7 @@ const HELP = {
   levels: ["The short list of price levels and zones that matter most right now, built from option positioning. A zone is a band of neighbouring strikes, not a single price.", "Each row is one level or zone, highest price first. Score is how important it ranks (size x type x closeness to price). Use Show to switch between the most important, the closest to price, or everything. Copy the paste text into the TradingView indicator to draw them. These are estimates from delayed data, not signals."],
   bias: ["A scorecard of what option positioning leans toward today: bullish, bearish or mixed, and how much to trust that reading.", "Each row is one clue with its own lean; the verdict is their total. It describes positioning, not a forecast. Event days and stale data lower the trust."],
   regime: ["Is today likely to be a pinned, mean-reverting day or one that can trend and expand? A scorecard that combines the gamma flip, volatility level and shape, skew, how much price has already moved, and scheduled events.", "Each row is one measure with its own lean (calm, neutral or unstable); the label is just their total, with the rule shown below. A tendency of how option hedging behaves, not a forecast of direction. The thresholds are my own and not backtested, and the volatility comparison gets better after about 10 sessions of stored history."],
-  levelmap: ["A candle chart of the session with every key level tagged by what price should do there: RESPECT (test and reject), CHOP (stall and swing around it) or DISRESPECT (close through and run to the next level). Outlined candles after the last real one act the calls out.", "The call comes from the 0DTE gamma regime and the dealer gamma at each level: long gamma with positive gamma at a level means respect, negative gamma means price moves through, the gamma flip means chop. The track record column is how often that level type held in this app's own touch log. The grey path is the alternate: the same walk with the first level going the other way. Candles are built from the prices the app stores (about every 2 minutes, delayed), so they are coarser than TradingView. Scenarios, not forecasts."],
+  levelmap: ["Every key level from highest to lowest, with what price should do when it gets there: HOLD (respect it and reject), CHOP (stall and swing around it) or BREAK (go through it and run to the next level), plus the chance price gets there today.", "Each row reads like a plan: what to expect at the level, where the fade or the break should go next, and why. The call comes from the 0DTE gamma regime and the dealer gamma at that level. Chance = how often price reaches that far before the close, from the remaining expected move. Use the buttons to show only one kind of call. Track record = how often that level type held in this app's own touch log. Scenarios, not forecasts."],
   chartread: ["Drop a screenshot of your TradingView chart and get it back marked up: every Q DATA level tagged RESPECT, CHOP or DISRESPECT, what the candles on your chart have already done at each one, and projected candles after your last candle acting the calls out.", "Claude reads the picture (the price scale, your last candle, what price did at each level) through your own Anthropic API key, a few cents per read. Q DATA makes the calls from today's options data, the same way as the Level map tab. Keep the price scale visible. A screenshot is one moment: send a new one when price moves or the regime flips. Scenarios, not forecasts."],
   hodlod: ["The projected high and low of the day: a ladder of levels from the 9:30 open at steps of the day's expected move, with the chance each one gets touched, plus the 0DTE walls and the gamma regime.", "Chance at the open is fixed for the session; chance now re-runs it from the current price with the time left. A level the day already traded through shows HIT. The ladder uses the expected move priced near the open, so it does not move during the day. Copy HOD/LOD indicator puts the same ladder, live chances, regime playbook, mean-reversion test, Monte Carlo and ES/NQ split on your TradingView chart (re-copy each session)."],
   quant: ["Four tools in one place: how far to aim by gamma regime, whether price is really pulling back to its average, how often a target is hit before the stop and the close, and whether NQ is running ahead of or behind ES.", "Short gamma (dealers add to moves) favors one trade with a far target; long gamma (dealers absorb moves) favors 1 to 3 R fades of failed auctions at the range edges. The mean-reversion test only counts a pull when its t statistic is below -2.9. The Monte Carlo simulates the rest of the session from the market's own expected move; type your stop in futures points. The NQ/ES split needs both NDX and SPX tracked. None of it is backtested."],
@@ -88,7 +88,7 @@ const HELP = {
   react: ["A log of what price did when it touched earlier levels.", "It only starts to mean something after weeks of data. Held means price was still on the side it approached from."],
   flow: ["Trade-by-trade options flow is not available in this version.", "Nothing is drawn here because the app has no trade feed."],
   events: ["Scheduled releases and expirations that can move price more than options imply.", "You maintain this list. The starter entries came from published calendars; check them against the official sites."],
-  history: ["How the key numbers changed over time.", "Pick a metric to see its history; the levels chart shows the gamma flip, walls and expected-move edges through the session."],
+  history: ["Look back at any stored day: how big the day was against what options expected, whether the morning's regime call was right, what price did each time it reached a level (held or broke), and how the main numbers moved.", "Pick a day at the top. Section 3 is the useful one for trading: every level the app saved that morning, the time price got there, and whether it held 30 minutes later. Over many days this shows which levels you can lean on. Everything comes from what the app stored while it was running, so days it was off are thin."],
   status: ["Is the data flowing? Each data source, its timing and any errors.", "If another tab says there is no data, start here."]
 };
 function addHelp() {
@@ -649,15 +649,55 @@ const R = {
     document.querySelectorAll("[data-evdel]").forEach(b => b.onclick = async () => { await fetch("/api/events/" + b.dataset.evdel, { method: "DELETE" }); render(); });
   },
   async flow() { const j = await api("/options/flow"); $("view").innerHTML = `<div class="panel"><h2>Options flow</h2>${note(j.reason, true)}</div>`; },
-  async history() { await R.historyMain(); await historyLevels(); },
-  async historyMain() {
-    const name = $("hm") ? $("hm").value : "total_net_gex";
-    const [h, sn] = await Promise.all([api("/history/metric", { underlying: S.u, name }), api("/history/snapshots", { underlying: S.u, limit: 20 })]);
-    $("view").innerHTML = `<div class="panel"><h2>History for ${esc(S.u)}</h2><div class="row"><label>Metric<select id="hm">${["total_net_gex", "gamma_flip", "atm_iv_front", "expected_move_straddle", "pc_ratio_volume", "pc_ratio_oi"].map(n => `<option>${n}</option>`).join("")}</select></label></div>
-      <div id="c1" class="chart"></div>${h.points.length < 2 ? note("Not enough stored observations yet. History builds up while the app runs.") : ""}
-      <h3>Stored snapshots (newest first)</h3><div class="scroll"><table><tr><th>ID</th><th>Retrieved</th><th>Source time</th><th>Spot</th><th>Contracts</th></tr>${sn.snapshots.map(s => `<tr><td>${s.id}</td><td>${et(s.retrieved_at)}</td><td>${et(s.source_ts)}</td><td class="num">${fmt(s.spot, 2)}</td><td class="num">${s.n_contracts}</td></tr>`).join("")}</table></div></div>`;
-    $("hm").value = name; $("hm").onchange = render;
-    plot("c1", [{ type: "scatter", mode: "lines+markers", x: h.points.map(p => p.calculated_at), y: h.points.map(p => p.value), line: { color: "#2f8bf5" } }], LAY(name, { yaxis: { gridcolor: "#1E2840", tickformat: name === "total_net_gex" ? ".3s" : undefined } }));
+  async history() {
+    const j = await api("/history/day", { underlying: S.u, date: S.hday || "", metric: S.hmet || "total_net_gex" });
+    if (!j.available) { $("view").innerHTML = `<div class="panel"><h2>History, ${esc(S.u)}</h2>${note(j.reason)}</div>`; return; }
+    const sm = j.summary, root = j.futures_root || "futures", k = j.futures_ratio, nq = v => v == null || !k ? null : v * k, ix = S.u.replace(/^_/, "");
+    const P = v => v == null ? "-" : (k ? fmt(v * k, 2) : fmt(v, 2)), unit = k ? root : ix;
+    const tme = iso => new Date(iso).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
+    const mo = j.metric.options.find(o => o.name === j.metric.name) || j.metric.options[0];
+    const res = r => r === "held" ? '<span style="background:#0f6e56;color:#9FE1CB;padding:2px 8px;border-radius:4px;font-weight:700">HELD</span>'
+      : r === "broke" ? '<span style="background:#a32d2d;color:#F7C1C1;padding:2px 8px;border-radius:4px;font-weight:700">BROKE</span>' : '<span class="dim">not measured</span>';
+    const tc = j.touch_counts;
+    const touchRows = j.touches.map(t => `<tr><td>${tme(t.time)}</td><td class="num"><b>${P(t.level)}</b>${k ? `<br><span class="dim">${esc(ix)} ${fmt(t.level, 0)}</span>` : ""}</td><td>${esc(t.label)}</td>
+      <td>Price ${esc(t.approach)}</td><td>${res(t.result)}</td><td class="num">${t.bounce != null ? fmt(t.bounce * (k || 1), 0) + " pts" : "-"}</td><td class="num">${t.through != null ? fmt(t.through * (k || 1), 0) + " pts" : "-"}</td></tr>`).join("");
+    const regTxt = sm.regime_label ? `${esc(sm.regime_label)}${sm.regime_matched === true ? ' <span class="badge ok">matched the day</span>' : sm.regime_matched === false ? ' <span class="badge stale">missed</span>' : ' <span class="dim">(no size call to grade)</span>'}` : "not stored that morning";
+    $("view").innerHTML = `<div class="panel"><h2>History, ${esc(ix)}: ${esc(j.day)}</h2>
+      <p class="lede">Look back at one day: how it went against what options expected, what price did at each level, and how the main numbers moved.</p>
+      <div class="toolbar"><label>Day<select id="hday">${j.days.map(d => `<option value="${d}" ${d === j.day ? "selected" : ""}>${d}</option>`).join("")}</select></label>
+        <span class="dim">Prices in ${esc(unit)}${k ? ` (converted with today's ${esc(root)} conversion, so older days are approximate)` : ""}.</span></div>
+      <h3>1. How the day went</h3>
+      ${sm.open == null ? note("No regular-session prices were stored that day.") : `
+      <div class="grid">${["open", "high", "low", "close"].map(x => `<div class="card">${x[0].toUpperCase() + x.slice(1)}<b>${P(sm[x])}</b>${k ? `${esc(ix)} ${fmt(sm[x], 2)}` : ""}</div>`).join("")}
+        <div class="card">Range<b>${fmt(sm.range * (k || 1), 0)} pts</b>${sm.change >= 0 ? "closed up " : "closed down "}${fmt(Math.abs(sm.change) * (k || 1), 0)} pts from the open</div>
+        <div class="card">Expected move at the open<b>${sm.expected_move ? fmt(sm.expected_move * (k || 1), 0) + " pts" : "-"}</b>what options priced for the day</div></div>
+      <div class="msg"><b>${esc(sm.verdict)}</b><p style="margin:6px 0 0">Regime call that morning: ${regTxt}.</p>${sm.open_late_minutes ? `<p class="dim" style="margin:4px 0 0">The app started ${fmt(sm.open_late_minutes, 0)} minutes after 9:30 that day, so the open shown is the first price it saw.</p>` : ""}</div>`}
+      <h3>2. Price and the key levels through the day</h3>
+      <div id="hc1" class="chart" style="height:440px"></div>
+      <p class="hint">White = price. Gold = gamma flip (above it calmer, below it rougher). Green = call wall (often a ceiling). Red = put wall (often a floor). Blue dotted = the expected-move edges. Each line moves when the options data changed during the day.</p>
+      <h3>3. What price did at each level</h3>
+      <p>${tc.levels ? `Price reached <b>${tc.touched_levels}</b> of the <b>${tc.levels}</b> levels saved that morning. Of the ${j.touches.length} times it got to one, the level <b style="color:#3fb96a">held ${tc.held} times</b> and <b style="color:#e5534b">broke ${tc.broke} times</b>.` : "No levels were saved that morning (the app saves the first set of each session)."}</p>
+      ${j.touches.length ? `<div class="scroll"><table><tr><th>Time (ET)</th><th>Level price</th><th>Level</th><th>How price got there</th><th>30 min later</th><th>Best bounce</th><th>Pushed through by</th></tr>${touchRows}</table></div>
+        <p class="hint">HELD = 30 minutes after the touch price was still on the side it came from. Best bounce = how far price moved away from the level on that side. Pushed through by = how far it went past the level.</p>` : ""}
+      ${j.untouched.length ? `<details class="adv" data-k="hist-untouched"><summary>${j.untouched.length} levels price never reached that day</summary><div class="body">${j.untouched.map(u => `${P(u.level)} ${esc(u.label)}`).join("<br>")}</div></details>` : ""}
+      <h3>4. How the numbers changed</h3>
+      <div class="toolbar"><label>Show<select id="hmet">${j.metric.options.map(o => `<option value="${o.name}" ${o.name === j.metric.name ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label></div>
+      <p><b>${esc(mo.label)}:</b> ${esc(mo.meaning)}</p>
+      <div class="grid wide"><div id="hc2" class="chart"></div><div id="hc3" class="chart"></div></div>
+      <p class="hint">${esc(j.note)}</p></div>`;
+    $("hday").onchange = () => { S.hday = $("hday").value; saveUI(); render(); };
+    $("hmet").onchange = () => { S.hmet = $("hmet").value; saveUI(); render(); };
+    const tl = j.price.map(p => etx(p.t)), conv = v => k ? v * k : v;
+    const L = [["gamma_flip", "Gamma flip", "#e6b422", "solid"], ["call_wall", "Call wall", "#3fb96a", "solid"], ["put_wall", "Put wall", "#e5534b", "solid"], ["em_high", "Expected move high", "#7db7ff", "dot"], ["em_low", "Expected move low", "#7db7ff", "dot"]];
+    plot("hc1", [{ type: "scatter", mode: "lines", x: tl, y: j.price.map(p => conv(p.price)), name: "Price", line: { color: "#fff", width: 2 }, hovertemplate: `Price %{y:,.2f}<extra></extra>` }]
+      .concat(L.filter(([n]) => j.lines[n].length).map(([n, label, c, d]) => ({ type: "scatter", mode: "lines", x: j.lines[n].map(p => etx(p.t)), y: j.lines[n].map(p => conv(p.value)), name: label, line: { color: c, width: 1.6, dash: d, shape: "hv" }, hovertemplate: `${label} %{y:,.2f}<extra></extra>` }))),
+      LAY(`${j.day} in ${unit}`, { legend: { orientation: "h", y: -0.18 }, hovermode: "x unified", xaxis: { gridcolor: "#1E2840", tickformat: "%H:%M" }, yaxis: { gridcolor: "#1E2840", tickformat: ",.0f" } }));
+    const isPrice = ["gamma_flip", "expected_move_straddle"].includes(j.metric.name), mv = v => isPrice && j.metric.name === "gamma_flip" ? conv(v) : v;
+    const fmtY = j.metric.name === "total_net_gex" ? ".3s" : j.metric.name === "atm_iv_front" ? ".1%" : ",.2f";
+    plot("hc2", [{ type: "bar", x: j.metric.daily.map(d => d.day), y: j.metric.daily.map(d => mv(d.value)), marker: { color: j.metric.daily.map(d => d.day === j.day ? "#e6b422" : "#2f8bf5") }, hovertemplate: `%{x}<br>%{y:${fmtY}}<extra></extra>` }],
+      LAY("End of each day", { showlegend: false, xaxis: { type: "category", gridcolor: "#1E2840" }, yaxis: { gridcolor: "#1E2840", tickformat: fmtY } }));
+    plot("hc3", [{ type: "scatter", mode: "lines", x: j.metric.intraday.map(p => etx(p.t)), y: j.metric.intraday.map(p => mv(p.value)), line: { color: "#2f8bf5", width: 2 }, hovertemplate: `%{x|%H:%M}<br>%{y:${fmtY}}<extra></extra>` }],
+      LAY(`Through ${j.day}`, { showlegend: false, xaxis: { gridcolor: "#1E2840", tickformat: "%H:%M" }, yaxis: { gridcolor: "#1E2840", tickformat: fmtY } }));
   },
   async status() {
     const s = await api("/status");
@@ -791,16 +831,6 @@ async function scenariosPanel() {
   $("view").appendChild(box);
 }
 
-async function historyLevels() {
-  const h = await api("/history/levels", { underlying: S.u }), box = document.createElement("div");
-  box.className = "panel";
-  box.innerHTML = `<h2>Levels through the day (${esc(h.date)})</h2><div id="chl" class="chart" style="height:420px"></div><p class="dim">${h.price.length} price observations. ${esc(h.note)}</p>`;
-  $("view").appendChild(box);
-  const L = [["gamma_flip", "Gamma flip", "#e6b422", "solid"], ["call_wall", "Call wall", "#3fb96a", "solid"], ["put_wall", "Put wall", "#e5534b", "solid"], ["em_high", "Move high", "#7db7ff", "dot"], ["em_low", "Move low", "#7db7ff", "dot"]];
-  plot("chl", [{ type: "scatter", mode: "lines", x: h.price.map(p => p.t), y: h.price.map(p => p.price), name: "Price", line: { color: "#fff", width: 2 } }]
-    .concat(L.filter(([k]) => h.levels[k].length).map(([k, n, c, d]) => ({ type: "scatter", mode: "lines+markers", marker: { size: 6 }, x: h.levels[k].map(p => p.t), y: h.levels[k].map(p => p.value), name: n, line: { color: c, width: 1.6, dash: d, shape: "hv" } }))),
-    LAY("Price and levels over the session", { legend: { orientation: "h", y: -0.2 }, xaxis: { gridcolor: "#1E2840" } }));
-}
 async function render() {
   if (S.busy) { S.again = true; return; }                  // something changed while a refresh was running: run again right after it
   S.busy = true; $("clock").textContent = "Updating...";

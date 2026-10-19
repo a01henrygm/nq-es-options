@@ -51,10 +51,40 @@ def test_chop_swings_both_sides_before_resolving():
     assert any(c["c"] > 1006 for c in swing) and any(c["c"] < 1006 for c in swing)
 
 
-def test_level_map_endpoint_on_a_simulated_day():
+def test_level_map_lists_every_level_with_a_plan():
     c, db, now = simulated_day()
-    j = c.get("/api/charts/level-map", params={"underlying": "_NDX", "tf": 5}).json()
-    assert j["candles"] and j["tf"] == 5 and j["levels"] and all(l["call"] in bh.CALLS for l in j["levels"])
-    assert j["projection"]["main"]["candles"] and len(j["projection"]["times"]) == len(j["projection"]["main"]["candles"])
-    assert j["regime"]["state"] in ("short", "long", "transition", "unknown") and "RESPECT" in j["rule"]
-    assert c.get("/api/charts/level-map", params={"underlying": "_NDX", "tf": 0}).status_code == 422
+    j = c.get("/api/charts/level-map", params={"underlying": "_NDX"}).json()
+    lv = j["levels"]
+    assert "candles" not in j and len(lv) >= 10 and [l["value"] for l in lv] == sorted((l["value"] for l in lv), reverse=True)
+    assert sum(j["counts"].values()) == len(lv)
+    for l in lv:
+        assert l["call"] in bh.CALLS and l["headline"] and l["plan"] and l["futures"] is not None
+        assert l["chance"] is None or 0 <= l["chance"] <= 1
+    up = [l for l in lv if l["value"] > j["spot"]]
+    assert all(l["points"] > 0 for l in up) and up[-1]["order"] == 1                       # the nearest level above is first in line
+    assert c.get("/api/charts/level-map", params={"underlying": "_NDX", "count": 2}).status_code == 422
+
+
+def test_predictions_read_the_right_way():
+    a = {"label": "Call wall", "value": 1010.0, "call": "RESPECT"}
+    b = {"label": "Move zone", "value": 1020.0, "call": "DISRESPECT"}
+    d = {"label": "Put wall", "value": 990.0, "call": "RESPECT"}
+    p = bh.prediction(a, "above", b, d, "long", 0.4)
+    assert p["headline"] == "Should hold as resistance" and "Put wall (990)" in p["plan"] and "Move zone (1,020)" in p["plan"]
+    q = bh.prediction(b, "above", None, a, "long", 0.1)
+    assert q["headline"] == "Should break" and "slow down" in q["plan"]
+    assert bh.prediction(d, "below", None, a, "short", 0.3)["headline"] == "Should hold as support"
+
+
+def test_history_day_explains_the_session():
+    c, db, now = simulated_day()
+    j = c.get("/api/history/day", params={"underlying": "_NDX"}).json()
+    assert j["available"] and j["day"] == "2026-10-14" and "2026-10-13" in j["days"]
+    sm = j["summary"]
+    assert sm["open"] == 30000.0 and sm["high"] >= sm["close"] >= sm["low"] and "expected move" in sm["verdict"]
+    tc = j["touch_counts"]
+    assert tc["levels"] > 0 and tc["held"] + tc["broke"] <= len(j["touches"]) and all(t["result"] in ("held", "broke", "not measured") for t in j["touches"])
+    assert len(j["metric"]["options"]) == 6 and j["metric"]["daily"] and j["lines"]["gamma_flip"]
+    old = c.get("/api/history/day", params={"underlying": "_NDX", "date": "2026-10-13", "metric": "gamma_flip"}).json()
+    assert old["day"] == "2026-10-13" and old["summary"]["rth_observations"] == 1           # one stored price at 15:50 that day
+    assert c.get("/api/history/day", params={"underlying": "_NDX", "metric": "nope"}).status_code == 422

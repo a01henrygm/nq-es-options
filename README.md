@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.10
+
+- **Level map, rebuilt without candles.** Every key level from highest to lowest with the price in NQ, its call (HOLD as support or resistance, CHOP, or BREAK), a plain plan for what to expect when price gets there and where the fade or the break should go next, why, the chance price reaches it today, and its track record. Filter by call and by reach.
+- **History, rebuilt.** Pick a day: how big it was against the expected move and whether the morning's regime call was right; price with the gamma flip, walls and expected-move edges through the day; every time price reached a level and whether it held or broke 30 minutes later; and how the main numbers moved, with what each one means.
+
 ## New in 1.9
 
 - **HOD / LOD: moves we may encounter.** The path up and the path down through the key levels, each with its respect / chop / disrespect call, the chance of a touch and why; the chance of staying between the nearest levels until the close; and the data behind it (gamma regime, range used, time left, charm into the close, vanna, dealer delta, scheduled events) with what each means for the move.

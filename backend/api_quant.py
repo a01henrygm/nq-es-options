@@ -233,43 +233,48 @@ def register(app, h):
                         "on your chart; the expected move, regime and walls are today's values from Q DATA, so re-copy each session."}
 
     @app.get("/api/charts/level-map")
-    def level_map(underlying: str, convention: str = "standard", tf: int = Query(2, ge=1, le=30), ahead: int = Query(90, ge=10, le=390)):
-        """Candles from the stored prices, the key levels with a respect / chop / disrespect call each, and projected candles acting them out."""
+    def level_map(underlying: str, convention: str = "standard", count: int = Query(40, ge=5, le=80)):
+        """Every key level, highest first, with what price should do there (respect / chop / disrespect), why, and the chance it is reached today."""
         if convention not in an.SIGNS:
             raise HTTPException(422, "invalid convention")
         u = h.underlying_ok(underlying)
         c = context(u, convention)
         snap, z, now = c["snap"], c["z"], c["now"]
         pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
-        op = datetime.combine(c["day"], RTH_OPEN, ET)
-        bars = bh.candles(c["rows"], op, tf)
-        j = h.levels_payload(u, convention, "auto", None, key=14)
+        j = h.levels_payload(u, convention, "auto", None, key=count)
         try:
             rec = {r["category"]: r for r in h.reactions(u, 30, 0.05)["summary"]}
         except HTTPException:
             rec = {}
-        from .services import analytics as _an
-        gf = _an.gamma_flip(snap.contracts, snap.spot, now, convention)
+        gf = an.gamma_flip(snap.contracts, snap.spot, now, convention)
         flips = [z.get("flip") if z.get("available") else None, gf["flip"] if gf["found"] else None]
-        lv = bh.level_calls(j["zones"], snap, now, pb["state"], flips, convention, rec)
-        steps = int(min(ahead, c["mins_left"]) // tf) if c["mins_left"] > 0 else int(ahead // tf)
-        sd_day = c["sig_rem"] or c["sig_open"]
-        mins = c["mins_left"] if c["mins_left"] > 0 else 390.0
-        sd_c = sd_day * (tf / mins) ** 0.5 if sd_day else None
-        if pb["state"] == "short" and c["open"]:
-            d = 1 if snap.spot >= c["open"] else -1
-        else:
-            nl = min(lv, key=lambda x: abs(x["value"] - snap.spot), default=None)
-            d = 1 if nl is None or nl["value"] >= snap.spot else -1
-        start = bars[-1]["t"] + timedelta(minutes=tf) if bars else to_et(now)
-        times = [iso(start + timedelta(minutes=tf * i)) for i in range(steps)]
-        main = bh.ghost_path(lv, snap.spot, sd_c, steps, d) if sd_c and steps > 0 else None
-        alt = bh.ghost_path(lv, snap.spot, sd_c, steps, d, flip_first=True) if sd_c and steps > 0 else None
-        return {"meta": c["m"], "tf": tf, "candles": [{**b, "t": iso(b["t"])} for b in bars], "levels": lv, "regime": {k: pb[k] for k in ("state", "title", "tagline", "color", "flips")},
-                "open": c["open"], "spot": snap.spot, "ratio": c["ratio"], "futures_root": c["root"], "mapped": c["spot_f"] is not None,
-                "projection": {"times": times, "main": main, "alt": alt, "direction": d, "sd_candle": sd_c},
-                "rule": bh.RULE, "note": ("Candles are built from the index prices this app stores (about one every 2 minutes, about 15 minutes delayed), so they are "
-                                          "coarser than TradingView's. Projected candles picture the calls; they are scenarios, not forecasts.")}
+        raw = bh.level_calls(j["zones"], snap, now, pb["state"], flips, convention, rec, window=1.0)
+        lv = []
+        for l in sorted(raw, key=lambda x: -x["strength"]):              # levels at the same price become one row with both names
+            twin = next((x for x in lv if abs(x["value"] - l["value"]) <= 0.0001 * l["value"]), None)
+            if twin:
+                twin["label"] = twin["label"] + " / " + l["label"]
+            else:
+                lv.append(dict(l))
+        sig = c["sig_rem"] or c["sig_open"]
+        above = sorted((l for l in lv if l["value"] > snap.spot), key=lambda l: l["value"])
+        below = sorted((l for l in lv if l["value"] <= snap.spot), key=lambda l: -l["value"])
+        for side, arr, other in (("above", above, below), ("below", below, above)):
+            for i, l in enumerate(arr):
+                beyond = arr[i + 1] if i + 1 < len(arr) else None
+                back = arr[i - 1] if i > 0 else (other[0] if other else None)
+                dist = abs(l["value"] - snap.spot)
+                ch = qt.touch_prob(dist, sig) if sig else None
+                l.update(bh.prediction(l, side, beyond, back, pb["state"], ch))
+                l.update({"futures": c["conv"](l["value"]), "futures_low": c["conv"](l["low"]) if l.get("low") else None,
+                          "futures_high": c["conv"](l["high"]) if l.get("high") else None, "points": l["value"] - snap.spot,
+                          "sd": dist / sig if sig else None, "order": i + 1})
+        counts = {k: sum(1 for l in lv if l["call"] == k) for k in bh.CALLS}
+        return {"meta": c["m"], "levels": sorted(lv, key=lambda l: -l["value"]), "spot": snap.spot, "spot_futures": c["spot_f"],
+                "futures_root": c["root"], "futures_info": c["futures_info"], "counts": counts, "sigma_remaining": sig, "minutes_left": c["mins_left"],
+                "regime": {k: pb[k] for k in ("state", "title", "tagline", "color", "flips", "r_range")}, "rule": bh.RULE,
+                "note": "Calls come from the 0DTE gamma regime and the dealer gamma at each level. Chance = how often price reaches that far before the "
+                        "close, from the remaining expected move. Track record = how often that level type held in this app's own touch log. Not backtested."}
 
     # ---- chart read: a screenshot of your chart, marked up --------------------------------------------------------------
     def calls_for(u, convention, c=None):
@@ -375,3 +380,102 @@ def register(app, h):
         return {"meta": c["m"], "reading": rd, "problems": problems, "warnings": warnings, "levels": levels, "projection": proj, "unit": unit,
                 "regime": {k2: pb[k2] for k2 in ("state", "title", "tagline", "color", "r_range", "trades")},
                 "note": "Claude read the picture; Q DATA made the calls from today's options data. Scenarios, not forecasts. One paid API request per read."}
+
+    # ---- history: one day at a time, in plain terms -------------------------------------------------------------------
+    HIST_METRICS = [("total_net_gex", "Total dealer gamma (GEX)", "Above zero, dealer hedging tends to calm moves; below zero it tends to speed them up. A drop toward zero or below means a jumpier market."),
+                    ("gamma_flip", "Gamma flip", "The price where dealer gamma changes sign. Price above it tends to be calmer, below it rougher."),
+                    ("atm_iv_front", "Implied volatility (nearest expiry)", "How big a move options are pricing. Rising = the market expects more movement."),
+                    ("expected_move_straddle", "Expected move (straddle)", "The points options price for the move to the nearest expiry."),
+                    ("pc_ratio_volume", "Put/call ratio (volume)", "Puts traded per call today. Above 1 = more put trading (hedging or bearish bets)."),
+                    ("pc_ratio_oi", "Put/call ratio (open interest)", "Open puts per open call. Slow-moving; shows how hedged the market is.")]
+
+    @app.get("/api/history/day")
+    def history_day(underlying: str, date: str | None = None, metric: str = "total_net_gex"):
+        """One stored session explained: how the day went against what options expected, how each level behaved when price got there,
+        and how the main numbers moved, that day and across days."""
+        from .services import reactions as rx
+        u = h.underlying_ok(underlying)
+        if metric not in {m[0] for m in HIST_METRICS}:
+            raise HTTPException(422, "unknown metric")
+        snap = h.snapshot(u)
+        to_f, finfo = h.futures_converter(u, snap, h.now_fn())
+        k = (to_f(snap.spot) / snap.spot) if to_f else None
+        fx = (lambda v: None if v is None or k is None else v * k)
+        all_rows = []
+        for r in db.price_history(u, 20000):
+            t = parse_ts(r["source_ts"] or r["retrieved_at"])
+            if t:
+                all_rows.append((t, r["price"]))
+        days = sorted({to_et(t).date() for t, _ in all_rows}, reverse=True)[:40]
+        if not days:
+            return {"available": False, "reason": "No prices stored yet. History builds up while the app runs during the session."}
+        day = datetime.fromisoformat(date).date() if date else days[0]
+        rows = sorted((t, p) for t, p in all_rows if to_et(t).date() == day)
+        op, cl = datetime.combine(day, RTH_OPEN, ET), datetime.combine(day, RTH_CLOSE, ET)
+        rth = [(t, p) for t, p in rows if op <= t <= cl]
+        S_ = {"observations": len(rows), "rth_observations": len(rth)}
+        if rth:
+            o, hi, lo, c_ = rth[0][1], max(p for _, p in rth), min(p for _, p in rth), rth[-1][1]
+            late = (rth[0][0] - op).total_seconds() / 60
+            dm = [r for r in series(u, "day_move", day) if r["t"] >= iso(op)]
+            em = dm[0]["value"] if dm else None
+            ratio = (hi - lo) / em if em else None
+            ro = [r for r in series(u, "regime_open", day)]
+            label = (ro[0]["detail"] or {}).get("label") if ro else None
+            calm = label and label.startswith(("Pinned", "Calm"))
+            wild = label and label.startswith(("Trending", "Leaning unstable"))
+            if ratio is None:
+                verdict = "No expected move was stored near the open, so the day cannot be compared with it."
+            elif ratio > 1.2:
+                verdict = f"A bigger day than options priced: the range was {ratio:.1f} times the expected move."
+            elif ratio < 0.7:
+                verdict = f"A quieter day than options priced: the range was only {ratio:.1f} times the expected move."
+            else:
+                verdict = f"About the size options priced: the range was {ratio:.1f} times the expected move."
+            matched = None
+            if label and ratio is not None and (calm or wild):              # transition / mixed mornings made no size call to grade
+                matched = bool((calm and ratio <= 1.0) or (wild and ratio > 1.0))
+            S_.update({"open": o, "high": hi, "low": lo, "close": c_, "range": hi - lo, "change": c_ - o, "expected_move": em, "range_vs_move": ratio,
+                       "verdict": verdict, "regime_label": label, "regime_matched": matched, "open_late_minutes": late if late > 15 else None,
+                       "open_futures": fx(o), "high_futures": fx(hi), "low_futures": fx(lo), "close_futures": fx(c_)})
+        lv = db.load_session_levels(u, day.isoformat())
+        tc = rx.analyze(lv, rows, tol=0.0005) if lv and len(rows) >= 3 else []
+        touched = {(t["label"], t["level"]) for t in tc}
+        touches = []
+        grouped = {}
+        for t in sorted(tc, key=lambda x: x["time"]):                     # one row per touch: level types at the same price are listed together
+            key = (t["time"], round(t["level"], 2))
+            if key in grouped:
+                grouped[key]["label"] += " / " + t["label"]
+                continue
+            grouped[key] = t = dict(t)
+            side = 1 if t["approach"] == "from above" else -1
+            held = t.get("held_30") if t.get("held_30") is not None else t.get("held_15")
+            bounce = t["max_above"] if side > 0 else t["max_below"]
+            through = t["max_below"] if side > 0 else t["max_above"]
+            touches.append({"_key": key, "time": iso(t["time"]), "label": t["label"], "category": t["category"], "level": t["level"], "level_futures": fx(t["level"]),
+                            "approach": "came down to it" if side > 0 else "came up to it", "result": "held" if held else "broke" if held is False else "not measured",
+                            "bounce": bounce, "through": through})
+        for r in touches:
+            r["label"] = grouped[r.pop("_key")]["label"]
+        untouched = [{"label": x["label"], "level": x["value"], "level_futures": fx(x["value"]), "category": x["category"]} for x in lv if (x["label"], x["value"]) not in touched]
+        lines = {}
+        for name in ("gamma_flip", "call_wall", "put_wall", "em_low", "em_high", "gex0_flip", "gex0_call_wall", "gex0_put_wall"):
+            lines[name] = [{"t": r["t"], "value": r["value"]} for r in series(u, name, day)]
+        mh = db.metric_history(u, metric, 20000)
+        daily = {}
+        for r in mh:
+            t = parse_ts(r["calculated_at"])
+            if t and r["value"] is not None:
+                daily[to_et(t).date().isoformat()] = r["value"]
+        intraday = [{"t": r["t"], "value": r["value"]} for r in series(u, metric, day)]
+        held_n = sum(1 for t in touches if t["result"] == "held")
+        broke_n = sum(1 for t in touches if t["result"] == "broke")
+        return {"available": True, "underlying": u, "day": day.isoformat(), "days": [d.isoformat() for d in days], "summary": S_,
+                "price": [{"t": iso(t), "price": p} for t, p in rows], "lines": lines, "touches": touches, "untouched": untouched,
+                "touch_counts": {"held": held_n, "broke": broke_n, "levels": len(lv), "touched_levels": len(touched)},
+                "metric": {"name": metric, "options": [{"name": m[0], "label": m[1], "meaning": m[2]} for m in HIST_METRICS],
+                           "daily": [{"day": d, "value": v} for d, v in sorted(daily.items())][-40:], "intraday": intraday},
+                "futures_root": finfo.get("root"), "futures_ratio": k,
+                "note": "Built only from what this app stored while it was running (a price about every 2 minutes, about 15 minutes delayed). "
+                        "Futures prices use today's index-to-futures conversion, so older days are approximate."}

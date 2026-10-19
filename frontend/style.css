@@ -184,3 +184,10 @@ footer{margin-top:20px;font-size:.8em}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .chartwrap.live{outline:1px solid #2f8bf5;outline-offset:2px;border-radius:6px}
+.lm{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.lmrow{display:grid;grid-template-columns:150px 1fr 170px;gap:14px;align-items:start;background:var(--panel2);border:1px solid var(--line);border-radius:0 8px 8px 0;padding:10px 12px}
+.lmrow p{margin:5px 0 0;line-height:1.45}
+.lmprice{display:flex;flex-direction:column}.lmprice b{font-size:1.35em}
+.lmchance{display:flex;flex-direction:column;gap:3px}.lmchance b{font-size:1.4em}
+.lmnow{display:flex;gap:14px;align-items:baseline;padding:9px 12px;border:1px dashed #e6b422;border-radius:8px;color:#e6b422;flex-wrap:wrap}
+@media (max-width:760px){.lmrow{grid-template-columns:1fr}}

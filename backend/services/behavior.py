@@ -169,3 +169,29 @@ def ghost_path(levels, spot, sd_c, n, start_dir, flip_first=False, seed=7):
         out.append({"o": o, "h": h, "l": l, "c": c})
         p = c
     return {"candles": out, "events": ev}
+
+
+def prediction(level, side, beyond, back, state, chance):
+    """Plain-English call for one level. side: 'above' or 'below' price. beyond: the next level further away on the same side,
+    back: the level on the way back toward (and past) price. Returns {headline, plan}."""
+    up = side == "above"
+    nm = lambda l: f"{l['label'].split(' / ')[0]} ({l['value']:,.0f})" if l else "the next level"
+    reach = "If price rallies up to it" if up else "If price drops down to it"
+    c = level["call"]
+    if c == "RESPECT":
+        head = "Should hold as resistance" if up else "Should hold as support"
+        plan = (f"{reach}, expect it to stall and reject: wicks {'above' if up else 'below'} it and closes back {'under' if up else 'over'}. "
+                f"A fade from here aims back toward {nm(back)}. It only gives way if price closes through and holds; then {nm(beyond)} is next.")
+    elif c == "DISRESPECT":
+        head = "Should break"
+        plan = (f"{reach}, expect it to give way: closes through it with little pause, then a run toward {nm(beyond)}. "
+                f"Treat a quick reclaim back {'under' if up else 'over'} it as the sign the call failed.")
+    else:
+        head = "Should chop"
+        plan = (f"{reach}, expect overlapping candles and wicks on both sides while dealers flip between absorbing and adding to the move. "
+                f"Wait for a clean close away from it: {'above' if up else 'below'} points to {nm(beyond)}, back {'under' if up else 'over'} points to {nm(back)}.")
+    if state == "short" and c != "DISRESPECT":
+        plan += " Short gamma makes breaks more likely than usual today."
+    elif state == "long" and c == "DISRESPECT":
+        plan += " Long gamma means even breaks tend to slow down at the next level."
+    return {"headline": head, "plan": plan, "chance": chance}
