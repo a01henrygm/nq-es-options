@@ -15,7 +15,7 @@ def tab_keys():
 
 def test_every_tab_is_in_exactly_one_group_and_has_a_help_text():
     keys = tab_keys()
-    assert len(keys) == 32 and len(set(keys)) == 32
+    assert len(keys) == 33 and len(set(keys)) == 33
     groups = JS[JS.index("const GROUPS = ["):JS.index("const HELP = {")]
     grouped = re.findall(r'"([a-z]+)"', groups)
     for k in keys:

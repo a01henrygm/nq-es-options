@@ -5,9 +5,10 @@ Importance (0 to 100) of one level = size x type x closeness, then merged into z
              levels you typed in count as full size.
   type       gamma flip 1.0, your own levels 1.0, GEX 0.9, open interest 0.85, expected-move edges 0.85, volume 0.7, by-expiry 0.6, mid-size 0.4.
   closeness  levels inside about one expected move of price count fully; the factor fades to 35% at two expected moves away and beyond.
-Zones: bands (GEX, open interest and volume zones) that overlap by half or more are merged into one that shows both names, +0.12 for agreeing.
-Other levels closer together than 0.10% of price are merged into ONE zone (about 30 points on NDX). A zone scores as its best member plus
-0.12 for each extra kind of level that agrees there (confluence, capped at +0.36).
+Zones: only GEX zones and the call and put wall zones are drawn as bands; GEX bands that overlap by half or more are merged into one that shows
+both names, +0.12 for agreeing. Everything else (open interest, volume, expected move, charm, vanna, dealer delta, new positions) is a single
+line at its price, even when its source was a band, and lines are never merged with their neighbours. Only levels at exactly the same price
+become one line that lists both names (+0.12 for each extra kind, capped at +0.36). The Stack map tab is where nearby levels are counted together.
 
 The weights are my own judgement. They decide what is shown FIRST; they are not tested evidence that a level will matter.
 """
@@ -20,8 +21,9 @@ TYPE_FACTOR = {"gamma_flip": 1.0, "custom": 1.0, "gex0_call_wall": 0.95, "gex0_p
                "charm_sell_zone": 0.75, "charm_buy_zone": 0.75, "vanna_pos_zone": 0.7, "vanna_neg_zone": 0.7, "dex_pos_zone": 0.65, "dex_neg_zone": 0.65,
                "new_call_zone": 0.8, "new_put_zone": 0.8}
 RULE = ("Importance = size (versus the biggest level of its kind) x type weight x closeness to price (full inside about one expected move, "
-        "fading to 35% beyond two). Levels within 0.10% of price of each other are merged into one zone, which gets +0.12 for each extra "
-        "kind of level that agrees there. The weights are my own judgement, not tested evidence.")
+        "fading to 35% beyond two). Only GEX zones and the call and put walls are bands; every other level is its own line (levels at the "
+        "exact same price share one line, +0.12 for each extra kind). The weights are my own judgement, not tested evidence.")
+BAND_KINDS = {"gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone"}       # the only levels drawn as zones
 
 
 def _group(l):
@@ -152,22 +154,22 @@ def _overlap(a, b):
     return shared / max(1e-9, min(a["high"] - a["low"], b["high"] - b["low"]))
 
 
-def make_zones(levels, spot, top_n=10, cluster_pct=0.0010):
+def make_zones(levels, spot, top_n=10, cluster_pct=0.0):
     """Merges nearby levels into zones and returns the top_n by score (highest price first). Each zone lists its members.
 
     GEX wall zones (levels that already have a low and a high) keep their own shape. Plain levels that sit inside one are listed under
     it instead of being drawn again."""
     if not levels:
         return []
+    levels = [l if l.get("low") is None or l["category"] in BAND_KINDS else {**l, "low": None, "high": None} for l in levels]   # other bands become lines
     bands = [l for l in levels if l.get("low") is not None]
     plain = [l for l in levels if l.get("low") is None]
-    keep = ("gamma_flip", "custom")                                               # the flip and your own levels are never hidden inside a band
-    inside = {id(l): ([b for b in bands if b["low"] <= l["value"] <= b["high"] and b["category"] not in SOLO] if l["category"] not in keep else []) for l in plain}
+    inside = {id(l): [] for l in plain}                                            # lines are never hidden inside a band
     absorbed = [l for l in plain if inside[id(l)]]
     ordered = sorted((l for l in plain if not inside[id(l)]), key=lambda l: l["value"])
     groups, cur = [], []
     for l in ordered:
-        if cur and l["value"] - cur[-1]["value"] > cluster_pct * spot:
+        if cur and (l["value"] - cur[-1]["value"] > cluster_pct * spot or l["category"] in SOLO or cur[-1]["category"] in SOLO):
             groups.append(cur)
             cur = []
         cur.append(l)

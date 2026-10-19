@@ -465,3 +465,17 @@ def move_map(spot, hi, lo, open_px, sigma_open, sigma_rem, levels, state, greeks
     return {"available": True, "up": up, "down": dn, "range": rng, "drivers": drivers, "summary": summary,
             "note": "Chances use the remaining expected move and the running-maximum rule for a random walk; calls come from the gamma regime and the "
                     "dealer gamma at each level (the Level map rules). Real days have fatter tails, especially in short gamma. Scenarios, not forecasts."}
+
+
+def already_in(hi, lo, spot, sigma_rem):
+    """Chance today's high (low) so far stays the high (low) of the day: no new high before the close.
+    = 1 - P(a random walk with the remaining 1 sd climbs from the current price back above the high)."""
+    if hi is None or lo is None or not sigma_rem or sigma_rem <= 0:
+        return None
+    ph = 1 - (touch_prob(max(0.0, hi - spot), sigma_rem) or 0.0)
+    pl = 1 - (touch_prob(max(0.0, spot - lo), sigma_rem) or 0.0)
+    first = "high" if ph > pl else "low"
+    return {"high": ph, "low": pl, "likely_first": first, "high_price": hi, "low_price": lo,
+            "note": "Chance the session's high (or low) so far is still the high (or low) at 16:00: one minus the chance price gets back to it with the "
+                    "move still left in the day. It climbs as price moves away from the extreme and as the clock runs down. A random-walk estimate, "
+                    "not backtested; news can always take the extreme out."}

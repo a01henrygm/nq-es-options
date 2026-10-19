@@ -442,23 +442,19 @@ def test_importance_size_closeness_and_type():
     assert all(0 <= x["importance"] <= 1 for x in lv)
 
 
-def test_zones_merge_nearby_levels_and_reward_confluence():
+def test_nearby_levels_stay_separate_lines_and_same_price_levels_share_one():
     from backend.services.importance import make_zones, score_levels
     lv = [lvl("open_interest", "High call open interest", 30010.0, "2026-10-14T14:00:00+00:00", call_oi=8000.0),
           lvl("volume", "High session volume", 30030.0, "2026-10-14T13:30:00+00:00", call=900.0, put=700.0),
           lvl("gex_concentration", "Large positive modeled GEX", 30020.0, "2026-10-14T15:00:00+00:00", net_gex=5e9),
           lvl("open_interest", "High put open interest", 29500.0, "2026-10-14T12:00:00+00:00", put_oi=8000.0),
-          lvl("open_interest", "High call open interest", 31000.0, None, call_oi=1000.0)]
+          lvl("volume", "High session volume", 29500.0, "2026-10-14T12:30:00+00:00", call=100.0, put=900.0)]
     score_levels(lv, 30000.0, 400.0)
     zones = make_zones(lv, 30000.0, top_n=10)
-    assert len(zones) == 3 and [z["value"] for z in zones] == sorted((z["value"] for z in zones), reverse=True)        # three groups, highest price first
-    z = next(z for z in zones if len(z["inputs"]["members"]) == 3)
-    solo = next(z for z in zones if z["value"] == 29500.0)
-    assert z["importance"] > max(m["importance"] for m in z["inputs"]["members"]) and " / " in z["label"] and z["first_seen"].startswith("2026-10-14T13:30")
-    assert z["importance"] <= 1.0 and solo["inputs"]["members"][0]["label"] == "High put open interest" and solo["label"] == "Put OI"
-    two = make_zones(lv, 30000.0, top_n=2)
-    assert len(two) == 2 and any(len(x["inputs"]["members"]) == 3 for x in two)                                          # the confluence zone survives the cut
-    assert z["label"] == "GEX+ / Call OI / Volume" or set(z["label"].split(" / ")) == {"GEX+", "Call OI", "Volume"}
+    assert [z["value"] for z in zones] == [30030.0, 30020.0, 30010.0, 29500.0]                        # 10 points apart: still three lines
+    assert all(len(z["inputs"]["members"]) == 1 for z in zones if z["value"] > 30000)
+    same = next(z for z in zones if z["value"] == 29500.0)
+    assert len(same["inputs"]["members"]) == 2 and " / " in same["label"] and same["importance"] > max(m["importance"] for m in same["inputs"]["members"])
     assert make_zones([], 30000.0) == []
 
 
@@ -534,7 +530,7 @@ def test_zones_in_levels_api_key_mode_export_and_indicators():
     assert code.count("(") == code.count(")") and ind.count("(") == ind.count(")")
 
 
-def test_zones_absorb_plain_levels_inside_them():
+def test_lines_inside_a_gex_band_are_still_drawn():
     from backend.services.importance import make_zones, score_levels
     band = lvl("gex_call_zone", "Call wall zone", 30100.0, call_strikes=2) | {"low": 30087.5, "high": 30162.5, "method": "m"}
     band["inputs"] = {"zone_mag": 1700.0, "call_strikes": 2, "put_strikes": 1, "members": [{"strike": 30100, "side": "call", "gex": 900}, {"strike": 30125, "side": "put", "gex": 700}]}
@@ -543,9 +539,9 @@ def test_zones_absorb_plain_levels_inside_them():
     lv = [band, inner, outer]
     score_levels(lv, 30000.0, 400.0)
     zs = make_zones(lv, 30000.0, top_n=10)
-    assert len(zs) == 2                                                                              # the open-interest level inside the band is not drawn again
+    assert len(zs) == 3 and any(z["value"] == 30125.0 and z.get("low") is None for z in zs)
     b = next(z for z in zs if z.get("band"))
-    assert any(m["label"] == "High call open interest" for m in b["inputs"]["members"]) and b["low"] == 30087.5
+    assert b["low"] == 30087.5 and not any(m["label"] == "High call open interest" for m in b["inputs"]["members"])
 
 
 def test_zone_width_is_capped_when_every_strike_is_a_wall():
@@ -678,20 +674,21 @@ def test_zones_start_and_end_on_their_own_side():
     assert len(sand) == 1 and sand[0]["side"] == "call" and [m["strike"] for m in sand[0]["members"]] == [100, 125, 150]
 
 
-def test_overlapping_bands_merge_and_other_zone_types_have_their_own_colors():
+def test_only_gex_bands_stay_zones_and_other_zone_types_have_their_own_colors():
     from backend.services.importance import make_zones, score_levels
     def band(cat, label, centre, lo, hi, mag):
         return lvl(cat, label, centre, zone_mag=mag, call_strikes=2, put_strikes=0, members=[{"strike": centre, "side": "call", "gex": mag}]) | {"low": lo, "high": hi, "method": "m"}
     gex = band("gex_call_zone", "Call wall zone", 30100.0, 30075.0, 30150.0, 900.0)
+    gex2 = band("gex_pos_zone", "Positive GEX zone", 30110.0, 30080.0, 30160.0, 800.0)
     oi = band("oi_call_zone", "Call OI zone", 30125.0, 30100.0, 30175.0, 900.0)
     far = band("volume_put_zone", "Put volume zone", 29500.0, 29475.0, 29525.0, 900.0)
-    lv = [gex, oi, far]
+    lv = [gex, gex2, oi, far]
     score_levels(lv, 30000.0, 400.0)
-    before = max(gex["importance"], oi["importance"])
     zs = make_zones(lv, 30000.0, top_n=10)
-    assert len(zs) == 2                                                                                  # the two overlapping bands became one
-    m = next(z for z in zs if "/" in z["label"])
-    assert set(m["label"].split(" / ")) == {"Call wall zone", "Call OI zone"} and m["importance"] > before and len(m["inputs"]["members"]) >= 2
+    bands = [z for z in zs if z.get("band")]
+    assert len(bands) == 1 and len(bands[0]["label"].split(" / ")) == 2 and "Call wall zone" in bands[0]["label"]     # overlapping GEX bands merge
+    lines = [z for z in zs if not z.get("band")]
+    assert sorted(z["value"] for z in lines) == [29500.0, 30125.0] and all(z.get("low") is None for z in lines)  # OI and volume bands are lines now
     for path in ((ROOT / "tradingview" / "options_levels_indicator.pine"),):
         text = path.read_text()
         for name, colour in (("oi_call_zone", "#ff9f43"), ("oi_put_zone", "#d9480f"), ("volume_call_zone", "#2ec4b6"), ("volume_put_zone", "#f06292")):
@@ -709,9 +706,7 @@ def test_gamma_flip_and_custom_levels_are_never_absorbed_by_a_band():
     score_levels(lv, 30000.0, 400.0)
     zs = make_zones(lv, 30000.0, top_n=10)
     labels = sorted(z["label"] for z in zs)
-    assert any("Gamma flip" in x for x in labels) and any("Quant GEX 205" in x for x in labels) and "Call wall zone" in labels
-    b = next(z for z in zs if z.get("band"))
-    assert [m["label"] for m in b["inputs"]["members"] if m["label"] == "High call open interest"] and not any(m["label"] in ("Estimated gamma flip", "Quant GEX 205") for m in b["inputs"]["members"])
+    assert len(zs) == 4 and any("Gamma flip" in x for x in labels) and any("Quant GEX 205" in x for x in labels) and "Call wall zone" in labels
 
 
 def test_expected_move_zone_colors_and_checkbox_in_both_indicators():

@@ -388,6 +388,10 @@ if barstate.islast and _intra
         table.cell(_tb, 0, _r, "LOD 50/80%", text_color = i_col_dn, text_size = size.tiny)
         table.cell(_tb, 1, _r, na(_lod50) ? "-" : str.tostring(_lod50, format.mintick) + " / " + str.tostring(_lod80, format.mintick), text_color = _tx, text_size = size.tiny)
         table.merge_cells(_tb, 1, _r, 3, _r)
+        _r += 1
+        table.cell(_tb, 0, _r, "Already in", text_color = _dim, text_size = size.tiny)
+        table.cell(_tb, 1, _r, "high " + f_pct(1.0 - f_touch(math.max(0.0, _hi - close), _sigRem)) + " / low " + f_pct(1.0 - f_touch(math.max(0.0, close - _lo), _sigRem)), text_color = _tx, text_size = size.tiny)
+        table.merge_cells(_tb, 1, _r, 3, _r)
         if i_mr_on
             _r += 1
             string _mrV = na(_mrT) ? "not enough bars" : _mrSig ? "PULL to the average" : _mrT <= -2 ? "weak pull (do not trust)" : "no pull: wandering or trending"

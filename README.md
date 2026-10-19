@@ -33,6 +33,12 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.11
+
+- **Stack map tab.** Every level the app makes goes in (GEX, walls, the gamma flip, open interest, volume, expected moves, charm, vanna, dealer delta, new positions, the HOD/LOD ladder and projections, yesterday's high, low and close, today's open, high and low, activity hot spots, your own levels). Only areas where several DIFFERENT kinds line up are shown, on a chart and as a list with the HOLD / CHOP / BREAK call, the plan and the chance price gets there. A kind counts once, so a stack means different reasons lining up.
+- **Is the high or low already in?** The chance today's high (and low) so far is still the high (low) at the close, on the Stack map and HOD/LOD tabs and in the HOD/LOD TradingView indicator.
+- **Zones only for GEX and the walls.** Open interest, volume, expected move, charm, vanna, dealer delta and new-position levels are single lines now, and nearby lines are no longer merged into big zones (only levels at exactly the same price share a line). Same in the TradingView levels export.
+
 ## New in 1.10
 
 - **Level map, rebuilt without candles.** Every key level from highest to lowest with the price in NQ, its call (HOLD as support or resistance, CHOP, or BREAK), a plain plan for what to expect when price gets there and where the fade or the break should go next, why, the chance price reaches it today, and its track record. Filter by call and by reach.

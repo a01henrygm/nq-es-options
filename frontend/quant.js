@@ -70,6 +70,7 @@ Object.assign(R, {
         ${card("Projected HOD", pr ? fmt(pr.hod.p50, 2) : "-", pr ? `80%: ${fmt(pr.hod.p80, 2)}, 95%: ${fmt(pr.hod.p95, 2)}` : "session closed")}
         ${card("Projected LOD", pr ? fmt(pr.lod.p50, 2) : "-", pr ? `80%: ${fmt(pr.lod.p80, 2)}, 95%: ${fmt(pr.lod.p95, 2)}` : "session closed")}
         ${card("Time left", fmt(D.minutes_left, 0) + " min", d.sigma_remaining ? `remaining 1 sd ${fmt(d.sigma_remaining, 1)} pts` : "")}</div>
+      <h3>Is the high or low of the day already in?</h3>${alreadyInCards(D.already_in, D.spot_futures ? D.spot_futures / d.spot : 1, root)}
       ${movesBlock(D.moves, root)}
       <div id="hlc" class="chart"></div>
       <h3>The ladder</h3><div class="scroll"><table class="hot"><tr><th>Step</th><th>Price</th><th>${esc(root || "Futures")}</th><th>Chance at the open</th><th>Chance now</th><th></th></tr>
@@ -299,5 +300,65 @@ Object.assign(R, {
       const j = await resp.json(); $("crkeymsg").textContent = resp.ok ? "Saved." : (j.detail || "Could not save."); if (resp.ok) render();
     };
     crDraw();
+  }
+});
+
+// ---- Stack map (1.11): only the areas where many different kinds of levels pile up ------------------------------------
+function alreadyInCards(a, k, root) {
+  if (!a) return "";
+  const col = p => p >= 0.8 ? "#3fb96a" : p >= 0.5 ? "#e6b422" : "#e5534b";
+  return `<div class="grid">
+    <div class="card">Today's high ${fmt(a.high_price * k, 2)}${k !== 1 ? ` ${esc(root)}` : ""}<b style="color:${col(a.high)}">${pc0(a.high)} already in</b>chance no new high before 16:00</div>
+    <div class="card">Today's low ${fmt(a.low_price * k, 2)}${k !== 1 ? ` ${esc(root)}` : ""}<b style="color:${col(a.low)}">${pc0(a.low)} already in</b>chance no new low before 16:00</div>
+    <div class="card">More likely to hold<b>the ${a.likely_first}</b>${a.likely_first === "high" ? "so the low is the side more likely to be taken out" : "so the high is the side more likely to be taken out"}</div></div>
+    <p class="hint">${esc(a.note)}</p>`;
+}
+Object.assign(R, {
+  async stackmap() {
+    const want = { underlying: S.u, convention: $("conv").value, min_families: S.smk || 3, tol_pct: S.smt || 0.05 };
+    const j = await api("/analytics/stack-map", want), m = j.meta, rg = j.regime, root = j.futures_root || "NQ", ix = uName(S.u);
+    const k = j.spot_futures ? j.spot_futures / j.spot : 1, nqOn = k !== 1, F = v => v == null ? "-" : fmt(v * k, 2);
+    const pill = c => `<span style="background:${CALLCOL[c][0]};color:${CALLCOL[c][1]};padding:3px 10px;border-radius:4px;font-weight:700;font-size:.85em">${c}</span>`;
+    const chips = s => s.family_names.map(n => `<span class="badge" style="margin:0 4px 4px 0">${esc(n)}</span>`).join("");
+    const card_ = s => `<div class="lmrow" style="border-left:4px solid ${CALLCOL[s.call][2]}">
+      <div class="lmprice"><b>${F(s.center)}</b><span class="dim">${F(s.low)} to ${F(s.high)}</span><span class="dim">${s.points > 0 ? "+" : ""}${fmt(s.points * k, 1)} pts</span>
+        <span style="color:${s.tier === "Very stacked" ? "#e6b422" : "#9aa3ad"};font-weight:700;margin-top:4px">${esc(s.tier.toUpperCase())}</span><span class="dim">${s.families.length} kinds, score ${fmt(s.score, 1)}</span></div>
+      <div class="lmbody"><div>${pill(s.call)} <b>${esc(s.headline)}</b></div><div style="margin-top:6px">${chips(s)}</div><p>${esc(s.plan)}</p><p class="dim">${esc(s.why)}</p>
+        <details><summary class="dim">What is stacked here (${s.members.length})</summary><div class="body">${s.members.map(x => `${F(x.price)} <b>${esc(x.family_name)}</b>: ${esc(x.label)}`).join("<br>")}</div></details></div>
+      <div class="lmchance"><span class="dim">Chance price gets there today</span><b>${s.chance == null ? "-" : pc0(s.chance)}</b><span class="share"><i style="width:${Math.round((s.chance || 0) * 100)}%;background:${CALLCOL[s.call][2]}"></i></span></div></div>`;
+    const above = j.stacks.filter(s => s.side === "above"), below = j.stacks.filter(s => s.side === "below");
+    const inp = j.inputs;
+    $("view").innerHTML = panel(`Stack map, ${S.u}`, m, `
+      <div class="toolbar"><label>At least<select id="smk">${[2, 3, 4, 5].map(n => `<option value="${n}">${n} different kinds</option>`).join("")}</select></label>
+        <label>Within<select id="smt">${[[0.03, "0.03% (tight)"], [0.05, "0.05%"], [0.08, "0.08% (loose)"]].map(([v, t]) => `<option value="${v}">${t} of price, about ${fmt(j.spot * k * v / 100, 0)} pts</option>`).join("")}</select></label>
+        <span class="dim">${inp.levels} levels from ${Object.keys(inp.by_family).length} kinds went in. Prices in ${nqOn ? esc(root) : esc(ix)}.</span></div>
+      <h3>Is the high or low of the day already in?</h3>${alreadyInCards(j.already_in, k, root)}
+      <div id="smc" class="chart" style="height:560px"></div>
+      <h3>${j.stacks.length ? `${j.stacks.length} stacked areas` : "No well-stacked areas right now"}</h3>
+      ${j.stacks.length ? "" : note("Nothing passes the filter. Try 2 kinds or the looser distance.")}
+      <div class="lm">${above.reverse().map(card_).join("")}
+        <div class="lmnow"><b>PRICE NOW ${F(j.spot)}</b><span class="dim">${esc(rg.title)}: ${esc(rg.tagline)}</span></div>
+        ${below.map(card_).join("")}</div>
+      <details class="adv" data-k="sm-in"><summary>Everything that went in</summary><div class="body">${Object.entries(inp.by_family).map(([n, c]) => `${esc(n)}: ${c}`).join("<br>")}</div></details>
+      <details class="adv" data-k="sm-rule"><summary>How stacks are found</summary><div class="body"><pre style="white-space:pre-wrap;font:inherit" class="dim">${esc(j.rule)}</pre></div></details>
+      <p class="hint">${esc(j.note)}</p>`);
+    $("smk").value = String(S.smk || 3); $("smt").value = String(S.smt || 0.05);
+    $("smk").onchange = () => { S.smk = +$("smk").value; saveUI(); render(); };
+    $("smt").onchange = () => { S.smt = +$("smt").value; saveUI(); render(); };
+    const P = j.price, tl = P.map(p => etx(p.t).slice(11, 16)), tr = [], sh = [], an = [];
+    if (P.length) tr.push({ type: "scatter", mode: "lines", x: tl, y: P.map(p => p.price * k), name: "Price", line: { color: "#fff", width: 2 }, hovertemplate: "Price %{y:,.2f}<extra></extra>" });
+    const pad = Math.max(2, j.spot * k * 0.00012);
+    j.stacks.forEach(s => {
+      const col = CALLCOL[s.call][2], lo = s.low * k - pad, hi = s.high * k + pad, op = s.tier === "Very stacked" ? 0.34 : 0.2;
+      sh.push({ type: "rect", xref: "paper", x0: 0, x1: 1, y0: lo, y1: hi, fillcolor: col, opacity: op, line: { color: col, width: 1 } });
+      an.push({ xref: "paper", x: 1, xanchor: "left", y: s.center * k, text: `<b>${s.call}</b> ${F(s.center)} (${s.families.length})`, showarrow: false, font: { color: CALLCOL[s.call][1], size: 11 }, bgcolor: CALLCOL[s.call][0], borderpad: 3 });
+      tr.push({ type: "scatter", mode: "markers", x: [tl[tl.length - 1] || ""], y: [s.center * k], marker: { size: 14, color: col, symbol: "diamond" }, showlegend: false,
+        hovertemplate: `<b>${s.tier}: ${F(s.center)}</b><br>${s.call}: ${esc(s.headline)}<br>${s.family_names.join(", ")}<extra></extra>` });
+    });
+    if (j.high != null) { sh.push(hline(j.high * k, "#3fb96a", "dot")); sh.push(hline(j.low * k, "#e5534b", "dot")); }
+    const ys = [...j.stacks.flatMap(s => [s.low * k, s.high * k]), ...P.map(p => p.price * k)];
+    plot("smc", tr, LAY(`Stacked areas and today's price (${nqOn ? root : ix})`, { shapes: sh, annotations: an, showlegend: false, hovermode: "closest",
+      xaxis: { type: "category", nticks: 12, gridcolor: "#1c2229" }, yaxis: { gridcolor: "#1c2229", tickformat: ",.0f", range: ys.length ? [Math.min(...ys) - 20 * k, Math.max(...ys) + 20 * k] : undefined },
+      margin: { l: 60, r: 170, t: 40, b: 40 } }));
   }
 });

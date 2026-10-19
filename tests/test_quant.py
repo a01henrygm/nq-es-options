@@ -157,3 +157,12 @@ def test_charm_vanna_prices_come_in_futures_points():
     assert z["nq_low"] <= z["nq_center"] <= z["nq_high"]
     mv = c.get("/api/analytics/hodlod", params={"underlying": "_NDX"}).json()["data"]["moves"]
     assert mv["available"] and mv["drivers"]
+
+
+def test_already_in_rises_as_price_leaves_the_extreme():
+    at_high = qt.already_in(1010.0, 990.0, 1010.0, 10.0)
+    assert at_high["high"] == 0.0 and at_high["likely_first"] == "low"                       # sitting on the high: no reason to think it holds
+    far = qt.already_in(1010.0, 990.0, 991.0, 3.0)
+    assert far["high"] > 0.99 and far["low"] < 0.5 and far["likely_first"] == "high"
+    assert qt.already_in(1010.0, 990.0, 1000.0, 10.0)["high"] < qt.already_in(1010.0, 990.0, 1000.0, 2.0)["high"]   # less time left, higher
+    assert qt.already_in(None, None, 1000.0, 5.0) is None

@@ -18,6 +18,7 @@ from .config import DATA
 from .services import behavior as bh
 from .services import chart_read as cr
 from .services import flows as fl
+from .services import stack as sk
 from .services import quant as qt
 from .services.hodlod_pine import build_hodlod_pine
 from .services.mapping import FUTURES_FOR, INDEX_GROUP
@@ -162,7 +163,7 @@ def register(app, h):
                     d["projection"][side + "_futures"] = {k: fut(c, v) for k, v in d["projection"][side].items()}
             d["open_futures"], d["high_futures"], d["low_futures"] = fut(c, d["open"]), fut(c, d["high"]), fut(c, d["low"])
             d["sigma_open_futures"] = d["sigma_open"] * c["ratio"] if c["ratio"] else None
-        return c, {"hodlod": d, "playbook": pb, "moves": moves, "open_note": c["open_note"], "minutes_left": c["mins_left"], "futures_root": c["root"],
+        return c, {"hodlod": d, "playbook": pb, "moves": moves, "already_in": qt.already_in(c["hi"], c["lo"], snap.spot, c["sig_rem"]), "open_note": c["open_note"], "minutes_left": c["mins_left"], "futures_root": c["root"],
                    "mapped": c["spot_f"] is not None, "spot_futures": c["spot_f"]}
 
     @app.get("/api/analytics/hodlod")
@@ -479,3 +480,105 @@ def register(app, h):
                 "futures_root": finfo.get("root"), "futures_ratio": k,
                 "note": "Built only from what this app stored while it was running (a price about every 2 minutes, about 15 minutes delayed). "
                         "Futures prices use today's index-to-futures conversion, so older days are approximate."}
+
+    # ---- stack map: where the most different kinds of levels pile up ----------------------------------------------------
+    def prior_session(u, day):
+        """Yesterday (the last earlier day with regular-session prices): high, low, last price."""
+        by = {}
+        for r in db.price_history(u, 20000):
+            t = parse_ts(r["source_ts"] or r["retrieved_at"])
+            if t:
+                e = to_et(t)
+                if e.date() < day and RTH_OPEN <= e.time() <= RTH_CLOSE:
+                    by.setdefault(e.date(), []).append((t, r["price"]))
+        if not by:
+            return None
+        d = max(by)
+        px = sorted(by[d])
+        return {"day": d.isoformat(), "high": max(p for _, p in px), "low": min(p for _, p in px), "close": px[-1][1]}
+
+    @app.get("/api/analytics/stack-map")
+    def stack_map(underlying: str, convention: str = "standard", min_families: int = Query(3, ge=2, le=8), tol_pct: float = Query(0.05, gt=0, le=0.5)):
+        """Every level the app makes, by family, and only the areas where several different families pile up."""
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = context(u, convention)
+        snap, z, now = c["snap"], c["z"], c["now"]
+        spot = snap.spot
+        pb = qt.gamma_playbook(z, spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        items = []
+        j = h.levels_payload(u, convention, "auto", None, top=6, by_expiry=4, mid=2, moves=4)
+        for x in j["levels"]:
+            f = sk.family_of(x["category"])
+            if f:
+                items.append({"price": x["value"], "family": f, "label": x["label"], "category": x["category"],
+                              "weight": float(x.get("importance") or sk.DEFAULT_W.get(f, 0.5))})
+        if c["open"] and c["sig_open"]:
+            for k_ in qt.LADDER:
+                for sgn in (1, -1):
+                    items.append({"price": c["open"] + sgn * k_ * c["sig_open"], "family": "ladder", "category": "ladder",
+                                  "label": f"Ladder {'+' if sgn > 0 else '-'}{k_:g} sd", "weight": 0.6 if k_ in (1.0, 2.0) else 0.45})
+            hl = qt.hodlod(c["open"], c["hi"], c["lo"], spot, c["sig_open"], c["sig_rem"])
+            pr = (hl or {}).get("projection")
+            if pr:
+                for side, name in (("hod", "Projected HOD"), ("lod", "Projected LOD")):
+                    for q_, w in (("p50", 0.65), ("p80", 0.5)):
+                        items.append({"price": pr[side][q_], "family": "proj", "category": "projection", "label": f"{name} {q_[1:]}%", "weight": w})
+            items.append({"price": c["open"], "family": "session", "category": "session", "label": "Today's open", "weight": 0.6})
+        if c["hi"] is not None:
+            items.append({"price": c["hi"], "family": "session", "category": "session", "label": "High so far", "weight": 0.6})
+            items.append({"price": c["lo"], "family": "session", "category": "session", "label": "Low so far", "weight": 0.6})
+        ps = prior_session(u, c["day"])
+        if ps:
+            for k_, name in (("high", "Yesterday's high"), ("low", "Yesterday's low"), ("close", "Yesterday's close")):
+                items.append({"price": ps[k_], "family": "prior", "category": "prior", "label": name, "weight": 0.8 if k_ != "close" else 0.6})
+        for meas in ("volume", "oi", "gex"):
+            try:
+                am = fl.activity_map(snap.contracts, spot, now, meas, "total", 0.04, 8, convention, None, 3)
+            except (ValueError, KeyError):
+                continue
+            for hs in am.get("hot_spots", [])[:3]:
+                items.append({"price": hs["price"], "family": "activity", "category": "activity", "label": f"{meas.upper() if meas != 'volume' else 'Volume'} hot spot",
+                              "weight": round(0.5 + 0.5 * min(1.0, hs.get("share") or 0), 3)})
+        tol = tol_pct / 100 * spot
+        stacks = sk.find_stacks(items, spot, tol, min_families=min_families)
+        strikes = an.gex_by_strike(snap.contracts, spot, now, convention)["strikes"]
+        near = [s_ for s_ in strikes if abs(s_["strike"] - spot) <= 0.03 * spot]
+        scale = max((abs(bh.local_gex(near, s_["strike"], spot)) for s_ in near), default=0.0)
+        gf = an.gamma_flip(snap.contracts, spot, now, convention)
+        flips = [z.get("flip") if z.get("available") else None, gf["flip"] if gf["found"] else None]
+        sig = c["sig_rem"] or c["sig_open"]
+        for st in stacks:
+            cats = [m["category"] for m in st["members"]]
+            call, why, strength, g = bh.call_for({"value": st["center"], "category": cats[0], "members": cats}, pb["state"], spot, flips, strikes, scale)
+            st.update({"call": call, "why": why, "tier": sk.tier(st["score"]), "side": "above" if st["center"] > spot else "below",
+                       "points": st["center"] - spot, "chance": qt.touch_prob(abs(st["center"] - spot), sig) if sig else None,
+                       "futures": c["conv"](st["center"]), "futures_low": c["conv"](st["low"]), "futures_high": c["conv"](st["high"]),
+                       "family_names": [sk.FAMILY_NAME.get(f, f) for f in st["families"]]})
+            for m in st["members"]:
+                m["futures"] = c["conv"](m["price"])
+                m["family_name"] = sk.FAMILY_NAME.get(m["family"], m["family"])
+        above = sorted((x for x in stacks if x["side"] == "above"), key=lambda x: x["center"])
+        below = sorted((x for x in stacks if x["side"] == "below"), key=lambda x: -x["center"])
+        for arr, other in ((above, below), (below, above)):
+            for i, st in enumerate(arr):
+                lvl = {"label": " / ".join(st["family_names"][:3]) + " stack", "value": st["center"], "call": st["call"]}
+                nxt = arr[i + 1] if i + 1 < len(arr) else None
+                back = arr[i - 1] if i > 0 else (other[0] if other else None)
+                tolabel = lambda s_: {"label": "the next stacked area", "value": s_["center"]} if s_ else None
+                here = {"label": "today's price area", "value": spot}
+                st.update(bh.prediction(lvl, st["side"], tolabel(nxt), tolabel(back) or here, pb["state"], st["chance"]))
+                if nxt is None:
+                    st["plan"] = st["plan"].replace("the next level", "open air (no stacked area beyond it)")
+        fams = {}
+        for it in items:
+            fams[it["family"]] = fams.get(it["family"], 0) + 1
+        return {"meta": c["m"], "stacks": sorted(stacks, key=lambda x: -x["center"]), "spot": spot, "spot_futures": c["spot_f"],
+                "futures_root": c["root"], "futures_info": c["futures_info"], "already_in": qt.already_in(c["hi"], c["lo"], spot, c["sig_rem"]),
+                "high": c["hi"], "low": c["lo"], "open": c["open"], "prior": ps,
+                "regime": {k_: pb[k_] for k_ in ("state", "title", "tagline", "color", "r_range")},
+                "inputs": {"levels": len(items), "by_family": {sk.FAMILY_NAME.get(f, f): n for f, n in sorted(fams.items(), key=lambda kv: -kv[1])},
+                           "tolerance_points": tol, "min_families": min_families},
+                "price": [{"t": iso(t), "price": p} for t, p in c["rows"]], "rule": sk.RULE,
+                "note": "Only areas where at least " + str(min_families) + " different kinds of levels sit within " + f"{tol:,.0f}" + " points of each other are shown. Not backtested."}

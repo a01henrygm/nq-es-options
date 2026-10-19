@@ -598,6 +598,8 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
             sp_ = snap.spot
             dist = lambda z: (0.0 if z["low"] <= sp_ <= z["high"] else min(abs(sp_ - z["low"]), abs(sp_ - z["high"]))) if z.get("low") is not None else abs(z["value"] - sp_)
             zones = sorted(sorted(zones, key=dist)[:near], key=lambda z: -z["value"])
+        from .services.importance import BAND_KINDS
+        lv = [x if x.get("zone") or x.get("low") is None or x["category"] in BAND_KINDS else {**x, "low": None, "high": None} for x in lv]   # only GEX zones and walls are bands
         lv += zones
         mapper, mapping = futures_mapper(u, snap, now, method)
         root = mapping["futures_root"]
