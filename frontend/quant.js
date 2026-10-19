@@ -176,3 +176,110 @@ Object.assign(R, {
       xaxis: { rangeslider: { visible: false }, gridcolor: "#1c2229", type: "category", nticks: 14, tickangle: 0 }, yaxis: { side: "right", gridcolor: "#1c2229", tickformat: ",.0f" }, margin: { l: 10, r: 150, t: 40, b: 40 } }));
   }
 });
+
+// ---- Chart read (1.8): drop a TradingView screenshot, get it back marked up ------------------------------------------------
+const CR = { img: null, w: 0, h: 0, res: null, busy: false, err: "", note: "" };
+function crShrink(file) {
+  return new Promise((ok, bad) => {
+    const fr = new FileReader();
+    fr.onload = () => { const im = new Image(); im.onload = () => {
+      const sc = Math.min(1, 1600 / im.width), cv = document.createElement("canvas");
+      cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc);
+      cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+      ok({ url: cv.toDataURL("image/jpeg", 0.92), w: cv.width, h: cv.height });
+    }; im.onerror = () => bad(new Error("That file is not an image.")); im.src = fr.result; };
+    fr.onerror = () => bad(new Error("Could not open the file.")); fr.readAsDataURL(file);
+  });
+}
+function crDraw() {
+  const cv = $("crcv"); if (!cv || !CR.img) return;
+  const im = new Image(); im.onload = () => {
+    const W = im.width, H = im.height, g = cv.getContext("2d"); cv.width = W; cv.height = H; g.drawImage(im, 0, 0);
+    const r = CR.res; if (!r || r.problems.length) return;
+    const a = r.reading.axis, yOf = p => (a.y1 + (p - a.p1) * (a.y2 - a.y1) / (a.p2 - a.p1)) * H, xr = r.reading.plot_right_x * W;
+    const fs = Math.max(11, Math.round(W / 110)); g.font = `600 ${fs}px Manrope, Segoe UI, sans-serif`; g.textBaseline = "middle";
+    r.levels.forEach(l => {
+      const y = yOf(l.price); if (y < 0 || y > H) return;
+      const [bg, tx, col] = CALLCOL[l.call];
+      if (l.low != null && l.high != null && l.high > l.low) { g.fillStyle = col + "18"; const y1 = yOf(l.high), y2 = yOf(l.low); g.fillRect(0, y1, xr, y2 - y1); }
+      g.strokeStyle = col; g.lineWidth = Math.max(1.5, W / 900); g.setLineDash(l.call === "CHOP" ? [8, 5] : []);
+      g.beginPath(); g.moveTo(0, y); g.lineTo(xr, y); g.stroke(); g.setLineDash([]);
+      const t = `${l.call} ${fmt(l.price, 2)}`, tw = g.measureText(t).width + 12;
+      g.fillStyle = bg; g.fillRect(xr - tw - 6, y - fs * 0.75, tw, fs * 1.5); g.fillStyle = tx; g.fillText(t, xr - tw, y);
+      g.fillStyle = col; g.font = `500 ${fs - 1}px Manrope, Segoe UI, sans-serif`; g.fillText(l.label.split(" / ")[0], 6, y - fs * 0.8); g.font = `600 ${fs}px Manrope, Segoe UI, sans-serif`;
+    });
+    const P = r.projection; if (!P) return;
+    const drawPath = (path, alt) => {
+      const sp = P.spacing * W, bw = Math.max(2, sp * 0.55);
+      path.candles.forEach((c, i) => {
+        const x = (P.start_x * W) + (i + 1) * sp, up = c.c >= c.o, col = alt ? "#8a8f98" : (up ? "#5DCAA5" : "#F09595");
+        g.globalAlpha = alt ? 0.45 : 0.95; g.strokeStyle = col; g.lineWidth = 1; g.setLineDash(alt ? [3, 3] : []);
+        g.beginPath(); g.moveTo(x, yOf(c.h)); g.lineTo(x, yOf(c.l)); g.stroke();
+        const y1 = yOf(Math.max(c.o, c.c)), y2 = yOf(Math.min(c.o, c.c)); g.strokeRect(x - bw / 2, y1, bw, Math.max(1, y2 - y1));
+      });
+      g.setLineDash([]); g.globalAlpha = 1;
+      if (!alt) path.events.forEach(e => { const x = (P.start_x * W) + (e.i + 1) * sp, y = yOf(e.value) + (e.call === "RESPECT" ? -fs * 1.6 : fs * 1.6);
+        g.fillStyle = CALLCOL[e.call][1]; g.textAlign = "center"; g.fillText(CALLWORD[e.call], x, y); g.textAlign = "start"; });
+    };
+    if (P.alt) drawPath(P.alt, true);
+    drawPath(P.main, false);
+    g.strokeStyle = "#9aa3ad"; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(P.start_x * W + P.spacing * W / 2, 0); g.lineTo(P.start_x * W + P.spacing * W / 2, H); g.stroke(); g.setLineDash([]);
+    const rg = r.regime, t = `${rg.title}  |  targets ${rg.r_range}`; g.font = `700 ${fs + 2}px Manrope, Segoe UI, sans-serif`;
+    const tw = g.measureText(t).width + 20; g.fillStyle = "rgba(15,19,24,.88)"; g.fillRect(8, 8, tw, fs * 2.2); g.fillStyle = rg.color; g.fillText(t, 18, 8 + fs * 1.1);
+  };
+  im.src = CR.img;
+}
+Object.assign(R, {
+  async chartread() {
+    const st = await api("/chart-read/status");
+    const keyBox = st.configured ? "" : `<div class="msg"><b>Add your Anthropic API key once</b><p style="margin:6px 0">Reading a screenshot uses Claude's vision through your own Anthropic API account
+      (a few cents per read). Make a key at console.anthropic.com, paste it here and save. It is stored only in your .env file on this PC and sent only to Anthropic.</p>
+      <input id="crkey" type="password" placeholder="sk-ant-..." style="width:340px"> <button id="crkeysave" class="go">Save key</button> <span id="crkeymsg" class="dim"></span></div>`;
+    const r = CR.res;
+    const pill = c => `<span style="background:${CALLCOL[c][0]};color:${CALLCOL[c][1]};padding:2px 8px;border-radius:4px;font-weight:600;font-size:.85em">${c}</span>`;
+    const seenTxt = { not_reached: "not reached yet", respected: "respected so far", broken: "already broken", chopping: "chopping around it", unclear: "unclear" };
+    const out = !r ? "" : `
+      ${r.problems.length ? note("Could not mark up this screenshot: " + r.problems.join(" "), true) : ""}${r.warnings.map(w => note(w)).join("")}
+      <div class="msg" style="border-color:${r.regime.color};background:#0f1318"><b style="font-size:1.3em;color:${r.regime.color}">${esc(r.regime.title)}</b> <span class="dim">${esc(r.regime.tagline)} Targets ${esc(r.regime.r_range)}.</span>
+        <p style="margin:6px 0 0"><b>On your chart:</b> ${esc(r.reading.structure || "")} <span class="dim">(${esc(r.reading.symbol || "symbol not visible")}, ${esc(r.reading.timeframe || "timeframe not visible")}, last ${fmt(r.reading.last_price, 2)})</span></p>
+        ${r.projection && r.projection.main.events.length ? `<p style="margin:6px 0 0"><b>Main path:</b> ${r.projection.main.events.map(e => `${CALLWORD[e.call]} at ${fmt(e.value, 2)}`).join(", then ")}.</p>` : ""}</div>
+      <div class="scroll"><table><tr><th>Price (${esc(r.unit)})</th><th>Level</th><th>Call</th><th>On your chart so far</th><th>Why</th></tr>
+        ${r.levels.map(l => `<tr><td class="num"><b>${fmt(l.price, 2)}</b></td><td>${esc(l.label)}</td><td>${pill(l.call)}</td>
+          <td>${l.chart_behavior ? `<b>${esc(seenTxt[l.chart_behavior] || l.chart_behavior)}</b>` : '<span class="dim">not noted</span>'}${l.chart_note ? `<br><span class="dim">${esc(l.chart_note)}</span>` : ""}</td>
+          <td class="dim">${esc(l.why)}${l.record ? ` Held ${pct(l.record.held_pct)} of ${l.record.n} logged touches.` : ""}</td></tr>`).join("")}</table></div>
+      <p class="hint">${esc(r.note)}</p>`;
+    $("view").innerHTML = panel(`Chart read, ${S.u}`, null, `${keyBox}
+      <div class="toolbar"><span class="dim">Paste a screenshot of your TradingView chart (Ctrl+V), drop it here, or</span>
+        <label class="go" style="cursor:pointer;padding:6px 12px;border-radius:6px">Choose image<input id="crfile" type="file" accept="image/*" hidden></label>
+        <input id="crnote" placeholder="Optional: anything to tell it (e.g. 1m, 10:42, looking for shorts)" style="flex:1;min-width:260px" value="${esc(CR.note)}">
+        <button id="crgo" class="go" ${CR.img && st.configured && !CR.busy ? "" : "disabled"}>${CR.busy ? "Reading..." : "Read chart"}</button>
+        ${r && !r.problems.length ? '<button id="crdl">Download marked-up image</button>' : ""}</div>
+      ${CR.err ? note(CR.err, true) : ""}
+      <div id="crdrop" style="border:1px dashed #3a4350;border-radius:10px;padding:${CR.img ? "6px" : "60px 10px"};text-align:center;color:#8a8f98">
+        ${CR.img ? '<canvas id="crcv" style="max-width:100%;height:auto"></canvas>' : "Drop or paste a chart screenshot here. Keep the price scale and your levels visible."}</div>
+      ${out}`);
+    const take = async f => { if (!f || !f.type.startsWith("image/")) return; try { const s = await crShrink(f); CR.img = s.url; CR.res = null; CR.err = ""; render(); } catch (e) { CR.err = e.message; render(); } };
+    $("crfile").onchange = e => take(e.target.files[0]);
+    const dz = $("crdrop"); dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = "#2f8bf5"; }; dz.ondragleave = () => dz.style.borderColor = "#3a4350";
+    dz.ondrop = e => { e.preventDefault(); take(e.dataTransfer.files[0]); };
+    document.onpaste = e => { if (S.tab !== "chartread") return; const it = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith("image/")); if (it) take(it.getAsFile()); };
+    $("crnote").oninput = e => { CR.note = e.target.value; };
+    $("crgo").onclick = async () => {
+      CR.busy = true; CR.err = ""; render();
+      try {
+        const resp = await fetch("/api/chart-read" + (S.src ? "?source=" + encodeURIComponent(S.src) : ""), { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ image: CR.img, underlying: S.u, convention: $("conv").value, note: CR.note }) });
+        const j = await resp.json();
+        if (!resp.ok) throw new Error(typeof j.detail === "string" ? j.detail : (j.detail && j.detail.reason) || "The read failed.");
+        CR.res = j;
+      } catch (e) { CR.err = e.message; }
+      CR.busy = false; render();
+    };
+    if ($("crdl")) $("crdl").onclick = () => { const a = document.createElement("a"); a.href = $("crcv").toDataURL("image/png"); a.download = `qdata_chart_read_${uName(S.u)}.png`; a.click(); };
+    if ($("crkeysave")) $("crkeysave").onclick = async () => {
+      const resp = await fetch("/api/chart-read/key", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: $("crkey").value }) });
+      const j = await resp.json(); $("crkeymsg").textContent = resp.ok ? "Saved." : (j.detail || "Could not save."); if (resp.ok) render();
+    };
+    crDraw();
+  }
+});

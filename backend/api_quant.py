@@ -5,17 +5,53 @@ from __future__ import annotations
 from datetime import datetime, time as dtime, timedelta
 from statistics import median
 
-from fastapi import HTTPException, Query
+import os
+import re
+
+from dotenv import dotenv_values
+from fastapi import HTTPException, Query, Request
+from pydantic import BaseModel
 
 from .services import analytics as an
 from .services import intraday as idy
+from .config import DATA
 from .services import behavior as bh
+from .services import chart_read as cr
 from .services import quant as qt
 from .services.hodlod_pine import build_hodlod_pine
 from .services.mapping import FUTURES_FOR, INDEX_GROUP
 from .timeutil import ET, iso, parse_ts, to_et
 
 RTH_OPEN, RTH_CLOSE = dtime(9, 30), dtime(16, 0)
+
+
+class ChartReadIn(BaseModel):
+    image: str                     # data URL of the screenshot
+    underlying: str
+    convention: str = "standard"
+    note: str = ""
+    ahead: int = 30                # projected candles at most
+
+
+class KeyIn(BaseModel):
+    key: str
+
+
+def _env_key(name):
+    v = os.environ.get(name)
+    if not v and (DATA / ".env").exists():
+        v = dotenv_values(DATA / ".env").get(name)
+    v = (v or "").strip()
+    return v if v and not v.startswith("YOUR_") else None
+
+
+def tf_minutes(tf: str) -> float:
+    """'1m' / '5' / '1h' / '15 min' -> minutes. Unknown -> 1."""
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]*)", tf or "")
+    if not m:
+        return 1.0
+    n, u = float(m.group(1)), m.group(2).lower()
+    return n * 60 if u.startswith("h") else n * 1440 if u.startswith("d") else n / 60 if u.startswith("s") else n
 
 
 def register(app, h):
@@ -224,3 +260,108 @@ def register(app, h):
                 "projection": {"times": times, "main": main, "alt": alt, "direction": d, "sd_candle": sd_c},
                 "rule": bh.RULE, "note": ("Candles are built from the index prices this app stores (about one every 2 minutes, about 15 minutes delayed), so they are "
                                           "coarser than TradingView's. Projected candles picture the calls; they are scenarios, not forecasts.")}
+
+    # ---- chart read: a screenshot of your chart, marked up --------------------------------------------------------------
+    def calls_for(u, convention):
+        c = context(u, convention)
+        snap, z, now = c["snap"], c["z"], c["now"]
+        pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        j = h.levels_payload(u, convention, "auto", None, key=14)
+        try:
+            rec = {r["category"]: r for r in h.reactions(u, 30, 0.05)["summary"]}
+        except HTTPException:
+            rec = {}
+        gf = an.gamma_flip(snap.contracts, snap.spot, now, convention)
+        flips = [z.get("flip") if z.get("available") else None, gf["flip"] if gf["found"] else None]
+        return c, pb, bh.level_calls(j["zones"], snap, now, pb["state"], flips, convention, rec, window=0.03)
+
+    @app.get("/api/chart-read/status")
+    def chart_read_status():
+        return {"configured": _env_key("ANTHROPIC_API_KEY") is not None, "model": _env_key("CHART_READ_MODEL") or cr.DEFAULT_MODEL,
+                "env_file": str(DATA / ".env")}
+
+    @app.post("/api/chart-read/key")
+    def chart_read_key(k: KeyIn, request: Request):
+        if (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost", "testclient"):
+            raise HTTPException(403, "The API key can only be saved on the PC itself.")
+        key = k.key.strip()
+        if not re.match(r"^sk-ant-[A-Za-z0-9_\-]{20,}$", key):
+            raise HTTPException(422, "That does not look like an Anthropic API key (it starts with sk-ant-).")
+        from .api_more import env_set
+        env_set(DATA / ".env", {"ANTHROPIC_API_KEY": key})
+        os.environ["ANTHROPIC_API_KEY"] = key
+        return {"saved": True}
+
+    @app.post("/api/chart-read")
+    def chart_read(req: ChartReadIn):
+        """Claude reads the screenshot; Q DATA makes the calls and the projected path in the chart's own prices."""
+        key = _env_key("ANTHROPIC_API_KEY")
+        if not key:
+            raise HTTPException(400, {"need_key": True, "reason": "Add your Anthropic API key to read screenshots."})
+        if req.convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        try:
+            media, b64 = cr.parse_data_url(req.image)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        u = h.underlying_ok(req.underlying)
+        c, pb, lv = calls_for(u, req.convention)
+        snap = c["snap"]
+        mapped = c["spot_f"] is not None
+        conv = (lambda v: c["conv"](v)) if mapped else (lambda v: v)
+        unit = c["root"] if mapped else u.lstrip("_")
+        sent = [{**l, "price": conv(l["value"])} for l in lv if conv(l["value"]) is not None]
+        regime = f"{pb['title']} ({pb['tagline']})"
+        try:
+            rd = cr.read_chart(key, media, b64, sent, regime, unit, req.note.strip()[:300], _env_key("CHART_READ_MODEL") or cr.DEFAULT_MODEL)
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        problems = cr.check_reading(rd)
+        warnings = []
+        last = rd.get("last_price")
+        k = 1.0
+        if isinstance(last, (int, float)) and last > 0:
+            ref = c["spot_f"] if mapped else snap.spot
+            gap = last / ref - 1
+            if abs(gap) > 0.08:
+                problems.append(f"The chart's price ({last:,.2f}) is {gap * 100:+.0f}% away from {unit} ({ref:,.2f}). Pick the matching symbol at the top "
+                                "(NDX for NQ charts, SPX for ES charts) and try again.")
+            elif not mapped:
+                k = last / snap.spot
+                warnings.append(f"No {c['root'] or 'futures'} basis is saved, so the levels were scaled to your chart with the price it shows. Options data is "
+                                "delayed about 15 minutes, so they can be off by several points. Save a basis on the Key levels tab for exact prices.")
+        else:
+            problems.append("The last price could not be read from the chart.")
+        seen = {round(float(x.get("price", 0)), 2): x for x in rd.get("levels_seen") or [] if isinstance(x.get("price"), (int, float))}
+        levels = []
+        for l in sent:
+            p = l["price"] * k
+            near = min(seen.items(), key=lambda kv: abs(kv[0] - l["price"]), default=(None, None))
+            obs = near[1] if near[0] is not None and abs(near[0] - l["price"]) <= max(0.5, 0.0004 * l["price"]) else None
+            levels.append({"label": l["label"], "category": l["category"], "price": p, "low": l["low"] and conv(l["low"]) and conv(l["low"]) * k,
+                           "high": l["high"] and conv(l["high"]) and conv(l["high"]) * k, "call": l["call"], "why": l["why"], "strength": l["strength"],
+                           "record": l["record"], "chart_behavior": (obs or {}).get("chart_behavior"), "chart_note": (obs or {}).get("note")})
+        proj = None
+        if not problems:
+            tfm = tf_minutes(rd.get("timeframe") or "1m")
+            space = rd["plot_right_x"] - rd["last_candle_x"]
+            spacing = rd["candle_spacing"]
+            n = int(min(max(0, req.ahead), max(0, space / spacing - 1)))
+            if n < 8:
+                n, spacing = 12, max(space, 0.06) / 13
+            ratio = (last / snap.spot)
+            sig = (c["sig_rem"] or c["sig_open"] or 0) * ratio
+            mins = c["mins_left"] if c["mins_left"] > 0 else 390.0
+            sd_c = sig * min(1.0, tfm / mins) ** 0.5 if sig else None
+            path_lv = [{"label": l["label"], "value": l["price"], "call": l["call"]} for l in levels]
+            if pb["state"] == "short" and c["open"]:
+                d = 1 if snap.spot >= c["open"] else -1
+            else:
+                nl = min(path_lv, key=lambda x: abs(x["value"] - last), default=None)
+                d = 1 if nl is None or nl["value"] >= last else -1
+            if sd_c:
+                proj = {"main": bh.ghost_path(path_lv, last, sd_c, n, d), "alt": bh.ghost_path(path_lv, last, sd_c, n, d, flip_first=True),
+                        "spacing": spacing, "start_x": rd["last_candle_x"], "timeframe_minutes": tfm, "direction": d}
+        return {"meta": c["m"], "reading": rd, "problems": problems, "warnings": warnings, "levels": levels, "projection": proj, "unit": unit,
+                "regime": {k2: pb[k2] for k2 in ("state", "title", "tagline", "color", "r_range", "trades")},
+                "note": "Claude read the picture; Q DATA made the calls from today's options data. Scenarios, not forecasts. One paid API request per read."}

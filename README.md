@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.8
+
+- **Chart read tab**: paste (Ctrl+V), drop or choose a screenshot of your TradingView chart and get it back marked up: every Q DATA level tagged RESPECT, CHOP or DISRESPECT, what your candles already did at each one, and projected candles after your last candle acting the calls out, plus a downloadable marked-up image. Claude reads the picture through your own Anthropic API key (add it once on the tab; it is stored only in your .env as ANTHROPIC_API_KEY, a few cents per read; CHART_READ_MODEL picks the model). Q DATA makes the calls from today's options data, the same way as the Level map.
+
 ## New in 1.7
 
 - **Level map tab**: a candle chart of the session (built from the prices the app stores) with every key level tagged RESPECT, CHOP or DISRESPECT, and projected candles after the last real one acting the calls out, plus a faded alternate path where the first level goes the other way. The call comes from the 0DTE gamma regime and the dealer gamma at each level; the table shows why, how strong, and how often that level type held in the app's own touch log. Scenarios, not forecasts.
