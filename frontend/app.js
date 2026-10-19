@@ -27,11 +27,26 @@ function loadUI() {
     if (Array.isArray(j.cats)) S.cats = new Set([...j.cats, ...[...S.cats].filter(c => !(j.known || []).includes(c))]);
     S.det = j.det || {}; S.savedConv = j.conv; S.savedMethod = j.method;
   } catch (e) { /* settings just start fresh */ }
+  const q = new URLSearchParams(location.search);          // a window opened with + Window starts on the page it was opened from
+  if (q.get("tab")) S.tab = q.get("tab");
+  if (q.get("u")) S.u = q.get("u");
   applyZoom();
+}
+const EXTRA_WINDOW = new URLSearchParams(location.search).has("w");
+async function newWindow() {
+  try {
+    const r = await fetch("/api/desktop/new-window", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tab: S.tab, u: S.u }) });
+    if (r.ok) return;
+  } catch (e) { /* not the desktop app */ }
+  window.open(`/?w=1&tab=${encodeURIComponent(S.tab)}&u=${encodeURIComponent(S.u || "")}`, "_blank");       // in a browser: a new tab or window
 }
 function saveUI() {
   try {
     const o = {}; UIKEYS.forEach(k => o[k] = S[k]);
+    if (EXTRA_WINDOW) {                                    // extra windows keep their own page and symbol; the main window's stay as they were
+      const old = JSON.parse(localStorage.getItem("nqes.ui") || "{}");
+      o.tab = old.tab ?? o.tab; o.u = old.u ?? o.u;
+    }
     o.cats = [...S.cats]; o.known = [...ALLCATS]; o.det = S.det; o.conv = $("conv").value; o.method = $("method").value;
     localStorage.setItem("nqes.ui", JSON.stringify(o));
   } catch (e) { /* private mode or storage full: nothing to save */ }
@@ -894,6 +909,7 @@ async function boot() {
   $("tabs").onclick = e => { const bt = e.target.closest && e.target.closest("[data-t]"), t = bt && bt.dataset.t; if (!t) return; document.body.classList.remove("navopen"); S.tab = t; $("tabs").querySelectorAll("[data-t]").forEach(b => b.classList.toggle("on", b.dataset.t === t)); render(); };
   ["conv", "method", "exp"].forEach(id => $(id).onchange = render);
   $("reload").onclick = render;
+  $("newwin").onclick = newWindow;
   $("setbtn").onclick = () => { $("controls").hidden = !$("controls").hidden; };
   $("setclose").onclick = () => { $("controls").hidden = true; };
   $("navbtn").onclick = () => document.body.classList.toggle("navopen");

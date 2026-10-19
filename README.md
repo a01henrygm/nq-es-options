@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.13
+
+- **+ Window** (top bar): opens another Q DATA window on the page you are on, inside the same app, so you can keep two pages side by side or one on each screen (for example Game plan and Stack map). Each extra window keeps its own page; the main window opens where you left it. In a web browser it opens a new tab.
+
 ## New in 1.12
 
 - **Game plan tab** (second in the menu). Every tool works as one team: each possible trade at the stacked areas and key levels gets a vote from the Coach (gamma regime), Scout (how stacked), Reach (chance price gets there), Timekeeper (is the high or low already in), Referee (mean-reversion test), Odds maker (Monte Carlo from the entry), 2nd opinion (NQ against ES), Clock (charm into the close) and Film room (how that level type has held). The best two or three come out as cards with entry, stop and target in NQ, the odds and a grade (A, B, C); areas to stay away from are listed with the reasons. Every top card is logged once per half hour and graded against what price did next, so the track record shows whether A cards really beat C cards. My own rules, not backtested.

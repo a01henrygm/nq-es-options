@@ -53,3 +53,9 @@ def test_levels_tab_is_grouped_not_a_wall_of_checkboxes():
     block = JS[JS.index("const FAMILIES"):JS.index("const ALLCATS")]
     assert block.count('"#') >= 6 and "data-fam" in JS and 'data-k="lv-more"' in JS and 'data-k="lv-paste"' in JS
     assert "data-cat=" not in JS
+
+
+def test_plus_window_button_opens_another_window_on_the_same_page():
+    assert 'id="newwin"' in HTML and "/api/desktop/new-window" in JS and 'q.get("tab")' in JS and "EXTRA_WINDOW" in JS
+    app = (FRONT.parent / "desktop" / "app.py").read_text()
+    assert '"/api/desktop/new-window", new_window, "POST"' in app and "webview.create_window(f\"{APP_NAME} ({n})\"" in app

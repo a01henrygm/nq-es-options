@@ -12,12 +12,20 @@ import sys
 import threading
 import time
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 from backend.config import DATA, FROZEN, ROOT, ensure_data_dir
 
 APP_NAME = "Q DATA"
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class NewWindowIn(BaseModel):
+    tab: str = ""        # which page the new window opens on
+    u: str = ""          # which symbol
 CHECK_EVERY = 4 * 3600                     # seconds between update checks
 MAC = sys.platform == "darwin"
 TRAY = "menu bar" if MAC else "tray"
@@ -221,7 +229,18 @@ def main(argv=None):
         threading.Thread(target=install_and_quit, daemon=True).start()
         return {"ok": True}
 
-    for path, fn, method in (("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"),
+    extra = []
+
+    def new_window(w: NewWindowIn):
+        """Another dashboard window in the same app (same server and data), opened on the page you were on."""
+        from urllib.parse import urlencode
+        n = len(extra) + 2
+        q = urlencode({"w": n, "tab": re.sub(r"[^a-z]", "", w.tab or "")[:20], "u": re.sub(r"[^A-Za-z0-9_:]", "", w.u or "")[:20]})
+        extra.append(webview.create_window(f"{APP_NAME} ({n})", url=f"{url}/?{q}", width=1280, height=860, min_size=(700, 500),
+                                           text_select=True, background_color="#0b0d10"))
+        return {"ok": True, "window": n}
+
+    for path, fn, method in (("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
                              ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST"),
                              ("/api/desktop/restart", restart, "POST")):
         app.router.routes.insert(0, APIRoute(path, fn, methods=[method]))          # in front of the page files mounted at /
