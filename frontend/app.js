@@ -16,8 +16,8 @@ const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
 const pickIdx = (n, m) => n <= m ? [...Array(n).keys()] : [...new Set([...Array(m).keys()].map(i => Math.round(i * (n - 1) / (m - 1))))];
 const cleanNote = c => `Cleaning: ${esc(c.method)} Used ${fmt(c.stats.used)} contracts; dropped ${fmt(c.stats.zero_bid)} with zero bid, ${fmt(c.stats.wide_spread)} with wide spreads, ${fmt(c.stats.no_iv)} without IV, ${fmt(c.stats.bad_iv)} with out-of-range IV, ${fmt(c.stats.itm_skipped)} in-the-money.`;
-const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", hmm: "oi_change", hmx: "8", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext", "charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, qstop: null, qmodel: "auto", lmcall: "ALL", lmnear: true, smk: 3, smt: 0.05, hday: "", hmet: "total_net_gex", zoom: 1, det: {}, touch: 0 };
-const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "hmm", "hmx", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "qstop", "qmodel", "lmcall", "lmnear", "smk", "smt", "hmet", "zoom"];
+const S = { u: null, tab: "home", busy: false, hmf: "volume", hms: "total", hmw: "0.04", hma: "all", hmx: "8", ivx: "strike", ivotm: true, ivsm: true, svx: "strike", svview: "both", svotm: true, cats: new Set(["gex0_call_wall", "gex0_put_wall", "gex0_flip", "gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move", "custom", "oi_by_expiry", "volume_by_expiry", "oi_mid", "volume_mid", "gex_call_zone", "gex_put_zone", "gex_pos_zone", "gex_neg_zone", "oi_call_zone", "oi_put_zone", "volume_call_zone", "volume_put_zone", "expected_move_ext", "charm_sell_zone", "charm_buy_zone", "vanna_pos_zone", "vanna_neg_zone", "dex_pos_zone", "dex_neg_zone", "new_call_zone", "new_put_zone"]), lvtop: 2, lvexp: 3, lvmid: 2, lvmov: 3, lvkey: 10, lvnear: 0, lvq: "", lvqc: { gex: 8, oi: 2, vol: 1, move: 2, charm: 2, vanna: 2, dex: 1, new: 2 }, qstop: null, qmodel: "auto", lmcall: "ALL", lmnear: true, smk: 3, smt: 0.05, hday: "", hmet: "total_net_gex", zoom: 1, det: {}, touch: 0 };
+const UIKEYS = ["tab", "u", "hmf", "hms", "hmw", "hma", "hmx", "ivx", "ivotm", "ivsm", "svx", "svview", "svotm", "lvtop", "lvexp", "lvmid", "lvmov", "lvkey", "lvnear", "lvq", "lvqc", "qstop", "qmodel", "lmcall", "lmnear", "smk", "smt", "hmet", "zoom"];
 function loadUI() {
   try {
     const j = JSON.parse(localStorage.getItem("nqes.ui") || "{}");
@@ -96,7 +96,7 @@ const HELP = {
   flip: ["The estimated price where modeled dealer gamma changes sign.", "Above it moves tend to be calmer; below it they can be bigger (under the standard sign scenario). Treat it as a zone, not a line: the scenarios table shows how much it shifts with the assumptions."],
   oi: ["Open interest: contracts still open from before today, by strike. It updates once a day.", "Tall bars are strikes with a lot of positions, which can act as magnets or barriers. The change view shows where positions were added or removed since the last session."],
   volume: ["Contracts traded today by strike, with unusually busy strikes flagged.", "A flagged strike is trading far more than the rest of today's chain. Volume does not say who bought or sold."],
-  heatmap: ["Where the activity is: a strike by expiry heatmap of new positions, volume, open interest or modeled dealer flows, with the prices where it is concentrated.", "Each row is a strike and each column an expiry; brighter or deeper color means more. The bars on the right add up each strike across expiries. Hot spots are bands of neighbouring strikes with the most activity, listed with their futures price once a basis is saved. The activity center is the price that splits the activity in half. The yellow dotted line is the current price. Copy heatmap indicator puts all of it on your TradingView chart: every measure and side, the strike heat bands, hot spots and activity centers, switchable in the indicator settings (uses your strikes and expirations choices; re-copy each session)."],
+  heatmap: ["Where the activity is: a strike by expiry heatmap of every measure at once (new positions, volume, open interest and the modeled dealer flows blended into one heat), or any single measure, with the prices where it is concentrated.", "All measures (combined) is the default: each measure is scaled to its own busiest cells and blended, so a cell glows hottest where several kinds of activity agree. The Levels column marks every measure's hot spots (diamonds, bigger is stronger) and activity centers (dashes) in that measure's color, the stacked bars show what each strike's heat is made of, and the table under the chart lists every level. Click a measure in the legend to hide it or double-click to show only it. Each row is a strike and each column an expiry; brighter or deeper color means more. The bars on the right add up each strike across expiries. Hot spots are bands of neighbouring strikes with the most activity, listed with their futures price once a basis is saved. The activity center is the price that splits the activity in half. The yellow dotted line is the current price. Copy heatmap indicator puts all of it on your TradingView chart: every measure and side, the strike heat bands, hot spots and activity centers, switchable in the indicator settings (uses your strikes and expirations choices; re-copy each session)."],
   flows: ["Charm and vanna: how dealer hedging may shift as time passes and as implied volatility moves, plus how much delta dealers hold at each strike. All modeled estimates.", "Charm: as the day goes on, option deltas drift, and dealers hedge that drift. The drift-to-close figure is how much they would need to buy or sell by 16:00 ET if price and IV stayed put; it is biggest on 0DTE afternoons. Vanna: when IV falls, dealer deltas change too, so a vol crush can force buying or selling. The sign of each depends on the dealer-positioning assumption in Settings."],
   iv: ["Implied volatility across strikes (the smile or skew) and across expiries (term structure).", "A higher left side means puts are priced richer than calls. The other chart shows whether near expiries cost more or less volatility than far ones."],
   surface: ["The whole volatility picture in one view: strike, expiry and implied volatility. The 3D view and the heatmap show the same data, and Both shows them together.", "Drag to rotate the 3D view, scroll to zoom, and use the buttons above each chart to zoom, reset or fill the screen. Your view and settings are remembered."],
@@ -374,73 +374,108 @@ const R = {
     if (flagged.length && window.Plotly && $("c1")) Plotly.addTraces("c1", [{ type: "scatter", mode: "markers", x: flagged.map(f => f.strike), y: flagged.map(f => f.volume), name: "Unusual", marker: { symbol: "diamond", size: 11, color: "#ffd34d", line: { color: "#000", width: 1 } }, hovertemplate: "Unusual: %{x}<br>total volume %{y}<extra></extra>" }]);
   },
   async heatmap() {
-    const want = { underlying: S.u, measure: S.hmm, side: S.hms, window: S.hmw, expiries: S.hmx, convention: $("conv").value, method: $("method").value };
-    let j;
-    try { j = await api("/analytics/activity", want); } catch (e) { throw e; }
-    const M = [["oi_change", "New positions (open interest change since the last session)"], ["volume", "Volume today"], ["oi", "Open interest"], ["gex", "Modeled GEX"], ["charm", "Modeled charm (est.)"], ["vanna", "Modeled vanna (est.)"], ["dex", "Modeled dealer delta (est.)"]];
-    const modeled = ["gex", "charm", "vanna", "dex"].includes(S.hmm);
+    const want = { underlying: S.u, measure: S.hma, side: S.hms, window: S.hmw, expiries: S.hmx, convention: $("conv").value, method: $("method").value };
+    const j = await api("/analytics/activity", want);
+    const M = [["all", "All measures (combined)"], ["oi_change", "New positions (open interest change since the last session)"], ["volume", "Volume today"], ["oi", "Open interest"], ["gex", "Modeled GEX"], ["charm", "Modeled charm (est.)"], ["vanna", "Modeled vanna (est.)"], ["dex", "Modeled dealer delta (est.)"]];
+    const modeled = ["gex", "charm", "vanna", "dex"].includes(S.hma);
     const ctl = `<div class="toolbar">
       <label>Show<select id="hmm">${M.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select></label>
       <label>Side<select id="hms"><option value="total">Calls + puts</option><option value="call">Calls only</option><option value="put">Puts only</option>${modeled ? "" : '<option value="net">Calls minus puts</option>'}</select></label>
       <label>Strikes within<select id="hmw"><option value="0.015">1.5% of price</option><option value="0.02">2% of price</option><option value="0.04">4% of price</option><option value="0.08">8% of price</option><option value="0">All strikes</option></select></label>
       <label>Expirations<select id="hmx"><option value="2">Next 2</option><option value="4">Next 4</option><option value="8">Next 8</option><option value="15">Next 15</option><option value="30">Up to 30</option></select></label>
-      <span class="actions"><button class="go" id="hmpine" title="One TradingView indicator with every measure, side, hot spot and activity center from this page">Copy heatmap indicator</button><button id="hmpinedl">Download .pine</button></span></div>`;
-    const wire = () => { $("hmm").value = S.hmm; $("hms").value = modeled && S.hms === "net" ? "total" : S.hms; $("hmw").value = S.hmw; $("hmx").value = S.hmx;
-      ["hmm", "hms", "hmw", "hmx"].forEach(id => $(id).onchange = () => { S.hmm = $("hmm").value; S.hms = $("hms").value; S.hmw = $("hmw").value; S.hmx = $("hmx").value; render(); });
+      <span class="actions"><button class="go" id="hmpine" title="One TradingView indicator with every measure's heat, hot points and activity centers from this page">Copy heatmap indicator</button><button id="hmpinedl">Download .pine</button></span></div>`;
+    const wire = () => { $("hmm").value = S.hma; $("hms").value = modeled && S.hms === "net" ? "total" : S.hms; $("hmw").value = S.hmw; $("hmx").value = S.hmx;
+      ["hmm", "hms", "hmw", "hmx"].forEach(id => $(id).onchange = () => { S.hma = $("hmm").value; S.hms = $("hms").value; S.hmw = $("hmw").value; S.hmx = $("hmx").value; render(); });
       const hp = $("hmpine"), hd = $("hmpinedl"), hget = () => api("/export/heatmap-pine", want);
       const fail = e => alert("Could not build the heatmap indicator: " + (e.msg || e.message));
       hp.onclick = async () => { try { const r = await hget(); try { await navigator.clipboard.writeText(r.code); hp.textContent = `Copied (${r.measures.length} measures, ${r.strikes} strikes)`; } catch (e) { showText("Heatmap indicator (Pine)", r.code); } } catch (e) { fail(e); } };
       hd.onclick = async () => { try { const r = await hget(); download(`qdata_heatmap_${S.u.replace(/^_/, "")}.pine`, r.code); hd.textContent = "Downloaded"; } catch (e) { fail(e); } }; };
     if (!j.available) { $("view").innerHTML = panel(`Activity heatmap, ${S.u}`, j.meta, ctl + note(j.reason)); wire(); return; }
-    const d = j.data, m = j.meta, root = j.futures_root, fut = v => v == null ? "" : `<i class="fut">${esc(root)} ${fmt(v, 0)}</i>`;
+    const d = j.data, m = j.meta, root = j.futures_root, all = d.measure === "all", fut = v => v == null ? "" : `<i class="fut">${esc(root)} ${fmt(v, 0)}</i>`;
     const px = v => fmt(v, v % 1 ? 2 : 0);
-    const unitTxt = d.modeled ? big : (v => fmt(v));
-    const meanCol = h => ({ call: "#3fb96a", put: "#e5534b", positive: d.measure === "oi_change" ? "#3fb96a" : d.measure === "charm" ? "#e76f51" : "#4cc9f0", negative: d.measure === "oi_change" ? "#e5534b" : d.measure === "charm" ? "#2a9d8f" : "#f72585" }[h.side]);
-    const hot = d.hot_spots.map((h, i) => `<tr><td><b>#${i + 1}</b></td><td class="num"><b>${px(h.price)}</b><br><span class="dim">${px(h.low)} to ${px(h.high)}</span></td>
+    const unitTxt = all ? (v => fmt(v, 0)) : d.modeled ? big : (v => fmt(v));
+    const green = d.measure === "oi_change" || (d.side === "net" && !d.modeled);
+    // one heat ramp for the whole page: night blue -> violet -> magenta -> coral -> amber -> pale gold
+    const HEAT = [[0, "#0c1226"], [0.06, "#141d45"], [0.18, "#2a2f86"], [0.34, "#5a2ca6"], [0.5, "#a3319a"], [0.66, "#e2506a"], [0.8, "#ff8a4c"], [0.92, "#ffc65a"], [1, "#fff4b8"]];
+    const POS = green ? [[0, "#0c1226"], [0.35, "#11553a"], [0.75, "#2fcf7c"], [1, "#9dffc6"]] : [[0, "#0c1226"], [0.35, "#134a7a"], [0.75, "#3fb6f0"], [1, "#a6ecff"]];
+    const NEG = green ? [[0, "#0c1226"], [0.35, "#6a1a2c"], [0.75, "#ff4d61"], [1, "#ffa3ad"]] : [[0, "#0c1226"], [0.35, "#5c1a60"], [0.75, "#f2459a"], [1, "#ffa6d2"]];
+    const signedScale = [...NEG.slice().reverse().map(([t, c]) => [(1 - t) * 0.5, c]), ...POS.slice(1).map(([t, c]) => [0.5 + t * 0.5, c])];
+    const ramp = (scale, t) => { t = Math.max(0, Math.min(1, t)); for (let i = 1; i < scale.length; i++) if (t <= scale[i][0]) { const [a, ca] = scale[i - 1], [b, cb] = scale[i], f = (t - a) / (b - a || 1), h = s => [1, 3, 5].map(k => parseInt(s.slice(k, k + 2), 16)), A = h(ca), B = h(cb); return `rgb(${A.map((x, k) => Math.round(x + (B[k] - x) * f)).join(",")})`; } return scale[scale.length - 1][1]; };
+    const meanCol = h => all ? "#ffc65a" : ({ call: "#3fb96a", put: "#e5534b", positive: green ? "#3fb96a" : "#4cc9f0", negative: green ? "#e5534b" : "#f72585" }[h.side]);
+    const hot = d.hot_spots.map((h, i) => `<tr><td><span class="rk${i ? "" : " top"}">${i + 1}</span></td><td class="num"><b>${px(h.price)}</b><br><span class="dim">${px(h.low)} to ${px(h.high)}</span></td>
       <td class="num">${h.futures != null ? `<b>${fmt(h.futures, 0)}</b><br><span class="dim">${fmt(h.futures_low, 0)} to ${fmt(h.futures_high, 0)}</span>` : "-"}</td>
-      <td><span class="dot" style="background:${meanCol(h)}"></span>${esc(h.meaning)}</td>
-      <td><span class="share"><i style="width:${Math.round(h.share * 100)}%;background:${meanCol(h)}"></i></span> ${fmt(h.share * 100, 0)}%</td>
+      <td>${all ? `<span class="heatchip" style="background:${ramp(HEAT, h.heat / 100)}">${h.heat}</span>` : `<span class="dot" style="background:${meanCol(h)}"></span>`}${esc(h.meaning)}</td>
+      <td><span class="share"><i style="width:${Math.round(h.share * 100)}%;background:${all ? "linear-gradient(90deg,#a3319a,#ffc65a)" : meanCol(h)}"></i></span> ${fmt(h.share * 100, 0)}%</td>
       <td class="num">${h.distance_pct >= 0 ? "+" : ""}${fmt(h.distance_pct, 2)}%</td><td>${h.top_expiry ? esc(h.top_expiry.slice(5)) : "-"}</td></tr>`).join("");
-    const above = d.share_above, below = d.share_below;
+    const lv = all ? d.levels : [];
+    const lvRows = lv.map(L => `<tr${Math.abs(L.distance_pct) < 0.35 ? ' class="nearpx"' : ""}><td><span class="mchip" style="--c:${L.color}">${esc(L.name)}</span></td>
+      <td>${L.kind === "center" ? "Activity center" : "Hot spot #" + L.rank}</td>
+      <td class="num"><b>${px(L.price)}</b>${L.kind === "hot" && L.low !== L.high ? `<br><span class="dim">${px(L.low)} to ${px(L.high)}</span>` : ""}</td>
+      <td class="num">${L.futures != null ? `<b>${fmt(L.futures, 0)}</b>` : "-"}</td><td>${esc(L.meaning)}${L.modeled ? ' <span class="dim">(est.)</span>' : ""}</td>
+      <td class="num">${L.distance_pct >= 0 ? "+" : ""}${fmt(L.distance_pct, 2)}%</td></tr>`).join("");
+    const above = d.share_above, below = d.share_below, h0 = d.hot_spots[0];
+    const legend = all ? `<div class="mlegend">${d.measures.map(k => `<span class="mchip" style="--c:${d.colors[k]}">${esc(d.names[k])}</span>`).join("")}${(d.missing || []).includes("oi_change") ? '<span class="dim">New positions fill in from the next session (needs yesterday\'s open interest).</span>' : ""}</div>` : "";
     const tiles = `<div class="hm-tiles">
-      <div class="card hm-big"><span>Activity center</span><b>${d.center != null ? px(d.center) : "-"}</b>${fut(d.center_futures)}<em>Half the activity in view sits above this price, half below.</em></div>
-      <div class="card"><span>Biggest hot spot</span><b>${d.hot_spots[0] ? px(d.hot_spots[0].price) : "-"}</b>${d.hot_spots[0] ? fut(d.hot_spots[0].futures) : ""}<em>${d.hot_spots[0] ? esc(d.hot_spots[0].meaning) + ", " + fmt(d.hot_spots[0].share * 100, 0) + "% of the total" : "none"}</em></div>
+      <div class="card hm-big"><span>Activity center</span><b>${d.center != null ? px(d.center) : "-"}</b>${fut(d.center_futures)}<em>Half the ${all ? "combined heat" : "activity"} in view sits above this price, half below.</em></div>
+      <div class="card hm-hot"><span>Biggest hot spot</span><b>${h0 ? px(h0.price) : "-"}</b>${h0 ? fut(h0.futures) : ""}<em>${h0 ? esc(h0.meaning) + ", " + fmt(h0.share * 100, 0) + "% of the total" : "none"}</em></div>
       <div class="card"><span>Price now</span><b>${px(m.spot)}</b>${fut(d.spot_futures)}<em>${above != null ? `${fmt(above * 100, 0)}% of activity above, ${fmt(below * 100, 0)}% below` : ""}</em></div>
       ${above != null ? `<div class="card"><span>Above vs below price</span><div class="tilt"><i style="width:${Math.round(above * 100)}%"></i></div><em>${above > 0.6 ? "Weighted above price" : below > 0.6 ? "Weighted below price" : "Spread on both sides"}</em></div>` : ""}</div>`;
-    $("view").innerHTML = panel(`${esc(d.title)}, ${S.u}`, m, ctl + `<div class="readout">${esc(d.summary)}</div>` + tiles +
-      (d.strikes.length ? `<div id="c1" class="chart" style="height:${Math.min(1250, Math.max(520, d.strikes.length * 16 + 140))}px"></div>` : note("Nothing in this window. Widen the strikes or add expirations.", true)) +
-      `<h3>Hot spots: where the activity is concentrated</h3>
-      <div class="scroll"><table class="hot"><tr><th></th><th>${esc(S.u.replace(/^_/, ""))} price (band)</th><th>${root || "Futures"} price</th><th>What it is</th><th>Share of activity</th><th>From price</th><th>Main expiry</th></tr>${hot || "<tr><td colspan=7>None</td></tr>"}</table></div>
+    $("view").innerHTML = panel(`${esc(d.title)}, ${S.u}`, m, ctl + `<div class="readout">${esc(d.summary)}</div>` + tiles + legend +
+      (d.strikes.length ? `<div class="hm-frame"><div id="c1" class="chart" style="height:${Math.min(1300, Math.max(560, d.strikes.length * 17 + 150))}px"></div></div>` : note("Nothing in this window. Widen the strikes or add expirations.", true)) +
+      `<h3>Hot spots: where the ${all ? "combined heat" : "activity"} is concentrated</h3>
+      <div class="scroll"><table class="hot"><tr><th></th><th>${esc(S.u.replace(/^_/, ""))} price (band)</th><th>${root || "Futures"} price</th><th>${all ? "Heat and what makes it" : "What it is"}</th><th>Share</th><th>From price</th><th>Main expiry</th></tr>${hot || "<tr><td colspan=7>None</td></tr>"}</table></div>
+      ${all ? `<h3>Every level from every measure</h3><p class="hint">Each measure's top hot spots and its activity center, highest price first. Rows within 0.35% of price are highlighted.</p>
+      <div class="scroll"><table class="hot lvall"><tr><th>Measure</th><th>Level</th><th>${esc(S.u.replace(/^_/, ""))} price</th><th>${root || "Futures"} price</th><th>What it is</th><th>From price</th></tr>${lvRows || "<tr><td colspan=6>None</td></tr>"}</table></div>` : ""}
       ${!j.mapped && root ? note(`Save a basis on the Key levels tab to see ${root} prices here. ${j.mapping_note || ""}`) : ""}
-      ${d.modeled ? note("Modeled estimate. The dealer side comes from the positioning assumption in Settings, not from observed positions.") : ""}
-      <p class="hint">${d.measure === "oi_change" && j.oi_from ? `Compared with the open interest stored ${esc(et(j.oi_from))}. ` : ""}Units: ${esc(d.units)}. ${esc(d.hot_rule)} ${d.color_max && d.color_max < d.max ? `Colors stop getting stronger at ${unitTxt(d.color_max)} so smaller cells stay visible.` : ""} Hover a cell for its exact value.</p>`);
+      ${d.modeled || all ? note(all ? "GEX, charm, vanna and dealer delta are modeled estimates from the positioning assumption in Settings, not observed positions." : "Modeled estimate. The dealer side comes from the positioning assumption in Settings, not from observed positions.") : ""}
+      <p class="hint">${(d.measure === "oi_change" || all) && j.oi_from ? `Open interest change compared with the open interest stored ${esc(et(j.oi_from))}. ` : ""}Units: ${esc(d.units)}. ${esc(d.hot_rule)} ${!all && d.color_max && d.color_max < d.max ? `Colors stop getting stronger at ${unitTxt(d.color_max)} so smaller cells stay visible.` : ""} Hover a cell for its exact value.</p>`);
     wire();
     if (!d.strikes.length) return;
-    const ys = d.strikes.map(k => px(k)), xs = d.expiries.map((e, i) => `${e.slice(5)} (${fmt(d.dte[i], d.dte[i] < 1 ? 1 : 0)}d)`);
+    const ys = d.strikes.map(k => px(k)), xs = d.expiries.map((e, i) => `${e.slice(5)} · ${fmt(d.dte[i], d.dte[i] < 1 ? 1 : 0)}d`);
     let near = 0; d.strikes.forEach((k, i) => { if (Math.abs(k - m.spot) < Math.abs(d.strikes[near] - m.spot)) near = i; });
     const sg = v => v == null ? null : Math.sign(v) * Math.sqrt(Math.abs(v)), cm = d.color_max || d.max || 1;
-    const green = d.measure === "oi_change" || (d.side === "net" && !d.modeled);
-    const cs = d.signed ? (green ? [[0, "#ff4d5e"], [0.25, "#8a1f33"], [0.5, "#0D1322"], [0.75, "#1f6b45"], [1, "#4dff9a"]] : [[0, "#ff3d9a"], [0.25, "#6e1f5c"], [0.5, "#0D1322"], [0.75, "#145a7a"], [1, "#4cc9f0"]])
-      : [[0, "#0D1322"], [0.12, "#1b2a6b"], [0.32, "#3D8BFF"], [0.52, "#22d3c5"], [0.74, "#ffd34d"], [1, "#ff4d3d"]];
-    const fr = d.signed ? [-1, -.4, -.1, 0, .1, .4, 1] : [0, .05, .2, .45, 1], tv = fr.map(f => f * cm);
-    const hov = d.modeled ? "%{customdata:,.3s}" : "%{customdata:,.0f}";
-    const prof = d.profile, pcol = prof.map(v => d.signed ? (v >= 0 ? (green ? "#3fb96a" : "#4cc9f0") : (green ? "#e5534b" : "#f72585")) : "#3D8BFF");
+    const cs = d.signed ? signedScale : HEAT;
+    const fr = all ? [0, 10, 25, 50, 75, 100].map(v => v / 100) : d.signed ? [-1, -.4, -.1, 0, .1, .4, 1] : [0, .05, .2, .45, 1], tv = fr.map(f => f * cm);
+    const hov = all ? "heat %{customdata:.0f}" : d.modeled ? "%{customdata:,.3s}" : "%{customdata:,.0f}";
+    const GX = all ? [0, 0.69] : [0, 0.79], LX = [0.705, 0.795], BX = [0.81, 1];
     const hotIdx = d.hot_spots.map(h => d.strikes.indexOf(h.price));
-    const shapes = [{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "#ffd34d", width: 2, dash: "dot" } }]
-      .concat(d.hot_spots.map((h, i) => ({ type: "rect", xref: "paper", yref: "y", x0: 0, x1: 0.79, y0: Math.min(...h.members.map(k => d.strikes.indexOf(k)).filter(x => x >= 0), hotIdx[i]) - 0.5, y1: Math.max(...h.members.map(k => d.strikes.indexOf(k)), hotIdx[i]) + 0.5, line: { color: "#ffffff", width: i ? 1 : 2 }, fillcolor: "rgba(0,0,0,0)" })));
-    const ann = d.hot_spots.map((h, i) => ({ xref: "paper", yref: "y", x: 1, y: hotIdx[i], xanchor: "right", showarrow: false, bgcolor: "rgba(10,15,28,.82)", bordercolor: "#fff", borderwidth: i ? 0 : 1, borderpad: 3,
-      text: `<b>#${i + 1} ${px(h.price)}</b>${h.futures != null ? `  ${root} ${fmt(h.futures, 0)}` : ""}`, font: { size: 11, color: "#fff" } }))
-      .concat([{ xref: "paper", yref: "y", x: 0, y: near, xanchor: "left", yanchor: "bottom", showarrow: false, text: `price ${px(m.spot)}${d.spot_futures != null ? ` (${root} ${fmt(d.spot_futures, 0)})` : ""}`, font: { size: 11, color: "#ffd34d" }, bgcolor: "rgba(10,15,28,.75)" }]);
-    plot("c1", [
-      { type: "heatmap", x: xs, y: ys, z: d.z.map(r => r.map(sg)), customdata: d.z, colorscale: cs, zmid: d.signed ? 0 : undefined, zmin: d.signed ? -sg(cm) : 0, zmax: sg(cm), xgap: 2, ygap: 1, hoverongaps: false,
-        hovertemplate: `Strike %{y}<br>Expiry %{x}<br>${hov} ${esc(d.units)}<extra></extra>`,
-        colorbar: { orientation: "h", thickness: 10, x: 0, xanchor: "left", y: -0.1, yanchor: "top", len: 0.79, title: { text: d.units, side: "top" }, tickmode: "array", tickvals: tv.map(sg), ticktext: tv.map(v => d.modeled ? big(v) : fmt(v)) } },
-      { type: "bar", orientation: "h", x: prof, y: ys, xaxis: "x2", yaxis: "y", marker: { color: pcol }, hovertemplate: `Strike %{y}<br>all expiries: ${d.modeled ? "%{x:,.3s}" : "%{x:,.0f}"}<extra></extra>` }],
-      LAY("", { margin: { l: 70, r: 14, t: 16, b: 120 }, showlegend: false,
-        xaxis: { domain: [0, 0.79], gridcolor: "#1E2840", tickangle: -30, side: "bottom" },
-        xaxis2: { domain: [0.81, 1], gridcolor: "#1E2840", zerolinecolor: "#5D6884", title: { text: "All expiries", font: { size: 11 } }, showticklabels: false },
-        yaxis: { type: "category", categoryorder: "array", categoryarray: ys, autorange: "reversed", gridcolor: "#1E2840", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 32)) },
-        shapes, annotations: ann }));
+    const bandOf = (h, i) => [Math.min(...h.members.map(k => d.strikes.indexOf(k)).filter(x => x >= 0), hotIdx[i]) - 0.5, Math.max(...h.members.map(k => d.strikes.indexOf(k)), hotIdx[i]) + 0.5];
+    const shapes = d.hot_spots.flatMap((h, i) => { const [y0, y1] = bandOf(h, i), a = i ? 0.55 : 1; return [
+        { type: "rect", xref: "paper", yref: "y", x0: GX[0], x1: GX[1], y0, y1, line: { width: 0 }, fillcolor: `rgba(255,214,120,${i ? 0.035 : 0.06})`, layer: "above" },
+        { type: "line", xref: "paper", yref: "y", x0: GX[0], x1: GX[0], y0, y1, line: { color: `rgba(255,198,90,${a})`, width: i ? 3 : 5 } },
+        { type: "line", xref: "paper", yref: "y", x0: GX[0], x1: GX[1], y0: hotIdx[i], y1: hotIdx[i], line: { color: `rgba(255,244,184,${i ? 0.25 : 0.45})`, width: 1, dash: "dot" }, layer: "above" }]; })
+      .concat([{ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "rgba(255,211,77,.18)", width: 7 }, layer: "above" },
+        { type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: near, y1: near, line: { color: "#ffd34d", width: 1.5 }, layer: "above" }]);
+    if (d.center != null) { const ci = d.strikes.indexOf(d.center); if (ci >= 0) shapes.push({ type: "line", xref: "paper", yref: "y", x0: GX[0], x1: GX[1], y0: ci, y1: ci, line: { color: "rgba(231,236,245,.55)", width: 1, dash: "dash" }, layer: "above" }); }
+    const ann = d.hot_spots.map((h, i) => ({ xref: "paper", yref: "y", x: GX[1] - 0.006, y: hotIdx[i], xanchor: "right", showarrow: false, bgcolor: i ? "rgba(12,18,38,.78)" : "rgba(255,198,90,.95)", bordercolor: i ? "rgba(255,198,90,.6)" : "#fff4b8", borderwidth: 1, borderpad: 4,
+      text: `<b>${i + 1}</b>  ${px(h.price)}${h.futures != null ? `  ·  ${root} ${fmt(h.futures, 0)}` : ""}${all ? `  ·  heat ${h.heat}` : ""}`, font: { size: 11, color: i ? "#fff4b8" : "#1a1206" } }))
+      .concat([{ xref: "paper", yref: "y", x: 0.004, y: near, xanchor: "left", yanchor: "bottom", yshift: 3, showarrow: false, text: `<b>price ${px(m.spot)}</b>${d.spot_futures != null ? `  ${root} ${fmt(d.spot_futures, 0)}` : ""}`, font: { size: 11, color: "#ffd34d" }, bgcolor: "rgba(12,18,38,.8)", borderpad: 3 }]);
+    if (d.center != null && d.strikes.indexOf(d.center) >= 0) ann.push({ xref: "paper", yref: "y", x: GX[0] + (GX[1] - GX[0]) * 0.3, y: d.strikes.indexOf(d.center), xanchor: "left", yanchor: "middle", showarrow: false, text: `center ${px(d.center)}`, font: { size: 10, color: "#E7ECF5" }, bgcolor: "rgba(12,18,38,.7)", borderpad: 2 });
+    const traces = [{ type: "heatmap", x: xs, y: ys, z: d.z.map(r => r.map(all ? (v => v == null ? null : Math.pow(v, 0.8)) : sg)), customdata: d.z, colorscale: cs, zmid: d.signed ? 0 : undefined, zmin: all ? 0 : d.signed ? -sg(cm) : 0, zmax: all ? Math.pow(100, 0.8) : sg(cm), xgap: 3, ygap: 2, hoverongaps: false,
+      hovertemplate: `<b>Strike %{y}</b><br>Expiry %{x}<br>${hov} ${all ? "" : esc(d.units)}<extra></extra>`, xaxis: "x", yaxis: "y",
+      colorbar: { orientation: "h", thickness: 8, outlinewidth: 0, x: GX[0], xanchor: "left", y: -0.075, yanchor: "top", len: GX[1] - GX[0], title: { text: d.units, side: "top", font: { size: 11 } }, tickmode: "array", tickvals: all ? fr.map(f => Math.pow(f * 100, 0.8)) : tv.map(sg), ticktext: all ? fr.map(f => fmt(f * 100, 0)) : tv.map(v => d.modeled ? big(v) : fmt(v)) } }];
+    if (all) {
+      d.measures.forEach(k => traces.push({ type: "bar", orientation: "h", name: d.names[k], legendgroup: k, x: d.parts[k], y: ys, xaxis: "x2", yaxis: "y", marker: { color: d.colors[k], line: { width: 0 } }, opacity: 0.92,
+        hovertemplate: `<b>Strike %{y}</b><br>${esc(d.names[k])}: %{x:.1f} of the heat<extra></extra>` }));
+      const col = Object.fromEntries(d.measures.map((k, i) => [k, i]));
+      ["hot", "center"].forEach(kind => d.measures.forEach(k => { const L = lv.filter(l => l.measure === k && l.kind === kind && d.strikes.indexOf(l.price) >= 0); if (!L.length) return;
+        traces.push({ type: "scatter", mode: "markers", legendgroup: k, showlegend: false, name: d.names[k], xaxis: "x3", yaxis: "y", x: L.map(() => col[k]), y: L.map(l => px(l.price)),
+          marker: kind === "hot" ? { symbol: "diamond", size: L.map(l => l.rank === 1 ? 13 : l.rank === 2 ? 10 : 8), color: d.colors[k], line: { color: "#0c1226", width: 1.5 } } : { symbol: "line-ew-open", size: 14, color: d.colors[k], line: { color: d.colors[k], width: 3 } },
+          customdata: L.map(l => [l.kind === "center" ? "activity center" : "hot spot #" + l.rank, l.meaning, l.futures != null ? `${root} ${fmt(l.futures, 0)}` : ""]),
+          hovertemplate: `<b>${esc(d.names[k])} %{customdata[0]}</b><br>Strike %{y}  %{customdata[2]}<br>%{customdata[1]}<extra></extra>` }); }));
+    } else {
+      const prof = d.profile, vmx = Math.max(...prof.map(Math.abs), 1e-9);
+      const pcol = prof.map(v => d.signed ? ramp(v >= 0 ? POS : NEG, 0.35 + 0.65 * Math.sqrt(Math.abs(v) / vmx)) : ramp(HEAT, 0.25 + 0.75 * Math.sqrt(Math.abs(v) / vmx)));
+      traces.push({ type: "bar", orientation: "h", x: prof, y: ys, xaxis: "x2", yaxis: "y", marker: { color: pcol, line: { width: 0 } }, hovertemplate: `<b>Strike %{y}</b><br>all expiries: ${d.modeled ? "%{x:,.3s}" : "%{x:,.0f}"}<extra></extra>` });
+    }
+    const lay = LAY("", { margin: { l: 70, r: 14, t: all ? 34 : 16, b: 120 }, showlegend: all, barmode: "stack", bargap: 0.18, plot_bgcolor: "#0c1226",
+      legend: { orientation: "h", x: 0, xanchor: "left", y: 1.0, yanchor: "bottom", font: { size: 10 }, bgcolor: "rgba(0,0,0,0)", itemclick: "toggle", itemdoubleclick: "toggleothers" },
+      xaxis: { domain: GX, gridcolor: "rgba(0,0,0,0)", tickangle: -30, side: "bottom", tickfont: { size: 11 } },
+      xaxis2: { domain: BX, gridcolor: "#1E2840", zerolinecolor: "#5D6884", title: { text: all ? "What the heat is made of" : "All expiries", font: { size: 11 } }, showticklabels: false },
+      yaxis: { type: "category", categoryorder: "array", categoryarray: ys, autorange: "reversed", gridcolor: "rgba(0,0,0,0)", title: "Strike", dtick: Math.max(1, Math.round(ys.length / 32)), tickfont: { size: 11 } },
+      shapes, annotations: ann });
+    if (all) lay.xaxis3 = { domain: LX, range: [-0.7, d.measures.length - 0.3], showgrid: true, gridcolor: "rgba(255,255,255,.035)", dtick: 1, zeroline: false, showticklabels: false, fixedrange: true, title: { text: "Levels", font: { size: 11 } } };
+    plot("c1", traces, lay);
   },
   async flows() {
     const j = await api("/analytics/greeks", base()), d = j.data, m = j.meta, F = j.futures || {}, nqOn = !!F.available, root = F.root || "NQ";

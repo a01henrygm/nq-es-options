@@ -439,20 +439,30 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
     @app.get("/api/analytics/activity")
     def activity(underlying: str, measure: str = "oi_change", side: str = "total", window: float = Query(0.04, ge=0, le=1),
                  expiries: int = Query(8, ge=1, le=30), convention: str = "standard", method: str = "auto", hot: int = Query(5, ge=1, le=12)):
-        if measure not in fl.MEASURES or side not in fl.SIDES or convention not in an.SIGNS:
-            raise HTTPException(422, f"measure must be one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
+        if (measure not in fl.MEASURES and measure != "all") or side not in fl.SIDES or convention not in an.SIGNS:
+            raise HTTPException(422, f"measure must be all or one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
         u = underlying_ok(underlying)
         snap = snapshot(u)
         m, _, now = meta(snap, {"convention": convention})
-        poi, poi_t = prev_oi_for(u, snap) if measure == "oi_change" else ({}, None)
+        poi, poi_t = prev_oi_for(u, snap) if measure in ("oi_change", "all") else ({}, None)
         if measure == "oi_change" and not poi:
             return {"meta": m, "available": False,
                     "reason": "Open interest change needs the previous session's open interest. The app stores it each day, so this fills in from the next session on. Pick another measure meanwhile."}
-        d = fl.activity_map(snap.contracts, snap.spot, now, measure, side, window, expiries, convention, poi, hot)
+        if measure == "all":
+            per = {}
+            for key in fl.ALL_ORDER:
+                if key == "oi_change" and not poi:
+                    continue
+                sd = "total" if side == "net" and key in ("gex", "charm", "vanna", "dex") else side
+                per[key] = fl.activity_map(snap.contracts, snap.spot, now, key, sd, window, expiries, convention, poi if key == "oi_change" else None, hot)
+            d = fl.combined_activity(per, snap.spot, hot)
+            d["missing"] = [] if poi else ["oi_change"]
+        else:
+            d = fl.activity_map(snap.contracts, snap.spot, now, measure, side, window, expiries, convention, poi, hot)
         mapper, mapping = futures_mapper(u, snap, now, method)
         root = mapping["futures_root"]
         conv = (lambda v: (lambda r: r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None)(mapper(v))) if mapper else (lambda v: None)
-        for h in d["hot_spots"]:
+        for h in d["hot_spots"] + d.get("levels", []):
             h["futures"], h["futures_low"], h["futures_high"] = conv(h["price"]), conv(h["low"]), conv(h["high"])
         d["center_futures"] = conv(d["center"]) if d["center"] is not None else None
         d["spot_futures"] = conv(snap.spot)
@@ -670,13 +680,14 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                 "note": "Paste into TradingView's Pine Editor and add to chart. Re-export and re-paste each session. I could not compile Pine from here; if TradingView reports an error, send it to me."}
 
     @app.get("/api/export/heatmap-pine")
-    def export_heatmap_pine(underlying: str, measure: str = "volume", side: str = "total", window: float = Query(0.04, ge=0, le=1),
+    def export_heatmap_pine(underlying: str, measure: str = "all", side: str = "total", window: float = Query(0.04, ge=0, le=1),
                             expiries: int = Query(8, ge=1, le=30), convention: str = "standard", method: str = "auto", hot: int = Query(5, ge=1, le=12),
                             max_strikes: int = Query(240, ge=10, le=400)):
         """Everything on the Activity heatmap page as one TradingView indicator: every measure and side, the strike profile,
-        hot spots and activity centers. The indicator picks the measure and side from its own settings."""
-        if measure not in fl.MEASURES or side not in fl.SIDES or convention not in an.SIGNS:
-            raise HTTPException(422, f"measure must be one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
+        hot spots and activity centers. The indicator opens on the combined heat with every measure's levels drawn on it;
+        a single measure and side can be picked from its own settings."""
+        if (measure not in fl.MEASURES and measure != "all") or side not in fl.SIDES or convention not in an.SIGNS:
+            raise HTTPException(422, f"measure must be all or one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
         u = underlying_ok(underlying)
         snap = snapshot(u)
         m, _, now = meta(snap, {"convention": convention})
@@ -734,7 +745,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                                   to_et(t0) if t0 else None, measure, side)
         return {"code": code, "strikes": len(strikes), "measures": [k for k in HM_KEYS if measures[k]["available"]], "mapped": mapped,
                 "futures_root": root, "oi_from": poi_t, "meta": m,
-                "note": "Paste into TradingView's Pine Editor and add to chart. Every heatmap measure and side is inside; pick them in the indicator settings. Re-export each session."}
+                "note": "Paste into TradingView's Pine Editor and add to chart. It opens on the combined heat with every measure's levels on it; single measures and sides are in the indicator settings. Re-export each session."}
 
     @app.get("/api/analytics/scenarios")
     def scenario_view(underlying: str):

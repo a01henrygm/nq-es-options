@@ -277,6 +277,95 @@ def activity_map(contracts, spot, now, measure="oi_change", side="total", window
             "share_below": below / grand if profile else None, "window": window, "hot_rule": HOT_RULE, "convention": convention}
 
 
+# ---- every measure at once ---------------------------------------------------------------------------------------
+ALL_ORDER = ("oi_change", "volume", "oi", "gex", "charm", "vanna", "dex")
+ALL_WEIGHTS = {"oi_change": 1.0, "volume": 1.0, "oi": 0.5, "gex": 1.0, "charm": 0.5, "vanna": 0.5, "dex": 0.5}
+ALL_SHORT = {"oi_change": "New positions", "volume": "Volume", "oi": "Open interest", "gex": "GEX", "charm": "Charm", "vanna": "Vanna", "dex": "Dealer delta"}
+ALL_COLORS = {"oi_change": "#9be564", "volume": "#2ee6a6", "oi": "#ffa94d", "gex": "#4dabff", "charm": "#ff7b72", "vanna": "#c79bff", "dex": "#ff5fa2"}
+ALL_RULE = ("Combined heat: every measure is scaled so its own busiest cells count as 1 (cells above its 95th percentile are capped), then "
+            "they are added with weights (new positions, volume and GEX 1; open interest, charm, vanna and dealer delta 0.5) and shown as "
+            "0-100. A cell is hottest where several kinds of activity agree. Hot spots are bands of strikes with the most combined heat; "
+            "every measure's own hot spots and center are listed as levels.")
+
+
+def combined_activity(maps, spot, hot=5, per_measure=3):
+    """Blend several activity_map() results (key -> map, same contracts and window) into one 0-100 heat grid.
+
+    Returns the activity_map shape (measure "all") plus 'levels': every measure's hot spots and center, and 'parts': each
+    measure's share of the heat per strike, so the page can show what each strike's heat is made of."""
+    maps = {k: m for k, m in maps.items() if m is not None and m["strikes"]}
+    exps = sorted({e for m in maps.values() for e in m["expiries"]})
+    dte_of = {e: d for m in maps.values() for e, d in zip(m["expiries"], m["dte"])}
+    strikes = sorted({k for m in maps.values() for k in m["strikes"]}, reverse=True)
+    si, ei = {k: i for i, k in enumerate(strikes)}, {e: j for j, e in enumerate(exps)}
+    grid = [[0.0] * len(exps) for _ in strikes]
+    parts = {}
+    wsum = sum(ALL_WEIGHTS[k] for k in maps) or 1.0
+    for key, m in maps.items():
+        cap = m["color_max"] or m["max"] or 1.0
+        w = ALL_WEIGHTS[key] / wsum
+        part = [0.0] * len(strikes)
+        for k, row in zip(m["strikes"], m["z"]):
+            i = si[k]
+            for e, v in zip(m["expiries"], row):
+                if v:
+                    x = w * min(abs(v) / cap, 1.0)
+                    grid[i][ei[e]] += x
+                    part[i] += x
+        parts[key] = part
+    top = max([v for r in grid for v in r] + [0.0]) or 1.0
+    z = [[round(v / top * 100, 2) if v > 0 else None for v in r] for r in grid]
+    profile = [sum(v for v in r if v) for r in z]
+    ptop = max(profile + [0.0]) or 1.0
+    parts = {k: [round(p / top * 100, 3) for p in v] for k, v in parts.items()}
+    rows = [{"strike": k, "v": v} for k, v in zip(strikes, profile)]
+    zs = an._band_zones(rows, spot, lambda r: ("positive", r["v"]), ("positive", "negative"), hot, min_frac=0.25)
+    grand = sum(profile) or 1.0
+    spots = []
+    for zz in sorted(zs, key=lambda q: -q["magnitude"])[:hot]:
+        k = zz["center"]
+        i = strikes.index(k)
+        best = max(range(len(exps)), key=lambda j: z[i][j] or 0) if exps else None
+        mix = sorted(((parts[key][i], key) for key in parts if parts[key][i] > 0), reverse=True)
+        lead = [ALL_SHORT[key] for v, key in mix[:3] if v >= 0.2 * mix[0][0]] if mix else []
+        spots.append({"price": k, "low": zz["low"], "high": zz["high"], "side": "positive", "value": zz["magnitude"], "share": zz["magnitude"] / grand,
+                      "heat": round(profile[i] / ptop * 100), "meaning": ("mostly " + ", ".join(lead)) if lead else "combined activity",
+                      "strike_value": profile[i], "top_expiry": exps[best] if best is not None and z[i][best] else None,
+                      "above_price": k > spot, "distance_pct": (k / spot - 1) * 100, "members": [mm["strike"] for mm in zz["members"]]})
+    levels = []
+    for key in ALL_ORDER:
+        m = maps.get(key)
+        if not m:
+            continue
+        for r, h in enumerate(m["hot_spots"][:per_measure]):
+            levels.append({"measure": key, "name": ALL_SHORT[key], "color": ALL_COLORS[key], "kind": "hot", "rank": r + 1, "price": h["price"],
+                           "low": h["low"], "high": h["high"], "share": h["share"], "meaning": h["meaning"], "side": h["side"],
+                           "distance_pct": h["distance_pct"], "top_expiry": h["top_expiry"], "modeled": m["modeled"]})
+        if m["center"] is not None:
+            levels.append({"measure": key, "name": ALL_SHORT[key], "color": ALL_COLORS[key], "kind": "center", "rank": 0, "price": m["center"],
+                           "low": m["center"], "high": m["center"], "share": None, "meaning": "activity center (half above, half below)", "side": None,
+                           "distance_pct": (m["center"] / spot - 1) * 100, "top_expiry": None, "modeled": m["modeled"]})
+    levels.sort(key=lambda L: -L["price"])
+    center = None
+    if profile:
+        asc = sorted(zip(strikes, profile))
+        half, run = sum(w for _, w in asc) / 2, 0.0
+        for k, w in asc:
+            run += w
+            if run >= half:
+                center = k
+                break
+    above = sum(v for k, v in zip(strikes, profile) if k > spot)
+    below = sum(v for k, v in zip(strikes, profile) if k < spot)
+    first = next(iter(maps.values()), None)
+    return {"measure": "all", "title": "Every measure combined", "units": "combined heat (0-100)", "signed": False, "modeled": False,
+            "side": first["side"] if first else "total", "strikes": strikes, "expiries": exps, "dte": [dte_of[e] for e in exps],
+            "z": z, "profile": profile, "parts": parts, "measures": [k for k in ALL_ORDER if k in maps], "colors": ALL_COLORS, "names": ALL_SHORT,
+            "color_max": 100.0, "max": 100.0, "hot_spots": spots, "levels": levels, "center": center,
+            "share_above": above / grand if profile else None, "share_below": below / grand if profile else None,
+            "hot_rule": ALL_RULE, "window": first["window"] if first else None}
+
+
 def summary_line(m, fmt_price):
     """One plain sentence about where the activity is. fmt_price(strike) -> text (adds the futures price when known)."""
     if not m["hot_spots"]:
@@ -288,7 +377,7 @@ def summary_line(m, fmt_price):
     head = {"oi_change": "The biggest change in positions since the last session",
             "volume": "The busiest trading today", "oi": "The largest open positions",
             "gex": "The largest modeled gamma", "charm": "The largest modeled charm", "vanna": "The largest modeled vanna",
-            "dex": "The largest modeled dealer delta"}[m["measure"]]
+            "dex": "The largest modeled dealer delta", "all": "The hottest area across every measure"}[m["measure"]]
     tilt = ""
     if m["share_above"] is not None and m["share_below"] is not None:
         a, b = m["share_above"], m["share_below"]
@@ -298,4 +387,9 @@ def summary_line(m, fmt_price):
             tilt = f" {b:.0%} of the activity in view is below price."
         else:
             tilt = " Activity is spread on both sides of price."
+    if m["measure"] == "all" and m.get("levels"):
+        pad = abs(top["price"]) * 0.003
+        near = sorted({L["name"] for L in m["levels"] if top["low"] - pad <= L["price"] <= top["high"] + pad})
+        if len(near) >= 2:
+            tilt += f" {len(near)} measures have a level there ({', '.join(near)})."
     return f"{head} sits at {fmt_price(top['price'])} ({side}, {abs(top['distance_pct']):.2f}% {where} price{exp}), {top['share']:.0%} of the total in view.{tilt}"

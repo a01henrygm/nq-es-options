@@ -251,3 +251,54 @@ def test_heatmap_pine_builder_handles_empty_and_unsafe_text():
         "center": None, "share_above": None, "share_below": None, "summary": "ok"}}}}
     code = build_heatmap_pine([100.0], m, "s", "u", "w", "e")
     assert _arr(code, "hsText") == ['"more calls"'] and _arr(code, "ctPrice") == ["float(na)"] and _arr(code, "cVol") == ["3333"] and _arr(code, "pVol") == ["6667"]
+
+
+# ---- every measure at once ----------------------------------------------------------------------------------------------
+def test_combined_activity_blends_every_measure_and_lists_their_levels():
+    cons = skewed_chain()
+    per = {k: fl.activity_map(cons, 500.0, NOW, k, "total", 0.04) for k in fl.ALL_ORDER if k != "oi_change"}
+    d = fl.combined_activity(per, 500.0)
+    assert d["measure"] == "all" and d["measures"] == ["volume", "oi", "gex", "charm", "vanna", "dex"]
+    cells = [v for r in d["z"] for v in r if v is not None]
+    assert cells and max(cells) == pytest.approx(100.0) and min(cells) > 0
+    assert len(d["z"]) == len(d["strikes"]) and all(len(r) == len(d["expiries"]) for r in d["z"])
+    assert d["strikes"] == sorted(d["strikes"], reverse=True)
+    for k in d["measures"]:                                                                  # the parts add up to each strike's heat
+        assert len(d["parts"][k]) == len(d["strikes"])
+    for i in range(len(d["strikes"])):
+        assert sum(d["parts"][k][i] for k in d["measures"]) == pytest.approx(d["profile"][i], abs=0.05)
+    assert d["hot_spots"] and d["hot_spots"][0]["heat"] == 100 and d["hot_spots"][0]["meaning"].startswith("mostly")
+    kinds = {(L["measure"], L["kind"]) for L in d["levels"]}
+    for k in d["measures"]:                                                                  # every measure brings its hot spots and center
+        assert (k, "hot") in kinds and (k, "center") in kinds
+    assert [L["price"] for L in d["levels"]] == sorted((L["price"] for L in d["levels"]), reverse=True)
+    assert "measures have a level there" in fl.summary_line(d, lambda k: f"{k:,.0f}")
+
+
+def test_activity_endpoint_all_measures_is_available_without_yesterdays_open_interest():
+    c, db = api_client()
+    a = c.get("/api/analytics/activity", params={"underlying": "_NDX", "measure": "all", "window": 0}).json()
+    assert a["available"] and a["data"]["measure"] == "all" and "oi_change" not in a["data"]["measures"] and a["data"]["missing"] == ["oi_change"]
+    c.post("/api/basis", json={"root": "NQ", "basis": 250.0})
+    a = c.get("/api/analytics/activity", params={"underlying": "_NDX", "measure": "all", "side": "net", "window": 0}).json()
+    L = a["data"]["levels"][0]
+    assert L["futures"] == pytest.approx(L["price"] + 250.0) and a["data"]["hot_spots"][0]["futures"] is not None
+
+
+def test_heatmap_indicator_opens_on_combined_heat_with_every_measures_levels():
+    c, db = api_client()
+    r = c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "measure": "all", "window": 0})
+    assert r.status_code == 200
+    code = r.json()["code"]
+    assert 'input.string("Combined (all measures)", "Heatmap shows"' in code
+    for name in ("othNew", "othVol", "othOi", "othGex", "othCharm", "othVanna", "othDex", "othCtr", "showLv"):   # every measure's levels on by default
+        assert f"{name} " in code and f'input.bool(true' in code.split(f"\n{name} ")[1].split("\n")[0]
+    for name in ("showLv", "lvLines", "showMk", "clusterIn", "stackMin", "paletteIn"):
+        assert code.count(f"\n{name} ") == 1
+    assert 'paletteIn = input.string("Q DATA"' in code and "max_lines_count = 150" in code
+    assert c.get("/api/export/heatmap-pine", params={"underlying": "_NDX", "window": 0}).json()["code"].count('"Combined (all measures)", "Heatmap shows"') == 1
+
+
+def test_frontend_heatmap_defaults_to_all_measures():
+    js = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert 'hma: "all"' in js and '["all", "All measures (combined)"]' in js and '"hma"' in js
