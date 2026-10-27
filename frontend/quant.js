@@ -27,6 +27,32 @@ function wirePine(idB, idD) {
   if (d) d.onclick = async () => { try { const r = await get(); download(`qdata_hodlod_${S.u.replace(/^_/, "")}.pine`, r.code); d.textContent = "Downloaded"; } catch (e) { fail(e); } };
 }
 
+// Every HOD / LOD level as one CSV (opens in Excel or Sheets), so the chart can stay clean.
+function hodlodCsv(D, u) {
+  const d = D.hodlod, root = D.futures_root || "Futures", mv = D.moves;
+  const q = v => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const n = (v, k = 2) => v == null || isNaN(v) ? "" : Number(v).toFixed(k);
+  const p = v => v == null ? "" : Math.round(v * 100) + "%";
+  const rows = [["Group", "Level", `${uName(u)} price`, `${root} price`, "Chance at the open", "Chance now", "Call / status", "Note"]];
+  if (d && d.available) {
+    rows.push(["Session", "Open 9:30", n(d.open), n(d.open_futures), "", "", "", ""]);
+    rows.push(["Session", "High so far", n(d.high), n(d.high_futures), "", "", "", ""]);
+    rows.push(["Session", "Low so far", n(d.low), n(d.low_futures), "", "", "", ""]);
+    rows.push(["Session", "Price now", n(d.spot), n(D.spot_futures), "", "", "", ""]);
+    rows.push(["Session", "1 standard deviation (pts)", n(d.sigma_open, 1), n(d.sigma_open_futures, 1), "", "", "", ""]);
+    d.up.slice().reverse().forEach(x => rows.push(["Ladder", `+${x.k} sd`, n(x.price), n(x.futures), p(x.at_open), x.hit ? "100%" : p(x.now), x.hit ? "HIT" : "", ""]));
+    d.down.forEach(x => rows.push(["Ladder", `-${x.k} sd`, n(x.price), n(x.futures), p(x.at_open), x.hit ? "100%" : p(x.now), x.hit ? "HIT" : "", ""]));
+    const pr = d.projection;
+    if (pr) for (const [side, name] of [["hod", "Projected HOD"], ["lod", "Projected LOD"]])
+      for (const k of Object.keys(pr[side])) rows.push(["Projection", `${name} ${k.slice(1)}%`, n(pr[side][k]), n((pr[side + "_futures"] || {})[k]), "", "", "", ""]);
+    d.walls.forEach(w => rows.push(["0DTE walls", w.label, n(w.price), n(w.futures), "", p(w.now), "", ""]));
+  }
+  if (mv && mv.available)
+    for (const [arr, side] of [[mv.up, "Moves up"], [mv.down, "Moves down"]])
+      arr.forEach(r => rows.push([side, r.label, n(r.price), n(r.futures), "", p(r.chance), r.call, `${r.note} ${r.why || ""}`.trim()]));
+  return rows.map(r => r.map(q).join(",")).join("\r\n");
+}
+
 function movesBlock(mv, root) {
   if (!mv) return "";
   if (!mv.available) return `<h3>Moves we may encounter</h3>${note(mv.reason)}`;
@@ -53,8 +79,9 @@ Object.assign(R, {
   // ---- HOD / LOD ------------------------------------------------------------------------------------------------------
   async hodlod() {
     const j = await api("/analytics/hodlod", { underlying: S.u, convention: $("conv").value }), D = j.data, d = D.hodlod, pb = D.playbook, m = j.meta, root = D.futures_root;
-    const tools = `<div class="toolbar"><span class="dim">The same ladder, chances and regime run live on your chart in the indicator.</span>${pineButtons("hlpine", "hlpinedl")}</div>`;
-    if (!d.available) { $("view").innerHTML = panel(`HOD / LOD, ${S.u}`, m, tools + playbookBanner(pb) + note(d.reason)); wirePine("hlpine", "hlpinedl"); return; }
+    const tools = `<div class="toolbar"><span class="dim">The same ladder, chances and regime run live on your chart in the indicator (Clean view by default).</span>${pineButtons("hlpine", "hlpinedl")}<button id="hlcsv" title="Every level on this tab (ladder, projections, walls, moves) with index and futures prices and chances, as a spreadsheet">Download levels (CSV)</button></div>`;
+    const wireCsv = () => { const b = $("hlcsv"); if (b) b.onclick = () => { download(`qdata_hodlod_levels_${uName(S.u)}_${(m.calculated_at_et || "").slice(0, 10) || "today"}.csv`, hodlodCsv(D, S.u)); b.textContent = "Downloaded"; }; };
+    if (!d.available) { $("view").innerHTML = panel(`HOD / LOD, ${S.u}`, m, tools + playbookBanner(pb) + note(d.reason)); wirePine("hlpine", "hlpinedl"); wireCsv(); return; }
     const pr = d.projection, rowsUp = d.up.slice().reverse(), dn = d.down;
     const row = (x, side) => `<tr${x.hit ? ' class="dim"' : ""}><td><b style="color:${side > 0 ? "#3fb96a" : "#e5534b"}">${side > 0 ? "+" : "-"}${fmt(x.k, 2)} sd</b></td>
       <td class="num"><b>${fmt(x.price, 2)}</b></td><td class="num">${x.futures != null ? fmt(x.futures, 2) : "-"}</td>
@@ -78,7 +105,7 @@ Object.assign(R, {
       ${walls ? `<h3>Option walls (0DTE)</h3><div class="scroll"><table><tr><th>Level</th><th>Price</th><th>${esc(root || "Futures")}</th><th>Chance of a touch</th></tr>${walls}</table></div>` : ""}
       ${pb.notes.length ? `<h3>Notes</h3>${pb.notes.map(n => `<p>${esc(n)}</p>`).join("")}` : ""}
       <p class="hint">${esc(d.note)} Projected HOD/LOD: the high (low) the rest of the session reaches half the time (50%) or 4 times in 5 (80%), from the remaining expected move.</p>`);
-    wirePine("hlpine", "hlpinedl");
+    wirePine("hlpine", "hlpinedl"); wireCsv();
     const P = j.price || [];
     if (P.length) {
       const sh = [hline(d.open, "#c7a96b", "dot")];

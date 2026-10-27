@@ -118,6 +118,15 @@ def test_pine_builder_handles_missing_values():
     assert '"quoted"' not in code
 
 
+def test_pine_does_not_shadow_the_random_state_and_exports_levels_quietly():
+    import re
+    code = build_hodlod_pine(0.013, "long", 29580.0, 29177.0, 29165.0, [], "src", "units", datetime(2026, 10, 27, 2, 0, tzinfo=ET), date(2026, 10, 26), "_NDX")
+    assert "float[] _st = " in code and not re.search(r"\bfor _st\b", code)     # a loop named _st hid the array f_rnd needs (CE10123)
+    assert 'i_view      = input.string("Clean"' in code
+    plots = re.findall(r'^plot\(.*display = display\.data_window\)$', code, re.M)
+    assert len(plots) == 22 and len(set(re.findall(r'^plot\([^"]*"([^"]+)"', code, re.M))) == 22
+
+
 def test_stay_inside_matches_the_two_barrier_value():
     assert abs(qt.stay_inside(100, 90, 110, 5) - 0.909) < 0.002                       # +/-2 sd box: about 91% never touch either side
     assert qt.stay_inside(100, 90, 110, 0.5) > 0.999 and qt.stay_inside(100, 100, 110, 5) is None

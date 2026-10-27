@@ -231,7 +231,7 @@ def register(app, h):
                                  put_wall=to_chart(z.get("put_wall")) if z.get("available") else None, flip=to_chart(z.get("flip")) if z.get("available") else None,
                                  flips=flips, source=src, units=units, made_at=to_et(c["now"]), day=c["day"], symbol=m["underlying"])
         return {"code": code, "meta": m, "state": pb["state"], "sigma_pct": sig_pct, "mapped": c["spot_f"] is not None,
-                "note": "Paste into TradingView's Pine Editor and add to chart. The ladder, chances, mean-reversion test, Monte Carlo and ES/NQ split run live "
+                "note": "Paste into TradingView's Pine Editor and add to chart. It opens in Clean view (open, +/-1 and +/-2 sd, walls, short table); switch View to Full in its settings for everything. Every level is also in the Data Window and in Export chart data without being drawn. The ladder, chances, mean-reversion test, Monte Carlo and ES/NQ split run live "
                         "on your chart; the expected move, regime and walls are today's values from Q DATA, so re-copy each session."}
 
     @app.get("/api/charts/level-map")

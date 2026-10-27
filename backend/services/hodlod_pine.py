@@ -42,6 +42,10 @@ string G_MR  = "Mean reversion test"
 string G_MC  = "Monte Carlo"
 string G_PCA = "ES / NQ principal components"
 string G_TBL = "Table"
+string G_VW  = "Chart view"
+
+i_view      = input.string("Clean", "View", options = ["Clean", "Full", "Table only"], group = G_VW, tooltip = "Clean: the open, the steps below, the 0DTE walls and flip, short labels, a short table. Full: every ladder step, projected HOD/LOD lines and the long table with the mean-reversion test, ES/NQ split and Monte Carlo. Table only: nothing drawn on the price chart. In every view all levels are in the Data Window and in TradingView's Export chart data.")
+i_clean_ks  = input.string("1,2", "Steps drawn in Clean view", group = G_VW)
 
 i_lad_on    = input.bool(true, "Show the ladder", group = G_LAD)
 i_lad_ks    = input.string("0.5,0.75,1,1.25,1.5,2,2.5", "Steps (standard deviations)", group = G_LAD)
@@ -115,6 +119,15 @@ f_nums(string s) =>
             array.push(_out, _v)
     _out
 
+bool _vFull = i_view == "Full"
+bool _vDraw = i_view != "Table only"
+f_has(float[] a, float v) =>
+    bool _f = false
+    for _x in a
+        if math.abs(_x - v) < 0.0001
+            _f := true
+    _f
+
 // ---- session ----
 string _TZ = "America/New_York"
 bool _intra = timeframe.isintraday
@@ -151,20 +164,25 @@ if _newRth
     array.clear(_lbs)
     array.clear(_lvP)
     array.clear(_lvK)
-    if i_lad_on and not na(_sig) and _sig > 0
-        array.push(_lns, line.new(time, _open, _closeT, _open, xloc = xloc.bar_time, color = i_col_open, width = 1, style = line.style_dotted))
+    if not na(_sig) and _sig > 0
+        bool _drawLad = i_lad_on and _vDraw
+        float[] _shown = f_nums(i_clean_ks)
+        if _drawLad
+            array.push(_lns, line.new(time, _open, _closeT, _open, xloc = xloc.bar_time, color = i_col_open, width = 1, style = line.style_dotted))
         for _k in f_nums(i_lad_ks)
             for _sgn in array.from(1.0, -1.0)
                 float _p = _open + _sgn * _k * _sig
                 color _c = _sgn > 0 ? i_col_up : i_col_dn
-                array.push(_lns, line.new(time, _p, _closeT, _p, xloc = xloc.bar_time, color = color.new(_c, _k >= 2 ? 10 : _k >= 1 ? 30 : 55), width = _k == 1 or _k == 2 ? 2 : 1))
+                bool _drawK = _drawLad and (_vFull or f_has(_shown, _k))
                 array.push(_lvP, _p)
                 array.push(_lvK, _sgn * _k)
-                if i_lab_on
-                    array.push(_lbs, label.new(_closeT, _p, "", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(_c, 75), textcolor = color.white, size = size.small))
+                if _drawK
+                    array.push(_lns, line.new(time, _p, _closeT, _p, xloc = xloc.bar_time, color = color.new(_c, _k >= 2 ? 10 : _k >= 1 ? 30 : 55), width = _k == 1 or _k == 2 ? 2 : 1))
+                if _drawK and i_lab_on
+                    array.push(_lbs, label.new(_closeT, _p, "", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(_c, 75), textcolor = color.white, size = _vFull ? size.small : size.tiny))
                 else
                     array.push(_lbs, label(na))
-    if i_walls_on and (_qdDay or i_walls_any)
+    if i_walls_on and _vDraw and (_qdDay or i_walls_any)
         if not na(_QD_CALL)
             array.push(_lns, line.new(time, _QD_CALL + i_offset, _closeT, _QD_CALL + i_offset, xloc = xloc.bar_time, color = i_col_call, width = 2))
             array.push(_lbs, label.new(_closeT, _QD_CALL + i_offset, "0DTE call wall", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(i_col_call, 70), textcolor = color.white, size = size.small))
@@ -229,6 +247,42 @@ float _resZ = _resSd > 0 and _nRes > 0 ? _cumRes / (_resSd * math.sqrt(_nRes)) :
 
 float _mrMean = ta.sma(close, i_mr_n)
 
+// ---- projected high and low of the day ----
+float _q50 = f_ninv(0.75)
+float _q80 = f_ninv(0.90)
+float _hod50 = na(_sigRem) ? na : math.max(_hi, close + _sigRem * _q50)
+float _hod80 = na(_sigRem) ? na : math.max(_hi, close + _sigRem * _q80)
+float _lod50 = na(_sigRem) ? na : math.min(_lo, close - _sigRem * _q50)
+float _lod80 = na(_sigRem) ? na : math.min(_lo, close - _sigRem * _q80)
+
+// ---- every level in the Data Window and in Export chart data, never drawn on the chart ----
+// Ladder up N / down N are the steps from "Steps (standard deviations)" in order, smallest first.
+f_lv(int i) =>
+    _inRth and i < array.size(_lvP) ? array.get(_lvP, i) : na
+bool _wOn = _inRth and (_qdDay or i_walls_any)
+plot(_inRth ? _open : na, "Open 9:30", color = i_col_open, display = display.data_window)
+plot(f_lv(0), "Ladder up 1", color = i_col_up, display = display.data_window)
+plot(f_lv(1), "Ladder down 1", color = i_col_dn, display = display.data_window)
+plot(f_lv(2), "Ladder up 2", color = i_col_up, display = display.data_window)
+plot(f_lv(3), "Ladder down 2", color = i_col_dn, display = display.data_window)
+plot(f_lv(4), "Ladder up 3", color = i_col_up, display = display.data_window)
+plot(f_lv(5), "Ladder down 3", color = i_col_dn, display = display.data_window)
+plot(f_lv(6), "Ladder up 4", color = i_col_up, display = display.data_window)
+plot(f_lv(7), "Ladder down 4", color = i_col_dn, display = display.data_window)
+plot(f_lv(8), "Ladder up 5", color = i_col_up, display = display.data_window)
+plot(f_lv(9), "Ladder down 5", color = i_col_dn, display = display.data_window)
+plot(f_lv(10), "Ladder up 6", color = i_col_up, display = display.data_window)
+plot(f_lv(11), "Ladder down 6", color = i_col_dn, display = display.data_window)
+plot(f_lv(12), "Ladder up 7", color = i_col_up, display = display.data_window)
+plot(f_lv(13), "Ladder down 7", color = i_col_dn, display = display.data_window)
+plot(_inRth ? _hod50 : na, "Projected HOD 50%", color = i_col_up, display = display.data_window)
+plot(_inRth ? _hod80 : na, "Projected HOD 80%", color = i_col_up, display = display.data_window)
+plot(_inRth ? _lod50 : na, "Projected LOD 50%", color = i_col_dn, display = display.data_window)
+plot(_inRth ? _lod80 : na, "Projected LOD 80%", color = i_col_dn, display = display.data_window)
+plot(_wOn and not na(_QD_CALL) ? _QD_CALL + i_offset : na, "0DTE call wall", color = i_col_call, display = display.data_window)
+plot(_wOn and not na(_QD_PUT) ? _QD_PUT + i_offset : na, "0DTE put wall", color = i_col_putw, display = display.data_window)
+plot(_wOn and not na(_QD_FLIP) ? _QD_FLIP + i_offset : na, "0DTE flip", color = i_col_flip, display = display.data_window)
+
 // ---- the last bar: live chances, mean reversion, Monte Carlo, table ----
 var table _tb = na
 if barstate.islast and _intra
@@ -241,20 +295,14 @@ if barstate.islast and _intra
             float _atOpen = f_touch(math.abs(_k) * _sig, _sig)
             label _lb = array.get(_lbs, _i)
             if not na(_lb)
-                label.set_text(_lb, (_k > 0 ? "+" : "") + str.tostring(_k, "#.##") + " sd  " + str.tostring(_p, format.mintick) + "  open " + f_pct(_atOpen) + (_hit ? "  HIT" : "  now " + f_pct(_now)))
+                label.set_text(_lb, _vFull ? (_k > 0 ? "+" : "") + str.tostring(_k, "#.##") + " sd  " + str.tostring(_p, format.mintick) + "  open " + f_pct(_atOpen) + (_hit ? "  HIT" : "  now " + f_pct(_now)) : (_k > 0 ? "+" : "") + str.tostring(_k, "#.##") + "sd " + (_hit ? "HIT" : f_pct(_now)))
 
-    // projected high and low of the day
-    float _q50 = f_ninv(0.75)
-    float _q80 = f_ninv(0.90)
-    float _hod50 = na(_sigRem) ? na : math.max(_hi, close + _sigRem * _q50)
-    float _hod80 = na(_sigRem) ? na : math.max(_hi, close + _sigRem * _q80)
-    float _lod50 = na(_sigRem) ? na : math.min(_lo, close - _sigRem * _q50)
-    float _lod80 = na(_sigRem) ? na : math.min(_lo, close - _sigRem * _q80)
+    // projected high and low of the day (computed on every bar above)
     var line[] _pj = array.new_line()
     for _l in _pj
         line.delete(_l)
     array.clear(_pj)
-    if i_proj_on and _inRth and not na(_hod50)
+    if i_proj_on and _vFull and _inRth and not na(_hod50)
         array.push(_pj, line.new(time, _hod50, _closeT, _hod50, xloc = xloc.bar_time, color = color.new(i_col_up, 20), style = line.style_dashed))
         array.push(_pj, line.new(time, _hod80, _closeT, _hod80, xloc = xloc.bar_time, color = color.new(i_col_up, 50), style = line.style_dashed))
         array.push(_pj, line.new(time, _lod50, _closeT, _lod50, xloc = xloc.bar_time, color = color.new(i_col_dn, 20), style = line.style_dashed))
@@ -304,7 +352,7 @@ if barstate.islast and _intra
     float[] _wL = array.new_float(array.size(_rs), 0.0)
     float[] _wS = array.new_float(array.size(_rs), 0.0)
     string _mcModel = "-"
-    if i_mc_on and _inRth and not na(_sigRem) and _sigRem > 0 and _minsLeft > 1
+    if i_mc_on and _vFull and _inRth and not na(_sigRem) and _sigRem > 0 and _minsLeft > 1
         int _steps = int(math.min(200, math.max(30, math.pow(4 * _sigRem / i_mc_stop, 2))))
         float _sd = _sigRem / math.sqrt(_steps)
         float _stepMin = _minsLeft / _steps
@@ -321,7 +369,7 @@ if barstate.islast and _intra
             float _bs = 0.0
             bool _stL = false
             bool _stS = false
-            for _st = 1 to _steps
+            for _step = 1 to _steps
                 float _g = math.sqrt(-2.0 * math.log(f_rnd(_st))) * math.cos(2.0 * math.pi * f_rnd(_st))
                 float _q = _p + _kk * (_mrMean - _p) + _sd * _g
                 float _d2 = (_q - _p) * (_q - _p)
@@ -392,7 +440,7 @@ if barstate.islast and _intra
         table.cell(_tb, 0, _r, "Already in", text_color = _dim, text_size = size.tiny)
         table.cell(_tb, 1, _r, "high " + f_pct(1.0 - f_touch(math.max(0.0, _hi - close), _sigRem)) + " / low " + f_pct(1.0 - f_touch(math.max(0.0, close - _lo), _sigRem)), text_color = _tx, text_size = size.tiny)
         table.merge_cells(_tb, 1, _r, 3, _r)
-        if i_mr_on
+        if i_mr_on and _vFull
             _r += 1
             string _mrV = na(_mrT) ? "not enough bars" : _mrSig ? "PULL to the average" : _mrT <= -2 ? "weak pull (do not trust)" : "no pull: wandering or trending"
             table.cell(_tb, 0, _r, "Mean rev.", text_color = _dim, text_size = size.tiny)
@@ -402,7 +450,7 @@ if barstate.islast and _intra
             table.cell(_tb, 0, _r, "t / half life / z", text_color = _dim, text_size = size.tiny)
             table.cell(_tb, 1, _r, (na(_mrT) ? "-" : str.tostring(_mrT, "#.##")) + " / " + (na(_mrHl) ? "-" : str.tostring(_mrHl, "#.#") + " bars") + " / " + (na(_mrZ) ? "-" : str.tostring(_mrZ, "+#.##;-#.##")), text_color = _tx, text_size = size.tiny)
             table.merge_cells(_tb, 1, _r, 3, _r)
-        if i_pca_on
+        if i_pca_on and _vFull
             _r += 1
             string _pcR = na(_resZ) ? "waiting for the session" : nz(_corr) < 0.5 ? "not moving together (corr < 0.5)" : _resZ >= 2 ? "NQ running ahead of ES" : _resZ <= -2 ? "NQ lagging ES" : "NQ and ES in line"
             table.cell(_tb, 0, _r, "ES/NQ", text_color = _dim, text_size = size.tiny)
@@ -412,7 +460,7 @@ if barstate.islast and _intra
             table.cell(_tb, 0, _r, "PC1 / corr / z", text_color = _dim, text_size = size.tiny)
             table.cell(_tb, 1, _r, f_pct(_pc1) + " / " + (na(_corr) ? "-" : str.tostring(_corr, "#.##")) + " / " + (na(_resZ) ? "-" : str.tostring(_resZ, "+#.##;-#.##")), text_color = _tx, text_size = size.tiny)
             table.merge_cells(_tb, 1, _r, 3, _r)
-        if i_mc_on and i_tbl_mc
+        if i_mc_on and i_tbl_mc and _vFull
             _r += 1
             table.cell(_tb, 0, _r, "Target", text_color = _dim, text_size = size.tiny)
             table.cell(_tb, 1, _r, "Long hits", text_color = _dim, text_size = size.tiny)

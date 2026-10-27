@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.15.1
+- HOD/LOD indicator compiles again (the Monte Carlo loop no longer hides its random-number state; that caused CE10123).
+- HOD/LOD indicator opens in a **Clean** view: only the open, +/-1 and +/-2 sd, the 0DTE walls and flip, short labels and a short table. Set View to Full for everything, or Table only to draw nothing on the chart. Every level is always in the Data Window and in TradingView's Export chart data.
+- HOD/LOD tab: **Download levels (CSV)** saves every level on the tab (ladder, projected HOD/LOD, walls, moves) with index and futures prices and chances.
+
 ## New in 1.15
 
 - **Volatility (VIX) tab.** The whole VIX family from Cboe's free files: VIX1D (today), VIX9D, VIX, VIX3M, VIX6M, VXN (the
