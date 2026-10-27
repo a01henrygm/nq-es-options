@@ -74,14 +74,15 @@ on the Levels tab are shared by both sources.
   - Levels at the same price from different tabs share one label with both names (Look > "One label for levels at the same price").
   - The info table only lists the tabs that are switched on.
   - Paste over the same script in TradingView each session and your on/off choices stay.
-- **TradingView indicator tab (App group).** Set the look of the indicators in Q DATA: which tabs are on when added, a color per tab,
-  every kind of level's show / color / style / width, the Quick setup (master switches, color levels by kind, tab or side of price,
-  nearest-N filter, emphasis on the nearest level each side, offset), stack zones, labels and tables. The choices are saved on this
-  device and used by every indicator copy. After pasting a new copy, use **Defaults > Reset settings** in the indicator's settings so
-  it takes the look. Set the look here rather than in TradingView: TradingView remembers settings by position, and the kinds of level
-  change from day to day. Every tab is always in the all-tabs indicator (empty when it has no levels), so tab switches stay put.
-  - The per-tab and per-kind settings are gathered into arrays so no drawing function reads too many settings (TradingView's
-    CE10116 limit of 254 "external elements").
+- **Q DATA All Tabs is a paste-in indicator (TradingView indicator tab, App group)**, like the Key levels one. Add the script to
+  TradingView once (**Copy the indicator**), then each session click **Copy levels** and paste into the indicator's
+  **Levels from Q DATA** setting. The script never changes, so every setting you make in TradingView stays put.
+  - On the tab you choose which tabs go into the levels (default Stack map, Game plan, Session, HOD / LOD) and each kind's
+    show / key / color / style / width. The look travels inside the levels text, so it changes as soon as you paste.
+  - Less clutter: the indicator opens in the **Clean** view, shaded stack zones where levels pile up and only the **key** levels
+    as lines (flips, walls, high and low of day, projected HOD/LOD 80%, top setup entries, stacked areas; your choice).
+    Levels at the same price from different tabs share one line and one label. Zones join within 0.05% of price by default.
+  - The levels text is kept under 30,000 characters (hover text, then far-away levels, are left out if needed).
 
 ## New in 1.16
 

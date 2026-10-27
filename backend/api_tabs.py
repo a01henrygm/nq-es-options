@@ -11,6 +11,7 @@ from .services import analytics as an
 from .services import flows as fl
 from .services import quant as qt
 from .services.tab_pine import CALL_COLOR, CALL_WORD, SETTINGS, STYLES, TAB_COLORS, apply_kind_prefs, build_all_pine, build_tab_pine, setting_value, _group
+from .services.paste_pine import build_levels_text, build_paste_script, is_key_kind
 from .timeutil import to_et
 
 # category -> (show/hide group name, color, line style). Colors match the Key levels indicator.
@@ -496,6 +497,64 @@ def register(app, h, q):
         """Same as the GET, with the look from Q DATA's TradingView indicator tab in the body: {"prefs": {...}}."""
         return export_all_pine(underlying, convention, None, (body or {}).get("prefs"))
 
+    # ---- Q DATA All Tabs as a paste-in indicator: the script once, the levels text each session ----
+    PASTE_DEFAULT_ON = ("stackmap", "gameplan", "session", "hodlod")
+
+    @app.get("/api/export/all-script")
+    def export_all_script():
+        """The paste-in All Tabs script. It does not depend on the data: add it to TradingView once."""
+        code = build_paste_script([(k, v[0].replace("Q DATA ", "")) for k, v in TABS.items()])
+        return {"code": code, "title": "Q DATA All Tabs", "filename": "qdata_all_tabs_paste_in.pine",
+                "note": "Add this to TradingView once (Pine Editor > paste > Save > Add to chart). Then each session paste the levels from Q DATA into its settings."}
+
+    @app.post("/api/export/all-levels")
+    def export_all_levels(underlying: str, convention: str = "standard", body: dict = Body(default={})):
+        """The levels text to paste into the paste-in All Tabs indicator. body: {"prefs": {...}} from the TradingView indicator tab:
+        tabs_on = which tabs go into the text (default Stack map, Game plan, Session, HOD / LOD), kinds = each kind's look
+        (on, color, style, width, key)."""
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = q.context(u, convention)
+        prefs = clean_prefs((body or {}).get("prefs"))
+        want = set(prefs["tabs_on"]) if isinstance(prefs.get("tabs_on"), list) else set(PASTE_DEFAULT_ON)
+        sections, skipped, cone, every = [], [], None, []
+        for tab, (title, short, fname) in TABS.items():
+            name = title.replace("Q DATA ", "")
+            try:
+                groups, levels, table, cone_, about = tab_parts(tab, u, convention, c)
+            except HTTPException as e:
+                skipped.append({"tab": tab, "title": title, "reason": str(e.detail)})
+                every.append({"tab": tab, "name": name, "on": tab in want, "levels": 0, "kinds": 0, "reason": str(e.detail), "default_on": tab in PASTE_DEFAULT_ON})
+                continue
+            every.append({"tab": tab, "name": name, "on": tab in want, "levels": len(levels), "kinds": len(groups), "reason": "", "default_on": tab in PASTE_DEFAULT_ON,
+                          "groups": groups})
+            if tab in want:
+                cone = cone or cone_
+                sections.append({"tab": tab, "name": name, "groups": groups, "levels": levels, "table": table})
+        units, src, sym, data = head(c)
+        m = c["m"]
+        made = to_et(c["now"]).strftime("%b %d %H:%M ET")
+        out = build_levels_text(sections, [sym, data], made, to_et(c["now"]).strftime("%Y-%m-%d"), m["underlying"], units, cone,
+                                c["spot_f"] or c["snap"].spot, prefs)
+        kp = prefs.get("kinds") or {}
+        kinds = {}
+        for tb in every:
+            for g in tb.get("groups") or []:
+                d = _group(g)
+                p = kp.get(d["name"]) or {}
+                row = kinds.setdefault(d["name"], {"name": d["name"], "on": p["on"] if isinstance(p.get("on"), bool) else d["on"],
+                                                   "key": p["key"] if isinstance(p.get("key"), bool) else is_key_kind(d["name"]),
+                                                   "color": p.get("color") or d["color"], "style": (p.get("style") or d["style"]).lower(), "width": p.get("width") or d["width"],
+                                                   "default": {"color": d["color"], "style": d["style"].lower(), "width": d["width"], "on": d["on"], "key": is_key_kind(d["name"])},
+                                                   "short": d["short"], "help": d["help"], "tabs": []})
+                row["tabs"].append(tb["name"])
+            tb.pop("groups", None)
+        return {"text": out["text"], "levels": out["levels"], "chars": out["chars"], "tips_dropped": out["tips_dropped"], "cut": out["cut"],
+                "tabs": every, "kinds": list(kinds.values()), "skipped": skipped, "mapped": c["spot_f"] is not None, "meta": m,
+                "key_lines": sum(1 for line in out["text"].splitlines() if line.startswith("L|") and line.split("|")[7 - 1] == "1"),
+                "note": "Paste into the Q DATA All Tabs indicator's settings (Levels from Q DATA). Copy again each session."}
+
 
 def clean_prefs(prefs) -> dict:
     """Keep only the parts of the indicator look that the builder understands, with sane types. Bad values are dropped
@@ -513,5 +572,5 @@ def clean_prefs(prefs) -> dict:
         out["kinds"] = {}
         for name, k in list(prefs["kinds"].items())[:500]:
             if isinstance(name, str) and isinstance(k, dict):
-                out["kinds"][name] = {kk: k[kk] for kk in ("on", "color", "style", "width") if kk in k}
+                out["kinds"][name] = {kk: k[kk] for kk in ("on", "color", "style", "width", "key") if kk in k}
     return out
