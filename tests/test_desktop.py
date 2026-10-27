@@ -247,3 +247,28 @@ def test_save_download_keeps_a_safe_name_and_never_overwrites(tmp_path):
     c = save_download("../../evil:name?.pine", "y", tmp_path)
     assert a.name == "qdata_stack_map_NDX.pine" and b.name == "qdata_stack_map_NDX (2).pine" and a.read_text() == "//@version=6\n"
     assert c.parent == tmp_path and ".." not in c.name and ":" not in c.name
+
+
+def test_clipboard_round_trip_on_this_computer():
+    """Runs for real on the Windows and Mac release builders; skipped elsewhere (no system clipboard here)."""
+    import sys
+    import subprocess
+    import pytest
+    from desktop.app import set_clipboard
+    if sys.platform not in ("win32", "darwin"):
+        pytest.skip("needs a Windows or Mac clipboard")
+    text = "//@version=6\nindicator(\"Q DATA All Tabs\")  \u00b1 \u2713"
+    assert set_clipboard(text)
+    if sys.platform == "darwin":
+        got = subprocess.run(["/usr/bin/pbpaste"], capture_output=True, env={"LANG": "en_US.UTF-8"}).stdout.decode("utf-8")
+    else:
+        got = subprocess.run(["powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw"],
+                             capture_output=True).stdout.decode("utf-8").replace("\r\n", "\n").rstrip("\n")
+    assert got == text
+
+
+def test_save_goes_to_the_chosen_folder(tmp_path, monkeypatch):
+    from desktop.app import downloads_folder, save_download
+    monkeypatch.setenv("QDATA_SAVE_DIR", str(tmp_path))
+    assert downloads_folder() == tmp_path
+    assert save_download("qdata_all_tabs_NDX.pine", "x").parent == tmp_path

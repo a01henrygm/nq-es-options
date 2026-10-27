@@ -33,6 +33,8 @@ class SaveFileIn(BaseModel):
 
 def downloads_folder() -> Path:
     """The user's Downloads folder (Windows and Mac), or the home folder if there is none."""
+    if os.environ.get("QDATA_SAVE_DIR"):                  # tests / the smoke test save somewhere harmless
+        return Path(os.environ["QDATA_SAVE_DIR"])
     d = Path.home() / "Downloads"
     return d if d.is_dir() else Path.home()
 
@@ -87,7 +89,8 @@ def set_clipboard(text: str) -> bool:
                 u32.CloseClipboard()
         if sys.platform == "darwin":
             import subprocess
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=5)
+            env = {**os.environ, "LANG": os.environ.get("LANG") or "en_US.UTF-8"}     # an app started from Finder has no LANG; pbcopy needs it for UTF-8
+            subprocess.run(["/usr/bin/pbcopy"], input=text.encode("utf-8"), check=True, timeout=5, env=env)
             return True
     except Exception:
         logging.exception("clipboard")
@@ -96,12 +99,14 @@ def set_clipboard(text: str) -> bool:
 
 def reveal(p: Path):
     """Show the saved file in Explorer / Finder. Never fails the save."""
+    if os.environ.get("QDATA_NO_REVEAL"):
+        return
     try:
         import subprocess
         if sys.platform == "win32":
             subprocess.Popen(["explorer", "/select,", str(p)])
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", "-R", str(p)])
+            subprocess.Popen(["/usr/bin/open", "-R", str(p)])
     except Exception:
         pass
 
@@ -472,8 +477,27 @@ def main(argv=None):
             except Exception as e:
                 detail = str(e)[:200]
             time.sleep(1)
+        extra = {}
+        if ok:                                              # the indicator buttons: copy, save to Downloads, and the indicator endpoints
+            try:
+                probe = "Q DATA copy test \u00b1 \u2713"
+                r = httpx.post(f"{url}/api/desktop/copy", json={"name": "", "text": probe}, timeout=10).json()
+                got = None
+                if MAC:
+                    import subprocess
+                    got = subprocess.run(["/usr/bin/pbpaste"], capture_output=True, timeout=5,
+                                         env={**os.environ, "LANG": "en_US.UTF-8"}).stdout.decode("utf-8")
+                extra["copy"] = bool(r.get("ok")) and (got is None or got == probe)
+                r = httpx.post(f"{url}/api/desktop/save-file", json={"name": "qdata_smoke.pine", "text": "//@version=6"}, timeout=10).json()
+                extra["save"] = bool(r.get("ok")) and Path(r["path"]).read_text() == "//@version=6"
+                r = httpx.get(f"{url}/api/export/tab-pine/tabs", timeout=10)
+                extra["indicators"] = r.status_code == 200 and len(r.json()["tabs"]) >= 14
+            except Exception as e:
+                extra["error"] = str(e)[:200]
+            if os.environ.get("QDATA_SMOKE_STRICT") and not all(extra.get(k) for k in ("copy", "save", "indicators")):
+                ok, detail = False, f"indicator features failed: {extra}"
         time.sleep(3)                                       # let the window and the tray / menu bar icon settle
-        (DATA / "smoke.json").write_text(json.dumps({"ok": ok, "detail": detail, "version": __version__, "tray": state["icon"] is not None,
+        (DATA / "smoke.json").write_text(json.dumps({"ok": ok, "detail": detail, "version": __version__, "tray": state["icon"] is not None, **extra,
                                                      "platform": sys.platform}))
         log.info("smoke test %s (%s)", "passed" if ok else "FAILED", detail)
         state["exit"] = 0 if ok else 1

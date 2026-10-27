@@ -33,6 +33,13 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.18.1
+
+- **Checked on Mac and Windows on every release.** The Mac (Apple Silicon and Intel) and Windows builders now run the indicator,
+  copy and save tests on a real Mac and a real Windows machine, and the built Mac app is started and made to copy text, save a file
+  and list the indicators before the release goes out. Mac copy and Finder calls use full system paths so they work when Q DATA is
+  opened from Finder or the Dock.
+
 ## New in 1.18
 
 - **Stack zones on every Q DATA indicator.** Wherever enough of the levels you have switched on sit close together, the indicator
