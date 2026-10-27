@@ -26,6 +26,43 @@ from pydantic import BaseModel  # noqa: E402
 class NewWindowIn(BaseModel):
     tab: str = ""        # which page the new window opens on
     u: str = ""          # which symbol
+class SaveFileIn(BaseModel):
+    name: str            # file name the page asked for, e.g. qdata_stack_map_NDX.pine
+    text: str
+
+
+def downloads_folder() -> Path:
+    """The user's Downloads folder (Windows and Mac), or the home folder if there is none."""
+    d = Path.home() / "Downloads"
+    return d if d.is_dir() else Path.home()
+
+
+def save_download(name: str, text: str, folder: Path | None = None) -> Path:
+    """Saves a file the page made (an indicator, a CSV) into Downloads. The app window cannot do browser-style downloads, so the page
+    sends the text here. A safe file name is kept; an existing file of the same name is not overwritten (name (2).pine, ...)."""
+    folder = folder or downloads_folder()
+    base = re.sub(r"[^A-Za-z0-9._ ()-]", "_", Path(name or "qdata.txt").name).strip(" .") or "qdata.txt"
+    stem, ext = os.path.splitext(base)
+    p, n = folder / base, 2
+    while p.exists():
+        p = folder / f"{stem} ({n}){ext}"
+        n += 1
+    p.write_text(text, encoding="utf-8", newline="\n")
+    return p
+
+
+def reveal(p: Path):
+    """Show the saved file in Explorer / Finder. Never fails the save."""
+    try:
+        import subprocess
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", str(p)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(p)])
+    except Exception:
+        pass
+
+
 CHECK_EVERY = 4 * 3600                     # seconds between update checks
 MAC = sys.platform == "darwin"
 TRAY = "menu bar" if MAC else "tray"
@@ -240,7 +277,17 @@ def main(argv=None):
                                            text_select=True, background_color="#0b0d10"))
         return {"ok": True, "window": n}
 
-    for path, fn, method in (("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
+    def save_file(f: SaveFileIn):
+        if len(f.text) > 20_000_000:
+            return {"ok": False, "reason": "File too large."}
+        try:
+            p = save_download(f.name, f.text)
+        except OSError as e:
+            return {"ok": False, "reason": str(e)}
+        reveal(p)
+        return {"ok": True, "path": str(p), "folder": str(p.parent), "name": p.name}
+
+    for path, fn, method in (("/api/desktop/save-file", save_file, "POST"), ("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
                              ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST"),
                              ("/api/desktop/restart", restart, "POST")):
         app.router.routes.insert(0, APIRoute(path, fn, methods=[method]))          # in front of the page files mounted at /

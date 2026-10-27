@@ -33,6 +33,12 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.17.1
+
+- **Download buttons work in the desktop app.** The app window could not do browser-style downloads, so Download .pine (and the
+  CSV download) did nothing. Now the file is saved straight into your **Downloads** folder and Explorer / Finder opens with it
+  selected. A same-named file is never overwritten (it becomes "name (2).pine"). In a browser it is still a normal download.
+
 ## New in 1.17
 
 - **Q DATA All Tabs: every tab's levels in one TradingView indicator.** Use the **Copy all-tabs indicator** button at the top of

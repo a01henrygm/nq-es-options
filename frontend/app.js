@@ -894,7 +894,24 @@ function tabPineBar() {
   bar.querySelector('[data-tp="alldl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { failAll(e); } };
   v.prepend(bar);
 }
-function download(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+// In the desktop app the window cannot do browser downloads, so the file is handed to the app, which saves it in Downloads and
+// shows it in Explorer / Finder. In a browser (no /api/desktop routes) it is a normal download.
+async function download(name, text) {
+  try {
+    const r = await fetch("/api/desktop/save-file", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, text }) });
+    if (r.ok) {
+      const j = await r.json();
+      if (j.ok) { toast(`Saved ${j.name} in ${j.folder}`); return; }
+      alert("Could not save the file: " + (j.reason || "unknown error")); return;
+    }
+  } catch (e) { /* not the desktop app: fall through to a browser download */ }
+  browserDownload(name, text);
+}
+function toast(msg) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 6000);
+}
+function browserDownload(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 const regCol = l => /^(Pinned|Calm)/.test(l) ? "#3fb96a" : /^(Trending|Leaning unstable)/.test(l) ? "#e5534b" : /^Transition/.test(l) ? "#e6b422" : "#8a8f98";
 const leanTxt = l => l > 0 ? "Bullish" : l < 0 ? "Bearish" : "Neutral", leanCol = l => l > 0 ? "#3fb96a" : l < 0 ? "#e5534b" : "#8a8f98";
 

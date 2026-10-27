@@ -238,3 +238,12 @@ def test_single_copy_lock_off_windows(tmp_path, monkeypatch):
     """)
     assert subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True).stdout.strip() == "busy"
     first.close()
+
+
+def test_save_download_keeps_a_safe_name_and_never_overwrites(tmp_path):
+    from desktop.app import save_download
+    a = save_download("qdata_stack_map_NDX.pine", "//@version=6\n", tmp_path)
+    b = save_download("qdata_stack_map_NDX.pine", "x", tmp_path)
+    c = save_download("../../evil:name?.pine", "y", tmp_path)
+    assert a.name == "qdata_stack_map_NDX.pine" and b.name == "qdata_stack_map_NDX (2).pine" and a.read_text() == "//@version=6\n"
+    assert c.parent == tmp_path and ".." not in c.name and ":" not in c.name

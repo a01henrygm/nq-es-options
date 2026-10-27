@@ -215,3 +215,5 @@ footer{margin-top:20px;font-size:.8em}
 #rp_events tr.on td { background: #1d2a44; }
 .rpbar { align-items: center; }
 input.wt { width: 5.5em; text-align: right; }
+
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#162036;color:#e7ecf5;border:1px solid #2a3554;border-radius:8px;padding:10px 16px;z-index:9999;font-size:.92em;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.4)}
