@@ -711,3 +711,7 @@ def register(app, h):
         return {"cards": len(res), "by_grade": sorted(by.values(), key=lambda g: GRADE_ORDER.get(g["grade"], 9)), "recent": res[-15:][::-1],
                 "note": "Each card is logged once per half hour. Filled = price reached the entry after the card was made; then whichever of the target or stop came first. "
                         "Uses the app's stored prices (about every 2 minutes), so very fast moves can be judged loosely. Needs weeks of cards to mean anything."}
+
+    from types import SimpleNamespace
+    from .api_tabs import register as register_tabs
+    register_tabs(app, h, SimpleNamespace(context=context, stack_map=stack_map, level_map=level_map, game_plan=game_plan, quant=quant))

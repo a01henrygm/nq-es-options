@@ -33,6 +33,20 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.16
+
+- **A TradingView indicator for every tab that has levels, named after its tab.** A **Copy ... indicator** and **Download .pine**
+  button now sit at the top of each of these tabs: Stack map (**Q DATA Stack Map**), Level map, Game plan, Bias and plan, Session,
+  Regime, Volatility (VIX), Quant lab, GEX by strike, 0DTE GEX, Gamma flip, Charm and vanna, Open interest, Volume, Overnight
+  changes, Expected move and Delta exposure. Each indicator shows up in TradingView as "Q DATA <tab name>".
+  - Every kind of level on that tab has its own show/hide box in the indicator's settings.
+  - Hover a label to see why it is there (for Stack map and Level map: the HOLD / CHOP / BREAK call, the plan and the chance price gets there).
+  - Stack map areas are colored by their call (green HOLD, yellow CHOP, red BREAK) and drawn thicker when very stacked. Game plan
+    draws each setup's entry, stop and target. Session draws the expected-move cone from the 9:30 open, widening live through the day.
+  - Prices are NQ / ES estimates when a futures price or basis is saved, like the tabs. Only GEX and the walls are zones.
+  - A small table shows the tab's headline numbers (regime, high/low already in, and so on). The levels are baked in: re-copy each session.
+- The Key levels indicator is now called **Q DATA Key Levels**, so all of Q DATA's indicators sort together in TradingView.
+
 ## New in 1.15.1
 - HOD/LOD indicator compiles again (the Monte Carlo loop no longer hides its random-number state; that caused CE10123).
 - HOD/LOD indicator opens in a **Clean** view: only the open, +/-1 and +/-2 sd, the 0DTE walls and flip, short labels and a short table. Set View to Full for everything, or Table only to draw nothing on the chart. Every level is always in the Data Window and in TradingView's Export chart data.

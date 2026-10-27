@@ -872,6 +872,24 @@ function showText(title, text) {
   box.innerHTML = `<h2>${esc(title)}</h2><p class="dim">Select all (Ctrl+A) and copy (Ctrl+C).</p><textarea style="width:100%;height:240px;background:#0b0d10;color:#e8eaed;border:1px solid #262c34;border-radius:6px;font:12px monospace" readonly></textarea>`;
   box.querySelector("textarea").value = text; $("view").prepend(box);
 }
+// Each tab that has levels gets its own TradingView indicator, named after the tab (built by /api/export/tab-pine).
+const TAB_PINE = { stackmap: "Q DATA Stack Map", levelmap: "Q DATA Level Map", gameplan: "Q DATA Game Plan", bias: "Q DATA Bias and Plan", session: "Q DATA Session",
+  regime: "Q DATA Regime", vix: "Q DATA Volatility (VIX)", quant: "Q DATA Quant Lab", gex: "Q DATA GEX by Strike", zerodte: "Q DATA 0DTE GEX", flip: "Q DATA Gamma Flip",
+  flows: "Q DATA Charm and Vanna", oi: "Q DATA Open Interest", volume: "Q DATA Volume", preopen: "Q DATA Overnight Changes", move: "Q DATA Expected Move", delta: "Q DATA Delta Exposure" };
+function tabPineBar() {
+  const name = TAB_PINE[S.tab], v = $("view");
+  if (!name || !v || !S.u) return;
+  const old = v.querySelector(".tvbar"); if (old) old.remove();
+  const tab = S.tab, bar = document.createElement("div");
+  bar.className = "toolbar tvbar";
+  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Each kind of level has its own show/hide box; hover a label for why it is there. Re-copy each session.</span>
+    <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button></span>`;
+  const get = () => api("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
+  const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
+  bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
+  bar.querySelector('[data-tp="dl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { fail(e); } };
+  v.prepend(bar);
+}
 function download(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 const regCol = l => /^(Pinned|Calm)/.test(l) ? "#3fb96a" : /^(Trending|Leaning unstable)/.test(l) ? "#e5534b" : /^Transition/.test(l) ? "#e6b422" : "#8a8f98";
 const leanTxt = l => l > 0 ? "Bullish" : l < 0 ? "Bearish" : "Neutral", leanCol = l => l > 0 ? "#3fb96a" : l < 0 ? "#e5534b" : "#8a8f98";
@@ -890,7 +908,7 @@ async function render() {
   if (S.busy) { S.again = true; return; }                  // something changed while a refresh was running: run again right after it
   S.busy = true; $("clock").textContent = "Updating...";
   saveUI();
-  try { await R[S.tab](); } catch (e) { showError(e); } finally { S.busy = false; }
+  try { await R[S.tab](); tabPineBar(); } catch (e) { showError(e); } finally { S.busy = false; }
   if (S.again) { S.again = false; return render(); }
   addHelp(); persistDetails(); eventsBanner();
   $("clock").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
