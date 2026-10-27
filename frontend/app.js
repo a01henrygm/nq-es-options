@@ -285,7 +285,7 @@ const R = {
     { const it = indicatorText(lv, m, root); $("indtext").value = it.text;
       $("indnote").textContent = `${it.count} levels, ${it.mapped ? "as estimated " + root + " points" : "in " + S.u + " units. Save a basis above to get " + root + " points"}.`;
       $("indtext").onclick = () => $("indtext").select();
-      $("indcopy").onclick = async () => { $("indtext").select(); try { await navigator.clipboard.writeText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = "Copied (or press Ctrl+C)"; } }; }
+      $("indcopy").onclick = async () => { $("indtext").select(); try { await copyText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = "Copied (or press Ctrl+C)"; } }; }
     $("lvtop").value = String(S.lvtop); $("lvtop").onchange = () => { S.lvtop = +$("lvtop").value; render(); };
     $("lvkey").value = S.lvq ? "q" + S.lvq : S.lvnear ? "n" + S.lvnear : S.lvkey ? "k" + S.lvkey : "all";
     $("lvkey").onchange = () => { const v = $("lvkey").value; S.lvq = v[0] === "q" ? v.slice(1) : ""; S.lvkey = v[0] === "k" ? +v.slice(1) : 0; S.lvnear = v[0] === "n" ? +v.slice(1) : 0; render(); };
@@ -312,14 +312,14 @@ const R = {
         .map(l => `${l.label}: ${fmt(l.mapped.mapped, 2)}`);
       if (!lines.length) return alert("No " + root + " levels yet. Save a basis or a " + root + " price first.");
       const txt = `${root} levels (estimates, ${S.u} ${et(m.source_timestamp)})\n` + lines.join("\n");
-      try { await navigator.clipboard.writeText(txt); cp.textContent = "Copied"; } catch (e) { prompt("Copy this text:", txt); }
+      try { await copyText(txt); cp.textContent = "Copied"; } catch (e) { prompt("Copy this text:", txt); }
     };
     const pineGet = async () => api("/export/pine", { underlying: S.u, convention: $("conv").value, method: $("method").value, categories: [...S.cats].join(","), top: S.lvtop, expiration: exps(), by_expiry: S.lvexp, mid: S.lvmid, moves: S.lvmov, ...selParams() });
     const pc = $("fpine"), pd = $("fpinedl");
-    if (pc) pc.onclick = async () => { try { const r = await pineGet(); try { await navigator.clipboard.writeText(r.code); pc.textContent = `Copied ${r.levels} levels`; } catch (e) { showText("Pine code", r.code); } } catch (e) { alert("Could not build Pine code: " + (e.msg || e.message)); } };
+    if (pc) pc.onclick = async () => { try { const r = await pineGet(); try { await copyText(r.code); pc.textContent = `Copied ${r.levels} levels`; } catch (e) { showText("Pine code", r.code); } } catch (e) { alert("Could not build Pine code: " + (e.msg || e.message)); } };
     if (pd) pd.onclick = async () => { try { const r = await pineGet(); download("options_levels.pine", r.code); pd.textContent = "Downloaded"; } catch (e) { alert("Could not build Pine code: " + (e.msg || e.message)); } };
     const tx = $("ftxt");
-    if (tx) tx.onclick = async () => { const it = indicatorText(lv, m, root); try { await navigator.clipboard.writeText(it.text); tx.textContent = `Copied ${it.count} levels`; } catch (e) { showText("Levels for the indicator", it.text); } };
+    if (tx) tx.onclick = async () => { const it = indicatorText(lv, m, root); try { await copyText(it.text); tx.textContent = `Copied ${it.count} levels`; } catch (e) { showText("Levels for the indicator", it.text); } };
     const sv = $("fsave");
     if (sv) sv.onclick = async () => {
       const t = $("fa").value.trim(); let as_of = null;
@@ -391,7 +391,7 @@ const R = {
       ["hmm", "hms", "hmw", "hmx"].forEach(id => $(id).onchange = () => { S.hma = $("hmm").value; S.hms = $("hms").value; S.hmw = $("hmw").value; S.hmx = $("hmx").value; render(); });
       const hp = $("hmpine"), hd = $("hmpinedl"), hget = () => api("/export/heatmap-pine", want);
       const fail = e => alert("Could not build the heatmap indicator: " + (e.msg || e.message));
-      hp.onclick = async () => { try { const r = await hget(); try { await navigator.clipboard.writeText(r.code); hp.textContent = `Copied (${r.measures.length} measures, ${r.strikes} strikes)`; } catch (e) { showText("Heatmap indicator (Pine)", r.code); } } catch (e) { fail(e); } };
+      hp.onclick = async () => { try { const r = await hget(); try { await copyText(r.code); hp.textContent = `Copied (${r.measures.length} measures, ${r.strikes} strikes)`; } catch (e) { showText("Heatmap indicator (Pine)", r.code); } } catch (e) { fail(e); } };
       hd.onclick = async () => { try { const r = await hget(); download(`qdata_heatmap_${S.u.replace(/^_/, "")}.pine`, r.code); hd.textContent = "Downloaded"; } catch (e) { fail(e); } }; };
     if (!j.available) { $("view").innerHTML = panel(`Activity heatmap, ${S.u}`, j.meta, ctl + note(j.reason)); wire(); return; }
     const d = j.data, m = j.meta, root = j.futures_root, all = d.measure === "all", fut = v => v == null ? "" : `<i class="fut">${esc(root)} ${fmt(v, 0)}</i>`;
@@ -886,13 +886,30 @@ function tabPineBar() {
     <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button><button data-tp="all" title="Every tab's levels in one indicator, Q DATA All Tabs, with an on/off switch per tab and a box per kind of level">Copy all-tabs indicator</button><button data-tp="alldl">Download all-tabs .pine</button></span>`;
   const get = () => api("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
   const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
-  bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
+  bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await copyText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
   bar.querySelector('[data-tp="dl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { fail(e); } };
   const getAll = () => api("/export/all-pine", { underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
   const failAll = e => alert("Could not build Q DATA All Tabs: " + (e.msg || e.message));
-  bar.querySelector('[data-tp="all"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.tabs.length} tabs, ${r.levels} levels)`; } catch (e) { showText("Q DATA All Tabs (Pine)", r.code); } } catch (e) { failAll(e); } };
+  bar.querySelector('[data-tp="all"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); try { await copyText(r.code); b.textContent = `Copied (${r.tabs.length} tabs, ${r.levels} levels)`; } catch (e) { showText("Q DATA All Tabs (Pine)", r.code); } } catch (e) { failAll(e); } };
   bar.querySelector('[data-tp="alldl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { failAll(e); } };
   v.prepend(bar);
+}
+// Copy text to the clipboard. The desktop app's window does not reliably allow the browser clipboard, so the app sets it itself;
+// in a browser it uses the clipboard API, then the older copy command. Throws if nothing worked (callers then show the text to copy by hand).
+async function copyText(text) {
+  try {
+    const r = await fetch("/api/desktop/copy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "", text }) });
+    if (r.ok && (await r.json()).ok) return true;
+  } catch (e) { /* not the desktop app */ }
+  try {
+    await Promise.race([navigator.clipboard.writeText(text), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 1500))]);
+    return true;
+  } catch (e) { /* try the older way */ }
+  const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  ta.remove();
+  if (!ok) throw new Error("clipboard blocked");
+  return true;
 }
 // In the desktop app the window cannot do browser downloads, so the file is handed to the app, which saves it in Downloads and
 // shows it in Explorer / Finder. In a browser (no /api/desktop routes) it is a normal download.

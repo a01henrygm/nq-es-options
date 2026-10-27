@@ -51,6 +51,49 @@ def save_download(name: str, text: str, folder: Path | None = None) -> Path:
     return p
 
 
+def set_clipboard(text: str) -> bool:
+    """Put text on the system clipboard (Windows: the Win32 clipboard API, Unicode; Mac: pbcopy). True when it worked."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+            u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+            u32.OpenClipboard.argtypes, u32.OpenClipboard.restype = [wintypes.HWND], wintypes.BOOL
+            u32.SetClipboardData.argtypes, u32.SetClipboardData.restype = [wintypes.UINT, wintypes.HANDLE], wintypes.HANDLE
+            k32.GlobalAlloc.argtypes, k32.GlobalAlloc.restype = [wintypes.UINT, ctypes.c_size_t], wintypes.HGLOBAL
+            k32.GlobalLock.argtypes, k32.GlobalLock.restype = [wintypes.HGLOBAL], wintypes.LPVOID
+            k32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+            k32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+            data = (text.replace("\r\n", "\n").replace("\n", "\r\n") + "\0").encode("utf-16-le")
+            for _ in range(10):                         # another program may hold the clipboard for a moment
+                if u32.OpenClipboard(None):
+                    break
+                time.sleep(0.05)
+            else:
+                return False
+            try:
+                u32.EmptyClipboard()
+                h = k32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+                if not h:
+                    return False
+                ptr = k32.GlobalLock(h)
+                ctypes.memmove(ptr, data, len(data))
+                k32.GlobalUnlock(h)
+                if not u32.SetClipboardData(13, h):     # CF_UNICODETEXT; on success the clipboard owns the memory
+                    k32.GlobalFree(h)
+                    return False
+                return True
+            finally:
+                u32.CloseClipboard()
+        if sys.platform == "darwin":
+            import subprocess
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=5)
+            return True
+    except Exception:
+        logging.exception("clipboard")
+    return False
+
+
 def reveal(p: Path):
     """Show the saved file in Explorer / Finder. Never fails the save."""
     try:
@@ -287,7 +330,12 @@ def main(argv=None):
         reveal(p)
         return {"ok": True, "path": str(p), "folder": str(p.parent), "name": p.name}
 
-    for path, fn, method in (("/api/desktop/save-file", save_file, "POST"), ("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
+    def copy(f: SaveFileIn):
+        if len(f.text) > 20_000_000:
+            return {"ok": False, "reason": "Too large."}
+        return {"ok": set_clipboard(f.text)}
+
+    for path, fn, method in (("/api/desktop/copy", copy, "POST"), ("/api/desktop/save-file", save_file, "POST"), ("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
                              ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST"),
                              ("/api/desktop/restart", restart, "POST")):
         app.router.routes.insert(0, APIRoute(path, fn, methods=[method]))          # in front of the page files mounted at /

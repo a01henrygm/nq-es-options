@@ -23,7 +23,7 @@ function wirePine(idB, idD) {
   const want = { underlying: S.u, convention: $("conv").value }, get = () => api("/export/hodlod-pine", want);
   const fail = e => alert("Could not build the HOD/LOD indicator: " + (e.msg || e.message));
   const b = $(idB), d = $(idD);
-  if (b) b.onclick = async () => { try { const r = await get(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.state} gamma, 1 sd ${fmt(r.sigma_pct * 100, 2)}%)`; } catch (e) { showText("HOD/LOD indicator (Pine)", r.code); } } catch (e) { fail(e); } };
+  if (b) b.onclick = async () => { try { const r = await get(); try { await copyText(r.code); b.textContent = `Copied (${r.state} gamma, 1 sd ${fmt(r.sigma_pct * 100, 2)}%)`; } catch (e) { showText("HOD/LOD indicator (Pine)", r.code); } } catch (e) { fail(e); } };
   if (d) d.onclick = async () => { try { const r = await get(); download(`qdata_hodlod_${S.u.replace(/^_/, "")}.pine`, r.code); d.textContent = "Downloaded"; } catch (e) { fail(e); } };
 }
 
