@@ -1,8 +1,11 @@
 import httpx
 import pytest
 
+from datetime import datetime
+
 from backend.config import Settings
 from backend.providers.base import ProviderError
+from backend.timeutil import UTC
 from backend.providers.massive import MassiveProvider, RateLimiter, normalize_contract, content_hash
 from tests.conftest import massive_item
 
@@ -10,7 +13,8 @@ S = Settings(api_key="SECRET-KEY-123", base_url="https://api.test", max_rpm=6000
 
 
 def provider(handler):
-    return MassiveProvider(S, httpx.Client(transport=httpx.MockTransport(handler)), RateLimiter(6000), sleep=lambda s: None)
+    return MassiveProvider(S, httpx.Client(transport=httpx.MockTransport(handler)), RateLimiter(6000), sleep=lambda s: None,
+                           clock=lambda: datetime(2026, 10, 14, 15, 0, tzinfo=UTC))
 
 
 def test_normalize_contract_fields_and_timestamps():
@@ -94,3 +98,14 @@ def test_rate_limiter_spaces_calls():
     rl = RateLimiter(60, clock=lambda: t["now"], sleep=lambda s: (slept.append(s), t.__setitem__("now", t["now"] + s)))
     rl.wait(); rl.wait()
     assert slept and slept[0] == pytest.approx(1.0)
+
+
+def test_expired_contracts_dropped():
+    """A day's options stay listed after they expire; they must not be counted."""
+    def h(req):
+        if req.url.params.get("limit") == "1":
+            return httpx.Response(200, json={"results": [massive_item()]})
+        return httpx.Response(200, json={"results": [massive_item(500.0, expiry="2026-10-14"), massive_item(501.0, expiry="2026-10-16")]})
+    after_close = MassiveProvider(S, httpx.Client(transport=httpx.MockTransport(h)), RateLimiter(6000), sleep=lambda s: None,
+                                  clock=lambda: datetime(2026, 10, 14, 20, 30, tzinfo=UTC))         # 4:30 PM ET
+    assert [c.strike for c in after_close.fetch_chain("QQQ", max_dte=7, strike_window=0.05).contracts] == [501.0]

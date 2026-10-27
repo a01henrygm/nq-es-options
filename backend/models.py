@@ -39,6 +39,27 @@ class OptionContract:
         return d
 
 
+# Roots whose standard (monthly) options are AM-settled: they stop trading the evening before and settle at the open.
+AM_SETTLED_ROOTS = {"SPX", "NDX", "RUT"}
+
+
+def expiry_cutoff(c: OptionContract) -> datetime:
+    """When a contract stops existing: 09:30 ET for AM-settled index roots (SPX, NDX, RUT), 16:00 ET otherwise (SPXW, NDXP, ETFs)."""
+    import re
+    from datetime import time
+    from .timeutil import ET
+    m = re.match(r"(?:O:)?([A-Z]+)\d", c.ticker or "")
+    root = m.group(1) if m else ""
+    t = time(9, 30) if root in AM_SETTLED_ROOTS else time(16, 0)
+    return datetime.combine(c.expiry, t, tzinfo=ET)
+
+
+def drop_expired(contracts: list, now: datetime) -> list:
+    """Remove contracts that have already expired. Providers keep listing a day's options for hours after they expire,
+    with greeks still attached, and counting them would draw walls and GEX from contracts that no longer exist."""
+    return [c for c in contracts if expiry_cutoff(c) > now]
+
+
 @dataclass
 class ChainSnapshot:
     provider: str

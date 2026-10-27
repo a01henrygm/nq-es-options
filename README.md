@@ -182,6 +182,14 @@ Data path: Massive -> provider -> collector -> SQLite -> analytics -> FastAPI ->
 * **Open interest** is the end-of-previous-day figure. It does not change during the session.
 * **GEX and delta exposure are modeled.** Open interest does not reveal who owns contracts. The sign comes from the
   scenario you pick (standard: calls +, puts -). Formula: gamma x open interest x multiplier x spot^2 x 0.01.
+* **Cboe gamma is recomputed.** Cboe rounds gamma to 4 decimals, which for NDX and SPX options (gamma around 0.0001) is
+  mostly rounding: on a live file it moved SPX total GEX by 30%. The app recomputes gamma exactly from Cboe's implied
+  volatility (Black-Scholes, the same model as the gamma flip); the GEX tab counts these as "modeled gamma".
+* **Expired options are dropped.** Cboe keeps a day's options in its file overnight after they expire, with greeks still
+  attached. They are removed at 4:00 PM ET (9:30 AM for the AM-settled NDX/SPX monthlies) so walls and GEX never come
+  from contracts that no longer exist.
+* **Cboe's two clocks.** The index's last trade time in the file is Eastern; the file's own "timestamp" is when Cboe wrote
+  it, in UTC, and keeps moving all night. The data time shown is the older of the two, so after the close it is the close.
 * **Gamma flip** re-prices gamma at hypothetical prices and looks for a zero crossing. If none exists, it says so.
 * **Expected move** is a statistical estimate: the ATM straddle price and spot x ATM IV x sqrt(time).
 * **Getting NQ numbers fast:** on the Levels tab type the **basis** once (NQ minus NDX, read from TradingView at the same

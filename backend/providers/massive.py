@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 import httpx
 
 from ..config import Settings
-from ..models import ChainSnapshot, OptionContract
+from ..models import ChainSnapshot, OptionContract, drop_expired
 from ..timeutil import parse_ts, utcnow
 from .base import OptionsProvider, ProviderError
 
@@ -71,8 +71,9 @@ class MassiveProvider(OptionsProvider):
     name = "massive"
 
     def __init__(self, settings: Settings, client: httpx.Client | None = None, limiter: RateLimiter | None = None,
-                 sleep=time.sleep):
+                 sleep=time.sleep, clock=utcnow):
         self.s = settings
+        self.now = clock
         self.client = client or httpx.Client(timeout=20.0)
         self.limiter = limiter or RateLimiter(settings.max_rpm)
         self.sleep = sleep
@@ -148,4 +149,6 @@ class MassiveProvider(OptionsProvider):
                 if not spot:
                     spot, spot_ts = _num(u.get("price")) or _num(u.get("value")), parse_ts(u.get("last_updated"))
             url, pages = j.get("next_url"), pages + 1
-        return ChainSnapshot(self.name, underlying, utcnow(), spot, spot_ts, contracts, content_hash(contracts))
+        now = self.now()
+        contracts = drop_expired(contracts, now)      # a day's options stay listed after they expire; they no longer exist
+        return ChainSnapshot(self.name, underlying, now, spot, spot_ts, contracts, content_hash(contracts))
