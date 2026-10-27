@@ -55,6 +55,8 @@ class Settings:
     retention_snapshots: int = 150
     access_password: str | None = field(default=None, repr=False)   # never printed
     access_local_bypass: bool = True
+    extras_enabled: bool = True                              # VIX family, mega-cap earnings (free Cboe and Nasdaq data)
+    earnings_names: int = 10                                 # how many of the biggest Nasdaq-100 companies the Earnings tab follows
 
     @property
     def requires_key(self) -> bool:
@@ -100,7 +102,9 @@ def _settings_for(provider: str, env, default_provider: str) -> Settings:
         db_path=db_path, host=str(g("HOST", "127.0.0.1")), port=int(g("PORT", 8000)),
         retention_snapshots=int(g("RETENTION_SNAPSHOTS", 150)),
         access_password=(env.get("ACCESS_PASSWORD") or "").strip() or None,
-        access_local_bypass=str(g("ACCESS_LOCAL_BYPASS", "1")).strip() not in ("0", "false", "no"))
+        access_local_bypass=str(g("ACCESS_LOCAL_BYPASS", "1")).strip() not in ("0", "false", "no"),
+        extras_enabled=str(g("MARKET_EXTRAS", "1")).strip().lower() not in ("0", "false", "no", "off"),
+        earnings_names=max(1, min(30, int(g("EARNINGS_NAMES", 10)))))
 
 
 def _default_provider(env) -> str:

@@ -57,7 +57,7 @@ class FuturesPrice(BaseModel):
 
 
 def create_app(primary_settings: Settings, primary_db: Database, primary_collector, now_fn=utcnow,
-               extra_sources: dict | None = None, source_notes: list | None = None) -> FastAPI:
+               extra_sources: dict | None = None, source_notes: list | None = None, extras=None) -> FastAPI:
     """One dashboard, one or more data sources (Cboe, Massive). Each request may carry ?source=name; the rest of this
     function reads `settings`, `db` and `collector` through proxies that follow that choice."""
     app = FastAPI(title="NQ/ES Options Analytics", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -933,6 +933,9 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
     from .api_quant import register as register_quant
     register_quant(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok,
                                         futures_mapper=futures_mapper, futures_converter=futures_converter, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions))
+    from .api_extras import register as register_extras
+    register_extras(app, SimpleNamespace(db=db, primary_db=primary_db, extras=extras, snapshot=snapshot, futures_converter=futures_converter,
+                                         now_fn=now_fn, underlying_ok=underlying_ok, settings=settings))
 
     @app.middleware("http")
     async def never_serve_stale_pages(request, call_next):

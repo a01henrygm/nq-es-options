@@ -210,3 +210,8 @@ footer{margin-top:20px;font-size:.8em}
 .gpnums>div{display:flex;flex-direction:column;gap:2px}.gpnums b{font-size:1.25em}
 .gpvotes{display:flex;flex-direction:column;gap:4px;line-height:1.45}
 @media (max-width:760px){.gpgrid{grid-template-columns:1fr}}
+
+/* 1.15: replay */
+#rp_events tr.on td { background: #1d2a44; }
+.rpbar { align-items: center; }
+input.wt { width: 5.5em; text-align: right; }

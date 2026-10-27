@@ -33,6 +33,25 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.15
+
+- **Volatility (VIX) tab.** The whole VIX family from Cboe's free files: VIX1D (today), VIX9D, VIX, VIX3M, VIX6M, VXN (the
+  Nasdaq-100's own VIX) and VVIX. A regime label from the shape of the curve (Calm, Normal, Tense, Stressed, Panic from VIX/VIX3M),
+  each index's change and where it sits in the last year, the typical NQ day in points (VXN adjusted by today's VIX1D/VIX), and
+  plain-English flags: event day, trouble priced for the next 9 days, VIX able to spike (VVIX), a big one-day jump in fear.
+- **Earnings tab.** When the biggest Nasdaq-100 companies report (dates and before/after the bell from Nasdaq), how far each one's
+  options say the stock will move (the straddle of the first expiry after the report, plus the event-only part), and what that
+  alone moves NQ: index weight x implied move x NQ. Nights where several giants report together are added up. Weights apply the
+  Nasdaq-100 capping rule to market caps; type your own to replace any of them. Settings: `MARKET_EXTRAS`, `EARNINGS_NAMES`.
+- **Replay tab.** Replay any stored session snapshot by snapshot: the GEX profile, the walls and the flip as they stood at each
+  moment, against price. Play, pause, speed, a slider and arrow keys, plus a timeline of every wall move, flip crossing, wall touch
+  and dealer-gamma flip; click one to jump there.
+
+## New in 1.14.1
+
+- Data fixes after a check against the live Cboe files: the data time (Cboe's file time is UTC), expired same-day options are
+  dropped once they expire, and gamma is recomputed exactly instead of using Cboe's rounded value. See Calculation notes.
+
 ## New in 1.13
 
 - **+ Window** (top bar): opens another Q DATA window on the page you are on, inside the same app, so you can keep two pages side by side or one on each screen (for example Game plan and Stack map). Each extra window keeps its own page; the main window opens where you left it. In a web browser it opens a new tab.

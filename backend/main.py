@@ -12,6 +12,7 @@ import uvicorn
 
 from .api import create_app
 from .collector import Collector
+from .extras import Extras
 from .config import DATA, load_sources
 from .database import Database
 from .security import LOOPBACK, exposure_problem
@@ -51,8 +52,9 @@ def build():
         built[name] = (st, db, Collector(st, CboeProvider(st) if name == "cboe" else MassiveProvider(st), db))
     ps, pdb, pcol = built[default]
     seed_events(pdb)
-    app = create_app(ps, pdb, pcol, extra_sources={k: v for k, v in built.items() if k != default}, source_notes=notes)
-    return s, app, [v[2] for v in built.values()]
+    extras = Extras(ps, pdb)
+    app = create_app(ps, pdb, pcol, extra_sources={k: v for k, v in built.items() if k != default}, source_notes=notes, extras=extras)
+    return s, app, [v[2] for v in built.values()] + ([extras] if ps.extras_enabled else [])
 
 
 def probe(host: str) -> str:
@@ -119,7 +121,7 @@ def main():
         print(f"\nPort {s.port} is used by another program, so this run uses port {port} instead.")
     for c in collectors:
         c.start()
-    print("Data sources running: " + ", ".join(c.s.provider for c in collectors))
+    print("Data sources running: " + ", ".join(getattr(c, "label", None) or c.s.provider for c in collectors))
     print(f"\nDashboard on this PC: http://127.0.0.1:{port}")
     if s.host not in LOOPBACK:
         ip = lan_ip()
