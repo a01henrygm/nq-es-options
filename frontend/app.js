@@ -279,13 +279,13 @@ const R = {
       <p class="hint">${esc(lv.note)} Trust rule: ${esc(lv.meta.reliability_rule)}</p>
       ${d.available ? `<p class="hint">Mapping check on ${d.n} stored pairs: ratio error ${fmt(d.ratio.mae, 2)}, basis error ${fmt(d.basis.mae, 2)} (mean absolute, futures points). Best so far: ${d.best}.</p>` : `<p class="hint">Mapping accuracy: ${esc(d.note || "not measured yet")}</p>`}
       <details class="adv" data-k="lv-paste" open><summary>Paste into the TradingView indicator</summary><div class="body">
-        <p class="dim">Click the box, press Ctrl+A then Ctrl+C (or use the button), and paste it into the indicator's Levels setting. It holds exactly the rows in the table above.</p>
+        <p class="dim">Click the box, press ${KEY}+A then ${KEY}+C (or use the button), and paste it into the indicator's Levels setting. It holds exactly the rows in the table above.</p>
         <textarea id="indtext" readonly spellcheck="false" style="width:100%;height:230px;font:calc(13px*var(--z)) ui-monospace,Menlo,Consolas,monospace"></textarea>
         <div class="row"><button class="go" id="indcopy">Copy this text</button><span class="dim" id="indnote"></span></div></div></details>`);
     { const it = indicatorText(lv, m, root); $("indtext").value = it.text;
       $("indnote").textContent = `${it.count} levels, ${it.mapped ? "as estimated " + root + " points" : "in " + S.u + " units. Save a basis above to get " + root + " points"}.`;
       $("indtext").onclick = () => $("indtext").select();
-      $("indcopy").onclick = async () => { $("indtext").select(); try { await copyText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = "Copied (or press Ctrl+C)"; } }; }
+      $("indcopy").onclick = async () => { $("indtext").select(); try { await copyText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = `Copied (or press ${KEY}+C)`; } }; }
     $("lvtop").value = String(S.lvtop); $("lvtop").onchange = () => { S.lvtop = +$("lvtop").value; render(); };
     $("lvkey").value = S.lvq ? "q" + S.lvq : S.lvnear ? "n" + S.lvnear : S.lvkey ? "k" + S.lvkey : "all";
     $("lvkey").onchange = () => { const v = $("lvkey").value; S.lvq = v[0] === "q" ? v.slice(1) : ""; S.lvkey = v[0] === "k" ? +v.slice(1) : 0; S.lvnear = v[0] === "n" ? +v.slice(1) : 0; render(); };
@@ -867,10 +867,17 @@ function indicatorText(lv, m, root) {
   const st = etStamp(m.source_timestamp);
   return { count: rows.length, mapped, text: `// ${S.u} levels, ${et(m.source_timestamp)}. ${mapped ? "Estimated " + root + " points" : S.u + " units (no " + root + " basis typed in yet)"}\n` + (st ? `// @start ${st}\n` : "") + rows.join("\n") };
 }
+const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+const KEY = IS_MAC ? "Cmd" : "Ctrl";
 function showText(title, text) {
   const box = document.createElement("div"); box.className = "panel";
-  box.innerHTML = `<h2>${esc(title)}</h2><p class="dim">Select all (Ctrl+A) and copy (Ctrl+C).</p><textarea style="width:100%;height:240px;background:#0b0d10;color:#e8eaed;border:1px solid #262c34;border-radius:6px;font:12px monospace" readonly></textarea>`;
-  box.querySelector("textarea").value = text; $("view").prepend(box);
+  box.innerHTML = `<h2>${esc(title)}</h2><p class="dim"><button class="btn" data-st="copy">Copy</button> or click in the box, select all (${KEY}+A) and copy (${KEY}+C).</p><textarea style="width:100%;height:240px;background:#0b0d10;color:#e8eaed;border:1px solid #262c34;border-radius:6px;font:12px monospace" readonly></textarea>`;
+  const ta = box.querySelector("textarea"); ta.value = text; $("view").prepend(box);
+  box.querySelector('[data-st="copy"]').onclick = async ev => {
+    const b = ev.currentTarget;
+    try { await copyText(text); b.textContent = "Copied"; }
+    catch (e) { ta.focus(); ta.select(); b.textContent = `Selected: press ${KEY}+C`; }
+  };
 }
 // Each tab that has levels gets its own TradingView indicator, named after the tab (built by /api/export/tab-pine).
 const TAB_PINE = { stackmap: "Q DATA Stack Map", levelmap: "Q DATA Level Map", gameplan: "Q DATA Game Plan", bias: "Q DATA Bias and Plan", session: "Q DATA Session",

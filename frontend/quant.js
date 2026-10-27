@@ -295,7 +295,7 @@ Object.assign(R, {
           <td class="dim">${esc(l.why)}${l.record ? ` Held ${pct(l.record.held_pct)} of ${l.record.n} logged touches.` : ""}</td></tr>`).join("")}</table></div>
       <p class="hint">${esc(r.note)}</p>`;
     $("view").innerHTML = panel(`Chart read, ${S.u}`, null, `${keyBox}
-      <div class="toolbar"><span class="dim">Paste a screenshot of your TradingView chart (Ctrl+V), drop it here, or</span>
+      <div class="toolbar"><span class="dim">Paste a screenshot of your TradingView chart (${KEY}+V), drop it here, or</span>
         <label class="go" style="cursor:pointer;padding:6px 12px;border-radius:6px">Choose image<input id="crfile" type="file" accept="image/*" hidden></label>
         <input id="crnote" placeholder="Optional: anything to tell it (e.g. 1m, 10:42, looking for shorts)" style="flex:1;min-width:260px" value="${esc(CR.note)}">
         <button id="crgo" class="go" ${CR.img && st.configured && !CR.busy ? "" : "disabled"}>${CR.busy ? "Reading..." : "Read chart"}</button>

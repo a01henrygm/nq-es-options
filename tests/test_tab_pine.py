@@ -65,3 +65,30 @@ def test_indicators_are_fully_customizable_and_draw_stack_zones():
     assert "(ceiling)" not in code and '"ceiling"' in code                  # plain-English meanings are baked per kind
     one = c.get("/api/export/tab-pine", params={"tab": "levelmap", "underlying": "_NDX"}).json()["code"]
     assert "zOn" in one and "Levels: Level Map" in one
+
+
+def test_all_tabs_indicator_keeps_the_main_body_short_and_names_unique():
+    """TradingView refuses a script whose main body is too long (CE10295) and warns when a local name hides a setting (CW10013,
+    e.g. a local t2 hiding the "Show" switch of tab 2). The drawing code and the long level lists live in functions."""
+    import re
+    from backend.services import tab_pine
+    c, db, now = simulated_day()
+    code = c.get("/api/export/all-pine", params={"underlying": "_NDX"}).json()["code"]
+    for fn in ("qdVisible(int n) =>", "qdZones(", "qdLevels(", "qdInfoTable(", "qdLegend(", "var float[] lvP = "):
+        assert fn in code, fn
+    assert "array.from(" not in "\n".join(l for l in code.splitlines() if l.startswith("var "))     # lists are built by functions
+    glob, loc = set(), set()
+    for l in code.splitlines():
+        m = re.match(r'^(?:var\s+\S+\s+)?([A-Za-z_]\w*)\s*(?:=[^=>]|\()', l)
+        if m and not l.startswith(" "):
+            glob.add(m.group(1))
+        m = re.match(r'^\s+(?:\w+\s+)?([A-Za-z_]\w*)\s*=[^=]', l)
+        if m:
+            loc.add(m.group(1))
+        m = re.match(r'^(\w+)\((.*)\)\s*=>', l)
+        if m:
+            loc |= {p.split()[-1] for p in m.group(2).split(",") if p.strip()}
+    assert not (loc & glob), loc & glob
+    items = [str(i) for i in range(tab_pine.CHUNK * 2 + 5)]                   # long lists are split over several small functions
+    lines = tab_pine._arr("xs", "int", items)
+    assert "_xs2() =>" in "\n".join(lines) and lines[-1] == "var int[] xs = _xs()"

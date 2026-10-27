@@ -88,6 +88,14 @@ def set_clipboard(text: str) -> bool:
             finally:
                 u32.CloseClipboard()
         if sys.platform == "darwin":
+            try:                                        # the Mac pasteboard directly; pbcopy below if that is not possible
+                import AppKit
+                pb = AppKit.NSPasteboard.generalPasteboard()
+                pb.clearContents()
+                if pb.setString_forType_(text, AppKit.NSPasteboardTypeString):
+                    return True
+            except Exception:
+                logging.exception("clipboard (pasteboard)")
             import subprocess
             env = {**os.environ, "LANG": os.environ.get("LANG") or "en_US.UTF-8"}     # an app started from Finder has no LANG; pbcopy needs it for UTF-8
             subprocess.run(["/usr/bin/pbcopy"], input=text.encode("utf-8"), check=True, timeout=5, env=env)
@@ -179,6 +187,35 @@ def _open_folder(path: Path):
     elif MAC:
         import subprocess
         subprocess.Popen(["open", str(path)])
+
+
+def _mac_add_edit_menu():
+    """Mac: give the menu bar a standard Edit menu (Undo, Redo, Cut, Copy, Paste, Select All). Without it Cmd+C / Cmd+V / Cmd+A do
+    nothing in the window: the window library's own shortcut handling does not work with the Mac web view. The items send the
+    standard actions to whatever has focus, exactly like any Mac app. Safe to call more than once."""
+    import AppKit
+    app = AppKit.NSApplication.sharedApplication()
+    main = app.mainMenu()
+    if main is None:
+        main = AppKit.NSMenu.alloc().init()
+        app.setMainMenu_(main)
+    for i in range(main.numberOfItems()):
+        if main.itemAtIndex_(i).title() == "Edit":
+            return False
+    edit = AppKit.NSMenu.alloc().initWithTitle_("Edit")
+    for title, action, key, shift in (("Undo", "undo:", "z", False), ("Redo", "redo:", "z", True), (None, None, None, False),
+                                      ("Cut", "cut:", "x", False), ("Copy", "copy:", "c", False), ("Paste", "paste:", "v", False),
+                                      ("Select All", "selectAll:", "a", False)):
+        if title is None:
+            edit.addItem_(AppKit.NSMenuItem.separatorItem())
+            continue
+        item = edit.addItemWithTitle_action_keyEquivalent_(title, action, key)
+        if shift:
+            item.setKeyEquivalentModifierMask_(AppKit.NSEventModifierFlagCommand | AppKit.NSEventModifierFlagShift)
+    holder = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", None, "")
+    holder.setSubmenu_(edit)
+    main.insertItem_atIndex_(holder, min(1, main.numberOfItems()))
+    return True
 
 
 def _mac_watch_system(on_power_off, on_activate):
@@ -497,13 +534,42 @@ def main(argv=None):
             if os.environ.get("QDATA_SMOKE_STRICT") and not all(extra.get(k) for k in ("copy", "save", "indicators")):
                 ok, detail = False, f"indicator features failed: {extra}"
         time.sleep(3)                                       # let the window and the tray / menu bar icon settle
+        if MAC:                                             # the Edit menu that makes Cmd+C / Cmd+V / Cmd+A work in the window
+            seen, got_menu = threading.Event(), {}
+
+            def look():
+                try:
+                    import AppKit
+                    m = AppKit.NSApplication.sharedApplication().mainMenu()
+                    got_menu["ok"] = m is not None and any(m.itemAtIndex_(i).title() == "Edit" for i in range(m.numberOfItems()))
+                finally:
+                    seen.set()
+            time.sleep(3)
+            _on_main(look)
+            seen.wait(10)
+            extra["edit_menu"] = bool(got_menu.get("ok"))
+            if os.environ.get("QDATA_SMOKE_STRICT") and ok and not extra["edit_menu"]:
+                ok, detail = False, "the Edit menu is missing on Mac"
         (DATA / "smoke.json").write_text(json.dumps({"ok": ok, "detail": detail, "version": __version__, "tray": state["icon"] is not None, **extra,
                                                      "platform": sys.platform}))
         log.info("smoke test %s (%s)", "passed" if ok else "FAILED", detail)
         state["exit"] = 0 if ok else 1
         _on_main(quit_app) if MAC else quit_app()
 
+    def add_edit_menu():
+        try:
+            _mac_add_edit_menu()
+        except Exception:
+            log.exception("could not add the Edit menu")
+
+    def edit_menu_later():
+        for wait in (1.0, 4.0):                             # after the window library has set up its own menus at first show
+            time.sleep(wait)
+            _on_main(add_edit_menu)
+
     def after_start():
+        if MAC:
+            threading.Thread(target=edit_menu_later, daemon=True).start()
         threading.Thread(target=boot, daemon=True).start()
         threading.Thread(target=watch_show, daemon=True).start()
         if smoke:
