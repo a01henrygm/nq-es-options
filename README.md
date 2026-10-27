@@ -74,6 +74,14 @@ on the Levels tab are shared by both sources.
   - Levels at the same price from different tabs share one label with both names (Look > "One label for levels at the same price").
   - The info table only lists the tabs that are switched on.
   - Paste over the same script in TradingView each session and your on/off choices stay.
+- **TradingView indicator tab (App group).** Set the look of the indicators in Q DATA: which tabs are on when added, a color per tab,
+  every kind of level's show / color / style / width, the Quick setup (master switches, color levels by kind, tab or side of price,
+  nearest-N filter, emphasis on the nearest level each side, offset), stack zones, labels and tables. The choices are saved on this
+  device and used by every indicator copy. After pasting a new copy, use **Defaults > Reset settings** in the indicator's settings so
+  it takes the look. Set the look here rather than in TradingView: TradingView remembers settings by position, and the kinds of level
+  change from day to day. Every tab is always in the all-tabs indicator (empty when it has no levels), so tab switches stay put.
+  - The per-tab and per-kind settings are gathered into arrays so no drawing function reads too many settings (TradingView's
+    CE10116 limit of 254 "external elements").
 
 ## New in 1.16
 

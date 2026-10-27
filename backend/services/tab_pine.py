@@ -3,11 +3,22 @@ every tab ("Q DATA All Tabs"). Both come from build_pine() below, so they have t
 
 TradingView cannot read the app, so the levels are baked in as arrays when you copy or download the indicator (re-copy each session).
 Everything about HOW they are drawn is a setting in the indicator:
-  - per tab: a Show switch; per kind of level: show/hide, color, line style and width on one row, with a tooltip saying what it means
+  - Quick setup at the top: master switches (lines, labels, zones, tables), color levels by kind / tab / side of price, how many
+    levels to show, emphasis on the nearest level each side, and an offset for a different contract
+  - per tab: a Show switch and a tab color; per kind of level: show/hide, color, line style and width on one row, with a tooltip
   - estimated stack zones: computed live on the chart from the levels you have switched on. Where enough levels (different kinds,
     different tabs, or simply levels) sit within a distance you choose, a zone is drawn, colored by strength or by side of price,
     and labeled with how many reasons are stacked there. Every number is a setting.
   - labels (name, plain-English meaning, price), a legend of what each color means, an info table with the nearest zones.
+
+The starting value of every setting can be chosen in Q DATA (the "TradingView indicator" tab) and is passed in as `prefs`:
+  {"set": {<setting var>: value}, "tabs_on": [tab keys], "tab_colors": {tab key: "#rrggbb"},
+   "kinds": {<kind name>: {"on": bool, "color": "#rrggbb", "style": "solid|dashed|dotted", "width": 1-6}}}
+Anything missing or invalid falls back to the built-in default. SETTINGS (below) is the list Q DATA's tab draws its form from.
+
+TradingView limits how many outside values (inputs) one function may read, counting everything the functions it calls read too
+(CE10116, 254 "external elements", int/float/bool count 2). So the per-tab and per-kind settings are gathered into arrays once, and
+the drawing functions read the arrays (one element each) instead of hundreds of inputs.
 Written as conservative Pine v6; it has not been compiled by TradingView from here.
 """
 from __future__ import annotations
@@ -20,6 +31,79 @@ POSITIONS = ["Top right", "Top left", "Top center", "Bottom right", "Bottom left
 POS_EXPR = ('{v} == "Top left" ? position.top_left : {v} == "Top center" ? position.top_center : {v} == "Bottom right" ? position.bottom_right : '
             '{v} == "Bottom left" ? position.bottom_left : {v} == "Bottom center" ? position.bottom_center : {v} == "Middle right" ? position.middle_right : '
             '{v} == "Middle left" ? position.middle_left : position.top_right')
+# Default tab colors (used when "Color levels by" is set to Tab)
+TAB_COLORS = ["#2f8bf5", "#ff7a2e", "#3fb96a", "#e6b422", "#7db7ff", "#a371f7", "#22d3ee", "#ff4d8d", "#c77dff", "#2ec4b6", "#e76f51",
+              "#4cc9f0", "#f72585", "#b5e48c", "#ffb703", "#8e9bff", "#f06292", "#9aa4b8"]
+
+GQ, GZ, GL, GT = "Quick setup", "Stack zones (estimated)", "Labels and lines", "Tables"
+COLOR_MODES = ["Kind of level", "Tab", "Above / below price"]
+
+# Every setting that is not per tab or per kind, in the order it appears in TradingView. default None = worked out from the data.
+SETTINGS = [
+    # ---- quick setup ----
+    {"var": "showLines", "type": "bool", "default": True, "title": "Lines", "group": GQ, "inline": "q1"},
+    {"var": "showLabels", "type": "bool", "default": True, "title": "Labels", "group": GQ, "inline": "q1"},
+    {"var": "zOn", "type": "bool", "default": True, "title": "Stack zones", "group": GQ, "inline": "q1",
+     "tip": "Lines, labels and the estimated stack zones (shaded areas where several levels pile up) can each be switched off here."},
+    {"var": "showTable", "type": "bool", "default": True, "title": "Info table", "group": GQ, "inline": "q2"},
+    {"var": "showLegend", "type": "bool", "default": True, "title": "Legend", "group": GQ, "inline": "q2"},
+    {"var": "colorMode", "type": "string", "default": "Kind of level", "title": "Color levels by", "group": GQ, "options": COLOR_MODES,
+     "tip": "Kind of level: each kind has its own color (set under each tab). Tab: every level from a tab gets that tab's color. "
+            "Above / below price: one color above price, one below (the two colors on the next row)."},
+    {"var": "colUp", "type": "color", "default": "#e5534b", "title": "Above price", "group": GQ, "inline": "qc"},
+    {"var": "colDn", "type": "color", "default": "#3fb96a", "title": "Below price", "group": GQ, "inline": "qc"},
+    {"var": "nearestN", "type": "int", "default": 0, "title": "Only the nearest N levels on each side (0 = all)", "group": GQ, "min": 0, "max": 100},
+    {"var": "maxDistPct", "type": "float", "default": None, "title": "Hide levels farther than this % from price", "group": GQ, "min": 0.1, "step": 0.5},
+    {"var": "emphNear", "type": "bool", "default": True, "title": "Thicker line for the nearest level above and below price", "group": GQ},
+    {"var": "offsetPts", "type": "float", "default": 0.0, "title": "Add to every level (points)", "group": GQ, "step": 0.25,
+     "tip": "Use this if your chart is a different contract or month, or Q DATA had no NQ/ES price or basis saved."},
+    # ---- stack zones ----
+    {"var": "zCount", "type": "string", "default": "Different kinds", "title": "Count", "group": GZ, "options": ["Different kinds", "Different tabs", "Every level"],
+     "tip": "Different kinds (default): two open-interest strikes count once, so a zone needs different reasons. Different tabs: each tab counts once. Every level: every line counts."},
+    {"var": "zMin", "type": "int", "default": 3, "title": "Minimum to make a zone", "group": GZ, "inline": "zn", "min": 2, "max": 30},
+    {"var": "zHeavy", "type": "int", "default": 5, "title": "Heavy at", "group": GZ, "inline": "zn", "min": 2, "max": 30,
+     "tip": "A zone needs at least the minimum count. At the heavy count it gets the heavy color and a thicker border."},
+    {"var": "zDistMode", "type": "string", "default": "Points", "title": "Join levels within", "group": GZ, "inline": "zd", "options": ["Points", "% of price"]},
+    {"var": "zDist", "type": "float", "default": None, "title": "", "group": GZ, "inline": "zd", "min": 0.01, "step": 0.25,
+     "tip": "Levels this close to each other (in points, or % of price) join the same zone. NQ: 8 to 15 points is a good start. ES: 2 to 4."},
+    {"var": "zMaxW", "type": "float", "default": None, "title": "Widest zone (points)", "group": GZ, "min": 1.0, "step": 1.0,
+     "tip": "Stops a chain of close levels from turning into one huge zone."},
+    {"var": "zPad", "type": "float", "default": 2.0, "title": "Pad each side (points)", "group": GZ, "min": 0.0, "step": 0.25},
+    {"var": "zColorMode", "type": "string", "default": "Strength", "title": "Color zones by", "group": GZ, "options": ["Strength", "Above / below price"]},
+    {"var": "zCol", "type": "color", "default": "#2f8bf5", "title": "Stacked", "group": GZ, "inline": "zc1"},
+    {"var": "zColH", "type": "color", "default": "#ff7a2e", "title": "Heavy", "group": GZ, "inline": "zc1"},
+    {"var": "zColUp", "type": "color", "default": "#e5534b", "title": "Above price", "group": GZ, "inline": "zc2"},
+    {"var": "zColDn", "type": "color", "default": "#3fb96a", "title": "Below price", "group": GZ, "inline": "zc2"},
+    {"var": "zTransp", "type": "int", "default": 80, "title": "Zone transparency", "group": GZ, "min": 0, "max": 100},
+    {"var": "zBorder", "type": "bool", "default": True, "title": "Zone border", "group": GZ},
+    {"var": "zLabel", "type": "bool", "default": True, "title": "Zone label", "group": GZ, "inline": "zl"},
+    {"var": "zLabelSide", "type": "string", "default": "Right", "title": "", "group": GZ, "inline": "zl", "options": ["Right", "Left"]},
+    {"var": "zOnly", "type": "bool", "default": False, "title": "Only zones (hide the single lines inside them)", "group": GZ},
+    # ---- labels and lines ----
+    {"var": "labelText", "type": "string", "default": "Name + meaning + price", "title": "Label shows", "group": GL,
+     "options": ["Name", "Name + price", "Name + meaning", "Name + meaning + price", "Meaning + price"],
+     "tip": "Meaning = a few plain words on what the level is (ceiling, floor, should hold...). Hover any label for the full reason."},
+    {"var": "labelSize", "type": "string", "default": "Small", "title": "Label size", "group": GL, "options": ["Tiny", "Small", "Normal", "Large"]},
+    {"var": "labelTxtC", "type": "color", "default": "#ffffff", "title": "Label text", "group": GL, "inline": "lc"},
+    {"var": "labelTransp", "type": "int", "default": 25, "title": "Label background transparency", "group": GL, "inline": "lc", "min": 0, "max": 100},
+    {"var": "labelSide", "type": "string", "default": "Right", "title": "Labels on the", "group": GL, "options": ["Right", "Left"]},
+    {"var": "priceDec", "type": "int", "default": 2, "title": "Price decimals", "group": GL, "min": 0, "max": 4},
+    {"var": "mergeSame", "type": "bool", "default": True, "title": "One label for levels at the same price", "group": GL, "inline": "mg",
+     "tip": "Levels within this many points share one label listing every name."},
+    {"var": "mergePts", "type": "float", "default": 1.0, "title": "", "group": GL, "inline": "mg", "min": 0.0, "step": 0.25},
+    {"var": "startMode", "type": "string", "default": "Session open 9:30 ET", "title": "Lines start at", "group": GL, "inline": "st",
+     "options": ["Session open 9:30 ET", "Start of chart data", "Last N bars"]},
+    {"var": "startBars", "type": "int", "default": 50, "title": "", "group": GL, "inline": "st", "min": 1, "max": 4000},
+    {"var": "extBars", "type": "int", "default": 8, "title": "Lines run this many bars past the last candle", "group": GL, "min": 0, "max": 500},
+    {"var": "zoneTransp", "type": "int", "default": 82, "title": "Level zone transparency (GEX and walls)", "group": GL, "min": 0, "max": 100},
+    # ---- tables ----
+    {"var": "tablePos", "type": "string", "default": "Top right", "title": "Info table at", "group": GT, "options": POSITIONS},
+    {"var": "legendPos", "type": "string", "default": "Bottom right", "title": "Legend at", "group": GT, "options": POSITIONS},
+    {"var": "tableSize", "type": "string", "default": "Small", "title": "Table text size", "group": GT, "options": ["Tiny", "Small", "Normal"]},
+    {"var": "tableBg", "type": "color", "default": "#0f1626", "title": "Table background", "group": GT, "inline": "tbc"},
+    {"var": "tableTxt", "type": "color", "default": "#ffffff", "title": "Text", "group": GT, "inline": "tbc"},
+]
+SET_BY_VAR = {x["var"]: x for x in SETTINGS}
 
 
 def s(text, n=None) -> str:
@@ -32,9 +116,9 @@ def q(text, n=None) -> str:
     return '"' + s(text, n) + '"'
 
 
-def _hex(c) -> str:
+def _hex(c, fallback="#9aa4b8") -> str:
     c = str(c or "").strip()
-    return c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "#9aa4b8"
+    return c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else fallback
 
 
 def _num(v) -> str:
@@ -46,7 +130,61 @@ def _group(g) -> dict:
     if isinstance(g, str):
         g = {"name": g}
     return {"name": g.get("name") or "Levels", "color": _hex(g.get("color")), "style": STYLES.get(g.get("style") or "solid", "Solid"),
-            "width": max(1, min(4, int(g.get("width") or 1))), "short": g.get("short") or "", "help": g.get("help") or g.get("name") or ""}
+            "width": max(1, min(4, int(g.get("width") or 1))), "short": g.get("short") or "", "help": g.get("help") or g.get("name") or "", "on": True}
+
+
+def setting_value(spec: dict, prefs_set: dict | None, auto: dict | None = None):
+    """The starting value of one setting: the user's choice from Q DATA if it is valid, else the default (or the data-based one)."""
+    d = spec["default"] if spec["default"] is not None else (auto or {}).get(spec["var"])
+    v = (prefs_set or {}).get(spec["var"])
+    t = spec["type"]
+    try:
+        if v is None:
+            return d
+        if t == "bool":
+            return v if isinstance(v, bool) else d
+        if t == "string":
+            return v if v in spec.get("options", []) else d
+        if t == "color":
+            return _hex(v, d)
+        x = int(v) if t == "int" else float(v)
+        if x != x:                                              # NaN
+            return d
+        if "min" in spec:
+            x = max(spec["min"], x)
+        if "max" in spec:
+            x = min(spec["max"], x)
+        return x
+    except (TypeError, ValueError):
+        return d
+
+
+def _lit(t, v) -> str:
+    if t == "bool":
+        return "true" if v else "false"
+    if t == "int":
+        return str(int(v))
+    if t == "float":
+        return f"{float(v):.2f}"
+    if t == "color":
+        return _hex(v)
+    return q(v)
+
+
+def _input(spec: dict, value, group_var: str) -> str:
+    t = spec["type"]
+    parts = [_lit(t, value), q(spec["title"], 80)]
+    if t == "string":
+        parts.append("options = [" + ", ".join(q(o) for o in spec["options"]) + "]")
+    for k, nm in (("min", "minval"), ("max", "maxval"), ("step", "step")):
+        if k in spec and t in ("int", "float"):
+            parts.append(f"{nm} = {_lit(t, spec[k])}")
+    parts.append(f"group = {group_var}")
+    if spec.get("inline"):
+        parts.append(f'inline = "{spec["inline"]}"')
+    if spec.get("tip"):
+        parts.append(f"tooltip = {q(spec['tip'], 400)}")
+    return f'{spec["var"]} = input.{t}({", ".join(parts)})'
 
 
 CHUNK = 60          # items per array.from(): keeps every function small
@@ -68,26 +206,70 @@ def _arr(name: str, typ: str, items: list) -> list:
     return o
 
 
+SET_CHUNK = 80      # settings per gathering function: 80 int/bool settings = 160 external elements, well under TradingView's 254
+
+
+def _set_arr(name: str, typ: str, refs: list) -> list:
+    """Gathers settings (input variables) into one array, `var <typ>[] name`. Each gathering function reads at most SET_CHUNK of
+    them, and the extra parts are added on the first bar in the main script (not in a function), so no single function ever reads
+    more than SET_CHUNK settings, however many tabs and kinds there are."""
+    parts = [refs[i:i + SET_CHUNK] for i in range(0, len(refs), SET_CHUNK)]
+    if not parts:
+        return [f'var {typ}[] {name} = array.new<{typ}>()']
+    o = []
+    for k, part in enumerate(parts):
+        o += [f'_{name}{k}() =>', f'    array.from({", ".join(part)})']
+    o.append(f'var {typ}[] {name} = _{name}0()')
+    if len(parts) > 1:
+        o.append('if barstate.isfirst')
+        o += [f'    array.concat({name}, _{name}{k}())' for k in range(1, len(parts))]
+    return o
+
+
 def build_tab_pine(title: str, short: str, groups: list, levels: list, table: list | None = None, source: str = "", units: str = "",
-                   made_at: str = "", cone: dict | None = None, max_dist_pct: float = 4.0, about: str = "", zone_pts: float = 10.0) -> str:
+                   made_at: str = "", cone: dict | None = None, max_dist_pct: float = 4.0, about: str = "", zone_pts: float = 10.0,
+                   prefs: dict | None = None, tab: str = "tab") -> str:
     """One tab's indicator. groups: names or dicts (see _group). levels: dicts with price, group (index), label, optional low/high
     (zone edges), tip (hover text) and boost (extra line width). table: (name, value) rows."""
-    sec = {"tab": "session" if cone else "tab", "name": title.replace("Q DATA ", ""), "on": True, "groups": groups, "levels": levels,
+    sec = {"tab": "session" if cone else tab, "name": title.replace("Q DATA ", ""), "on": True, "groups": groups, "levels": levels,
            "table": table or [], "about": about}
-    return build_pine(title, short, [sec], [], source, units, made_at, cone, max_dist_pct, single=True, about=about, zone_pts=zone_pts)
+    return build_pine(title, short, [sec], [], source, units, made_at, cone, max_dist_pct, single=True, about=about, zone_pts=zone_pts, prefs=prefs)
 
 
 def build_all_pine(sections: list, head_rows: list, source: str, units: str, made_at: str, cone: dict | None = None, max_dist_pct: float = 4.0,
-                   zone_pts: float = 10.0) -> str:
+                   zone_pts: float = 10.0, prefs: dict | None = None) -> str:
     """Every tab in one indicator, "Q DATA All Tabs". sections: [{tab, name, on, groups, levels, table}]."""
-    return build_pine("Q DATA All Tabs", "QD All", sections, head_rows, source, units, made_at, cone, max_dist_pct, zone_pts=zone_pts)
+    return build_pine("Q DATA All Tabs", "QD All", sections, head_rows, source, units, made_at, cone, max_dist_pct, zone_pts=zone_pts, prefs=prefs)
 
 
-def build_pine(title, short, sections, head_rows, source, units, made_at, cone=None, max_dist_pct=4.0, single=False, about="", zone_pts=10.0) -> str:
+def apply_kind_prefs(g: dict, prefs: dict | None) -> dict:
+    """A kind of level with the user's look from Q DATA (matched by the kind's name, so it applies on every tab that has it)."""
+    k = ((prefs or {}).get("kinds") or {}).get(g["name"]) or {}
+    out = dict(g)
+    if isinstance(k.get("on"), bool):
+        out["on"] = k["on"]
+    if k.get("color"):
+        out["color"] = _hex(k["color"], g["color"])
+    if k.get("style") in STYLES:
+        out["style"] = STYLES[k["style"]]
+    try:
+        if k.get("width") is not None:
+            out["width"] = max(1, min(6, int(k["width"])))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def build_pine(title, short, sections, head_rows, source, units, made_at, cone=None, max_dist_pct=4.0, single=False, about="", zone_pts=10.0,
+               prefs=None) -> str:
+    prefs = prefs or {}
+    pset = prefs.get("set") or {}
+    auto = {"maxDistPct": round(float(max_dist_pct), 1), "zDist": float(zone_pts), "zMaxW": float(zone_pts) * 4}
+    tab_colors = prefs.get("tab_colors") or {}
     G, lv, rows = [], [], []                          # G: every kind of level, as (section index, group dict)
     for si, sec in enumerate(sections):
         base = len(G)
-        G += [(si, _group(g)) for g in sec["groups"]]
+        G += [(si, apply_kind_prefs(_group(g), prefs)) for g in sec["groups"]]
         for x in sec["levels"]:
             if x.get("price") is not None and x["price"] > 0 and int(x.get("group", 0)) < len(sec["groups"]):
                 lv.append({**x, "group": base + int(x.get("group", 0)), "tab": si})
@@ -95,11 +277,10 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
         rows += [(si, pre + str(k), v) for k, v in (sec.get("table") or []) if v not in (None, "")]
     rows = [(-1, k, v) for k, v in head_rows if v] + rows or [(-1, "Levels", str(len(lv)))]
     lv.sort(key=lambda x: -x["price"])
-    if not lv:     # array.from() needs at least one element: a placeholder in tab -1, which is never drawn
+    if not lv:     # array.from() needs at least one element: a placeholder in tab -2, which is never drawn
         lv = [{"price": 1.0, "group": 0, "tab": -2, "label": "none"}]
     if not G:
         G = [(0, _group("Levels"))]
-    A = lambda f: ", ".join(f(x) for x in lv)
     zone = lambda x: x.get("low") and x.get("high") and x["high"] > x["low"]
     sess = next((i for i, sec in enumerate(sections) if sec["tab"] == "session"), None)
 
@@ -107,7 +288,10 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
          f'indicator({q(title, 60)}, shorttitle = {q(short, 20)}, overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 5000)',
          '',
          f'// ---- {s(title)}: made by Q DATA ----',
-         f'// {s(source)}', f'// {s(units)}', f'// Made {s(made_at)}. The levels are baked in: re-copy from Q DATA each session and paste over this script (your settings stay).']
+         f'// {s(source)}', f'// {s(units)}',
+         f'// Made {s(made_at)}. The levels are baked in: re-copy from Q DATA each session and paste over this script.',
+         '// Set the look in Q DATA (TradingView indicator tab): those choices become the starting values here and stay right even when',
+         '// the kinds of level change from day to day. To pull them in after pasting, use Defaults > Reset settings in the settings window.']
     if about:
         o.append(f'// {s(about)}')
     o += ['// HOW TO READ IT: every line is a level from Q DATA. Hover a label for why it is there. The shaded STACK ZONES are estimated',
@@ -125,20 +309,37 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
     o += _arr("lvTip", "string", [q(x.get("tip") or x.get("label"), 600) for x in lv])
     o += _arr("gName", "string", [q(g["name"], 60) for _, g in G])
     o += _arr("gShort", "string", [q(g["short"], 40) for _, g in G])
+    o += _arr("tName", "string", [q(sec["name"], 40) for sec in sections])
     o += _arr("tbT", "int", [str(t) for t, _, _ in rows])
     o += _arr("tbK", "string", [q(k, 50) for _, k, _ in rows])
     o += _arr("tbV", "string", [q(v, 90) for _, _, v in rows])
-    o += ['',
-          '// ---- what shows, and how each kind of level looks ----']
+
+    # ---- settings, in the order they appear in TradingView ----
+    def block(group_title, var):
+        out = [f'{var} = {q(group_title)}']
+        for spec in SETTINGS:
+            if spec["group"] == group_title:
+                out.append(_input(spec, setting_value(spec, pset, auto), var))
+        return out
+
+    o += ['', '// ---- 1) quick setup ----']
+    o += block(GQ, "grpQ")
+    o += ['', '// ---- 2) each tab: a Show switch and a tab color, then a row per kind of level (show, color, style, width) ----']
+    tabs_on = prefs.get("tabs_on")
     for si, sec in enumerate(sections):
         nm = s(sec["name"], 40)
-        o.append(f'grp{si} = {q(("Levels: " if single else "") + nm)}')
+        on = sec["on"] if not isinstance(tabs_on, list) or single else sec["tab"] in tabs_on
+        tcol = _hex(tab_colors.get(sec["tab"]), TAB_COLORS[si % len(TAB_COLORS)])
+        o.append(f'grp{si} = {q(("Levels: " if single else "Tab: ") + nm)}')
         tip = s(sec.get("about") or f"Every level from Q DATA's {nm} tab.", 300)
-        o.append(f't{si} = input.bool({"true" if sec["on"] else "false"}, {q("Show " + nm)}, group = grp{si}, tooltip = {q(tip)})')
+        if not sec["levels"]:
+            tip = s(f"No levels from this tab in this copy. {sec.get('about') or ''}", 300)
+        o.append(f't{si} = input.bool({"true" if on else "false"}, {q("Show " + nm)}, group = grp{si}, inline = "tab{si}", tooltip = {q(tip)})')
+        o.append(f'tc{si} = input.color({tcol}, "Tab color", group = grp{si}, inline = "tab{si}")')
         for gi, (sj, g) in enumerate(G):
             if sj != si:
                 continue
-            o += [f'g{gi} = input.bool(true, {q(g["name"], 50)}, group = grp{si}, inline = "k{gi}")',
+            o += [f'g{gi} = input.bool({"true" if g["on"] else "false"}, {q(g["name"], 50)}, group = grp{si}, inline = "k{gi}")',
                   f'c{gi} = input.color({g["color"]}, "", group = grp{si}, inline = "k{gi}")',
                   f's{gi} = input.string({q(g["style"])}, "", options = ["Solid", "Dashed", "Dotted"], group = grp{si}, inline = "k{gi}")',
                   f'w{gi} = input.int({g["width"]}, "", minval = 1, maxval = 6, group = grp{si}, inline = "k{gi}", tooltip = {q(g["help"], 300)})']
@@ -147,67 +348,28 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
                      f'tooltip = "+/-1 and +/-2 times the day expected move from the 9:30 open, widening through the session. About 2 days in 3 stay inside +/-1.")')
             o.append(f'coneC1 = input.color(#7db7ff, "", group = grp{si}, inline = "cone")')
             o.append(f'coneC2 = input.color(#8e9bff, "", group = grp{si}, inline = "cone")')
+    o += ['', '// ---- 3) stack zones ----'] + block(GZ, "grpZ")
+    o += ['', '// ---- 4) labels and lines ----'] + block(GL, "grpL")
+    o += ['', '// ---- 5) tables ----'] + block(GT, "grpT")
+
+    nt, ng = len(sections), len(G)
+    o += ['', '// ---- the per-tab and per-kind settings gathered into arrays, so the drawing functions read a few arrays, not hundreds of settings ----']
+    o += _set_arr("tOn", "bool", [f"t{i}" for i in range(nt)])
+    o += _set_arr("tCol", "color", [f"tc{i}" for i in range(nt)])
+    o += _set_arr("kOn", "bool", [f"g{i}" for i in range(ng)])
+    o += _set_arr("kCol", "color", [f"c{i}" for i in range(ng)])
+    o += _set_arr("kSty", "string", [f"s{i}" for i in range(ng)])
+    o += _set_arr("kW", "int", [f"w{i}" for i in range(ng)])
     o += ['',
-          '// ---- estimated stack zones (computed live from the levels that are switched on) ----',
-          'grpZ = "Stack zones (estimated)"',
-          'zOn     = input.bool(true, "Draw stack zones", group = grpZ, tooltip = "Where several of the levels you have switched on sit close together, an estimated zone is drawn. The more different reasons stacked in one place, the more likely price reacts there. Hover a zone label for what is inside it.")',
-          'zCount  = input.string("Different kinds", "Count", options = ["Different kinds", "Different tabs", "Every level"], group = grpZ, tooltip = "Different kinds (default): two open-interest strikes count once, so a zone needs different reasons. Different tabs: each tab counts once. Every level: every line counts.")',
-          'zMin    = input.int(3, "Minimum to make a zone", minval = 2, maxval = 30, group = grpZ, inline = "zn")',
-          'zHeavy  = input.int(5, "Heavy at", minval = 2, maxval = 30, group = grpZ, inline = "zn", tooltip = "A zone needs at least the minimum count. At the heavy count it gets the heavy color and a thicker border.")',
-          'zDistMode = input.string("Points", "Join levels within", options = ["Points", "% of price"], group = grpZ, inline = "zd")',
-          f'zDist   = input.float({zone_pts:.2f}, "", minval = 0.01, step = 0.25, group = grpZ, inline = "zd", tooltip = "Levels this close to each other (in points, or % of price) join the same zone. NQ: 8 to 15 points is a good start. ES: 2 to 4.")',
-          f'zMaxW   = input.float({zone_pts * 4:.2f}, "Widest zone (points)", minval = 1.0, step = 1.0, group = grpZ, tooltip = "Stops a chain of close levels from turning into one huge zone.")',
-          'zPad    = input.float(2.0, "Pad each side (points)", minval = 0.0, step = 0.25, group = grpZ)',
-          'zColorMode = input.string("Strength", "Color by", options = ["Strength", "Above / below price"], group = grpZ)',
-          'zCol    = input.color(#2f8bf5, "Stacked", group = grpZ, inline = "zc1")',
-          'zColH   = input.color(#ff7a2e, "Heavy", group = grpZ, inline = "zc1")',
-          'zColUp  = input.color(#e5534b, "Above price", group = grpZ, inline = "zc2")',
-          'zColDn  = input.color(#3fb96a, "Below price", group = grpZ, inline = "zc2")',
-          'zTransp = input.int(80, "Zone transparency", minval = 0, maxval = 100, group = grpZ)',
-          'zBorder = input.bool(true, "Zone border", group = grpZ)',
-          'zLabel  = input.bool(true, "Zone label", group = grpZ, inline = "zl")',
-          'zLabelSide = input.string("Right", "", options = ["Right", "Left"], group = grpZ, inline = "zl")',
-          'zOnly   = input.bool(false, "Only zones (hide the single lines inside them)", group = grpZ)',
-          '',
-          '// ---- labels, lines, filters, tables ----',
-          'grpL = "Labels and lines"',
-          'showLabels = input.bool(true, "Labels", group = grpL)',
-          'labelText  = input.string("Name + meaning + price", "Label shows", options = ["Name", "Name + price", "Name + meaning", "Name + meaning + price", "Meaning + price"], group = grpL, tooltip = "Meaning = a few plain words on what the level is (ceiling, floor, should hold...). Hover any label for the full reason.")',
-          'labelSize  = input.string("Small", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = grpL)',
-          'labelTxtC  = input.color(color.white, "Label text", group = grpL, inline = "lc")',
-          'labelTransp = input.int(25, "Label background transparency", minval = 0, maxval = 100, group = grpL, inline = "lc")',
-          'labelSide  = input.string("Right", "Labels on the", options = ["Right", "Left"], group = grpL)',
-          'priceDec   = input.int(2, "Price decimals", minval = 0, maxval = 4, group = grpL)',
-          'mergeSame  = input.bool(true, "One label for levels at the same price", group = grpL, inline = "mg", tooltip = "Levels within this many points share one label listing every name.")',
-          'mergePts   = input.float(1.0, "", minval = 0.0, step = 0.25, group = grpL, inline = "mg")',
-          'startMode  = input.string("Session open 9:30 ET", "Lines start at", options = ["Session open 9:30 ET", "Start of chart data", "Last N bars"], group = grpL, inline = "st")',
-          'startBars  = input.int(50, "", minval = 1, maxval = 4000, group = grpL, inline = "st")',
-          'extBars    = input.int(8, "Lines run this many bars past the last candle", minval = 0, group = grpL)',
-          'zoneTransp = input.int(82, "Level zone transparency (GEX and walls)", minval = 0, maxval = 100, group = grpL)',
-          'grpF = "Filters"',
-          'offsetPts  = input.float(0.0, "Add to every level (points)", group = grpF, tooltip = "Use this if your chart is a different contract or month, or Q DATA had no NQ/ES price or basis saved.")',
-          f'maxDistPct = input.float({max_dist_pct:.1f}, "Hide levels farther than this % from price", minval = 0.1, step = 0.5, group = grpF)',
-          'nearestN   = input.int(0, "Only the nearest N levels on each side (0 = all)", minval = 0, group = grpF)',
-          'grpT = "Tables"',
-          'showTable  = input.bool(true, "Info table", group = grpT, inline = "tb")',
-          f'tablePos   = input.string("Top right", "", options = [{", ".join(q(p) for p in POSITIONS)}], group = grpT, inline = "tb")',
-          'showLegend = input.bool(true, "Legend (what each color means)", group = grpT, inline = "lg")',
-          f'legendPos  = input.string("Bottom right", "", options = [{", ".join(q(p) for p in POSITIONS)}], group = grpT, inline = "lg")',
-          'tableSize  = input.string("Small", "Table text size", options = ["Tiny", "Small", "Normal"], group = grpT)',
-          'tableBg    = input.color(color.new(#0f1626, 10), "Table background", group = grpT, inline = "tbc")',
-          'tableTxt   = input.color(color.white, "Text", group = grpT, inline = "tbc")',
-          '',
-          'tabOn(int t) =>', '    switch t', '        -1 => true']
-    o += [f'        {i} => t{i}' for i in range(len(sections))]
-    o += ['        => false', '', 'groupOn(int g) =>', '    switch g']
-    o += [f'        {i} => g{i}' for i in range(len(G))]
-    o += ['        => false', '', 'colorOf(int g) =>', '    switch g']
-    o += [f'        {i} => c{i}' for i in range(len(G))]
-    o += ['        => color.gray', '', 'styleName(int g) =>', '    switch g']
-    o += [f'        {i} => s{i}' for i in range(len(G))]
-    o += ['        => "Solid"', '', 'widthOf(int g) =>', '    switch g']
-    o += [f'        {i} => w{i}' for i in range(len(G))]
-    o += ['        => 1', '',
+          'tabOn(int t) =>', '    t == -1 ? true : t < 0 or t >= array.size(tOn) ? false : array.get(tOn, t)', '',
+          'groupOn(int g) =>', '    g >= 0 and g < array.size(kOn) ? array.get(kOn, g) : false', '',
+          'kindColor(int g) =>', '    g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray', '',
+          'tabColor(int t) =>', '    t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray', '',
+          '// the color a level is drawn in, following "Color levels by"',
+          'levelColor(int g, int t, float p) =>',
+          '    colorMode == "Tab" ? tabColor(t) : colorMode == "Above / below price" ? (p > close ? colUp : colDn) : kindColor(g)', '',
+          'styleName(int g) =>', '    g >= 0 and g < array.size(kSty) ? array.get(kSty, g) : "Solid"', '',
+          'widthOf(int g) =>', '    g >= 0 and g < array.size(kW) ? array.get(kW, g) : 1', '',
           'lineStyle(string nm) =>', '    nm == "Dashed" ? line.style_dashed : nm == "Dotted" ? line.style_dotted : line.style_solid', '',
           'sizeOf(string nm) =>', '    nm == "Tiny" ? size.tiny : nm == "Normal" ? size.normal : nm == "Large" ? size.large : size.small', '',
           'fmtP(float p) =>', '    str.tostring(p, priceDec == 0 ? "#,###" : "#,###." + str.repeat("0", priceDec))',
@@ -299,15 +461,26 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '    labX = labelSide == "Left" ? startX : endX',
           '    labStyle = labelSide == "Left" ? label.style_label_right : label.style_label_left',
           '    labP = array.new<float>()', '    labIdx = array.new<int>()', '    labTip = array.new<string>()',
+          '    nearUp = -1', '    nearDn = -1',
+          '    if emphNear',
+          '        for i = 0 to n - 1',
+          '            if array.get(vis, i)',
+          '                pe = array.get(lvP, i) + offsetPts',
+          '                if pe > close and (nearUp < 0 or pe < array.get(lvP, math.max(nearUp, 0)) + offsetPts)',
+          '                    nearUp := i',
+          '                if pe <= close and (nearDn < 0 or pe > array.get(lvP, math.max(nearDn, 0)) + offsetPts)',
+          '                    nearDn := i',
           '    for i = 0 to n - 1',
           '        if array.get(vis, i) and not (zOnly and array.get(inZone, i))',
           '            g = array.get(lvG, i)',
           '            p = array.get(lvP, i) + offsetPts',
-          '            c = colorOf(g)',
+          '            c = levelColor(g, array.get(lvT, i), p)',
           '            lo = array.get(lvLo, i)', '            hi = array.get(lvHi, i)',
-          '            if hi > lo and lo > 0',
-          '                array.push(bxs, box.new(startX, hi + offsetPts, endX, lo + offsetPts, xloc = xloc.bar_time, border_color = color.new(c, 40), border_width = 1, bgcolor = color.new(c, zoneTransp)))',
-          '            array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = c, width = widthOf(g) + array.get(lvB, i), style = lineStyle(styleName(g))))',
+          '            if showLines',
+          '                if hi > lo and lo > 0',
+          '                    array.push(bxs, box.new(startX, hi + offsetPts, endX, lo + offsetPts, xloc = xloc.bar_time, border_color = color.new(c, 40), border_width = 1, bgcolor = color.new(c, zoneTransp)))',
+          '                extra = (i == nearUp or i == nearDn) ? 1 : 0',
+          '                array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = c, width = widthOf(g) + array.get(lvB, i) + extra, style = lineStyle(styleName(g))))',
           '            if showLabels',
           '                nm = array.get(lvN, i)',
           '                mean = array.get(gShort, g)',
@@ -346,7 +519,7 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '        for r = 0 to array.size(tbT) - 1',
           '            if tabOn(array.get(tbT, r))',
           '                nr += 1',
-          f'        out := table.new({POS_EXPR.format(v="tablePos")}, 2, nr + 1, bgcolor = tableBg, border_color = color.new(#2a3554, 0), border_width = 1)',
+          f'        out := table.new({POS_EXPR.format(v="tablePos")}, 2, nr + 1, bgcolor = color.new(tableBg, 10), border_color = color.new(#2a3554, 0), border_width = 1)',
           f'        table.cell(out, 0, 0, {q(title, 40)}, text_color = tableTxt, text_size = tsz, bgcolor = color.new(#162036, 0))',
           '        table.cell(out, 1, 0, "hover labels for why", text_color = color.new(#aeb7cc, 0), text_size = tsz, bgcolor = color.new(#162036, 0))',
           '        row = 1',
@@ -366,28 +539,37 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '        table.cell(out, 0, row + 1, "Nearest stack zone below", text_color = color.new(#aeb7cc, 0), text_size = tsz, text_halign = text.align_left)',
           '        table.cell(out, 1, row + 1, zD, text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '    out', '',
-          '// 5) the legend: a swatch and a plain-English line for every kind of level that is showing',
+          '// 5) the legend: what each color means, following "Color levels by" (kinds, tabs, or above / below price)',
           'qdLegend(bool[] vis, int n) =>',
           '    table out = na',
           '    if showLegend',
           '        tsz = sizeOf(tableSize)',
+          '        byTab = colorMode == "Tab"',
+          '        bySide = colorMode == "Above / below price"',
           '        used = array.new<int>()',
           '        for i = 0 to n - 1',
-          '            if array.get(vis, i) and not array.includes(used, array.get(lvG, i))',
-          '                array.push(used, array.get(lvG, i))',
+          '            key = byTab ? array.get(lvT, i) : array.get(lvG, i)',
+          '            if array.get(vis, i) and key >= 0 and not array.includes(used, key)',
+          '                array.push(used, key)',
           '        array.sort(used)',
-          f'        out := table.new({POS_EXPR.format(v="legendPos")}, 2, array.size(used) + 2, bgcolor = tableBg, border_color = color.new(#2a3554, 0), border_width = 1)',
+          '        rowsN = bySide ? 2 : array.size(used)',
+          f'        out := table.new({POS_EXPR.format(v="legendPos")}, 2, rowsN + 2, bgcolor = color.new(tableBg, 10), border_color = color.new(#2a3554, 0), border_width = 1)',
           '        table.cell(out, 0, 0, "", bgcolor = color.new(#162036, 0))',
           '        table.cell(out, 1, 0, "What the colors mean", text_color = tableTxt, text_size = tsz, bgcolor = color.new(#162036, 0), text_halign = text.align_left)',
-          '        if array.size(used) > 0',
+          '        if bySide',
+          '            table.cell(out, 0, 1, "  ", bgcolor = colUp, text_size = tsz)',
+          '            table.cell(out, 1, 1, "Level above price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
+          '            table.cell(out, 0, 2, "  ", bgcolor = colDn, text_size = tsz)',
+          '            table.cell(out, 1, 2, "Level below price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
+          '        else if array.size(used) > 0',
           '            for k = 0 to array.size(used) - 1',
-          '                g = array.get(used, k)',
-          '                mean = array.get(gShort, g)',
-          '                table.cell(out, 0, k + 1, "  ", bgcolor = colorOf(g), text_size = tsz)',
-          '                table.cell(out, 1, k + 1, array.get(gName, g) + (mean != "" ? ": " + mean : ""), text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
+          '                key = array.get(used, k)',
+          '                mean = byTab ? "" : array.get(gShort, key)',
+          '                table.cell(out, 0, k + 1, "  ", bgcolor = byTab ? tabColor(key) : kindColor(key), text_size = tsz)',
+          '                table.cell(out, 1, k + 1, (byTab ? array.get(tName, key) : array.get(gName, key)) + (mean != "" ? ": " + mean : ""), text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '        zc0 = zColorMode == "Strength" ? zCol : zColUp',
-          '        table.cell(out, 0, array.size(used) + 1, "  ", bgcolor = color.new(zc0, 40), text_size = tsz)',
-          '        table.cell(out, 1, array.size(used) + 1, zColorMode == "Strength" ? "Shaded: estimated stack zone (heavy color = heavily stacked)" : "Shaded: stack zone (above price / below price colors)", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
+          '        table.cell(out, 0, rowsN + 1, "  ", bgcolor = color.new(zc0, 40), text_size = tsz)',
+          '        table.cell(out, 1, rowsN + 1, zColorMode == "Strength" ? "Shaded: estimated stack zone (heavy color = heavily stacked)" : "Shaded: stack zone (above price / below price colors)", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '    out', '',
           '// ---- draw everything once, on the last bar ----',
           'if barstate.islast',

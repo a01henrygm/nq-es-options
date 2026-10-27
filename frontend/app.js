@@ -7,10 +7,10 @@ const et = iso => iso ? new Date(iso).toLocaleString("en-US", { timeZone: "Ameri
 const TABS = [["home", "Home"], ["gameplan", "Game plan"], ["levels", "Key levels"], ["bias", "Bias and plan"], ["session", "Session"], ["regime", "Regime"], ["vix", "Volatility (VIX)"], ["earnings", "Earnings"], ["levelmap", "Level map"], ["stackmap", "Stack map"], ["chartread", "Chart read"], ["hodlod", "HOD / LOD"], ["quant", "Quant lab"], ["overview", "All symbols"], ["sheet", "Pre-market sheet"],
   ["chain", "Options chain"], ["gex", "GEX by strike"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["flows", "Charm and vanna"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Activity heatmap"], ["preopen", "Overnight changes"],
   ["iv", "IV by strike"], ["surface", "Vol surface"], ["move", "Expected move"], ["delta", "Delta exposure"], ["journal", "Journal"], ["scorecard", "Scorecard"], ["react", "Level reactions"], ["flow", "Unusual volume"],
-  ["events", "Events"], ["history", "History"], ["replay", "Replay"], ["status", "Data status"], ["phone", "Phone access"]];
+  ["events", "Events"], ["history", "History"], ["replay", "Replay"], ["tvind", "TradingView indicator"], ["status", "Data status"], ["phone", "Phone access"]];
 const TABICON = { vix: "implied_volatility", earnings: "calendar", replay: "live_charts", home: "home", gameplan: "insights", levels: "key_levels", bias: "insights", session: "live_charts", regime: "market_data", levelmap: "live_charts", stackmap: "tools", chartread: "search", hodlod: "volume", quant: "delta", overview: "watchlist", sheet: "reports", chain: "search", gex: "options_analytics",
   zerodte: "gamma", flip: "logout", flows: "options_flow", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "news", iv: "implied_volatility", surface: "data_feeds", move: "market_data",
-  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help" };
+  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help", tvind: "tools" };
 const RB = [[128, 0, 255], [47, 139, 245], [27, 224, 214], [127, 233, 122], [255, 211, 77], [255, 122, 46], [255, 0, 0]];
 const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
@@ -71,8 +71,9 @@ const FAMILIES = [["flip", "Gamma flip", ["gamma_flip"], "#e6b422"], ["gex", "GE
   ["new", "New positions", ["new_call_zone", "new_put_zone"], "#b5e48c"], ["mine", "My levels", ["custom"], "#ffffff"]];
 const ALLCATS = new Set(FAMILIES.flatMap(f => f[2]));
 const GROUPS = [["Today", ["home", "gameplan", "levels", "bias", "session", "regime", "earnings", "levelmap", "stackmap", "chartread", "hodlod", "quant", "overview", "sheet"]], ["Options", ["chain", "gex", "zerodte", "flip", "flows", "oi", "volume", "heatmap", "preopen"]],
-  ["Volatility", ["vix", "iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history", "replay"]], ["App", ["status", "phone"]]];
+  ["Volatility", ["vix", "iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history", "replay"]], ["App", ["tvind", "status", "phone"]]];
 const HELP = {
+  tvind: ["Set how Q DATA's TradingView indicators look on your chart: which tabs are on when the indicator is added, each tab's color, every kind of level's show, color, style and width, the quick setup, stack zones, labels and tables. Then copy the all-tabs indicator.", "Your choices are saved on this device and used by every indicator copy, including the buttons at the top of each tab. After pasting a new copy into Pine Editor, use Defaults > Reset settings in the indicator's settings window so it takes this look. The levels are baked in, so re-copy each session."],
   vix: ["The volatility backdrop for NQ and ES from Cboe's VIX family: VIX1D (today), VIX9D, VIX, VIX3M, VIX6M, VXN (the Nasdaq-100's own VIX) and VVIX (how wild VIX itself is). The regime label comes from the shape of the curve: upward-sloping is calm, inverted is stress.", "Typical NQ day is one standard deviation of a day's move priced by VXN (adjusted by today's VIX1D/VIX), in NQ points once a basis is saved: about two days in three stay inside it. Percentiles compare today with the last year. Volatility rising is shown red because fear is rising."],
   earnings: ["When the biggest Nasdaq-100 companies report, how far their options say the stock will move, and what that one stock moves NQ by itself (index weight x implied move x NQ).", "The implied move is the at-the-money straddle of the first expiry after the report. Weights apply the Nasdaq-100 capping rule to market caps and are approximate; type your own and press Save. Nights with several reports are added together. Sympathy moves in related stocks are not counted, so the real move is often bigger."],
   replay: ["Replay any stored session snapshot by snapshot: watch the GEX profile, the call and put walls and the gamma flip move while price travels through them.", "Press Play or drag the slider; arrow keys step one snapshot and the space bar plays and pauses. The table lists every wall move, flip crossing and wall touch; click one to jump there. Built only from what the app stored while it ran, about every 2 minutes."],
@@ -889,16 +890,18 @@ function tabPineBar() {
   const old = v.querySelector(".tvbar"); if (old) old.remove();
   const tab = S.tab, bar = document.createElement("div");
   bar.className = "toolbar tvbar";
-  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Every setting is yours (each kind's color, style and width, labels, tables), it shades estimated stack zones where levels pile up, and hovering a label says why it is there. Re-copy each session.</span>
+  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Every setting is yours (each kind's color, style and width, labels, tables), it shades estimated stack zones where levels pile up, and hovering a label says why it is there. Set the look once on the <a href="#" data-gotv>TradingView indicator</a> tab. Re-copy each session.</span>
     <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button><button data-tp="all" title="Every tab's levels in one indicator, Q DATA All Tabs, with an on/off switch per tab and a box per kind of level">Copy all-tabs indicator</button><button data-tp="alldl">Download all-tabs .pine</button></span>`;
-  const get = () => api("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
+  const get = () => tvPost("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });      // with the look from the TradingView indicator tab
   const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
   bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await copyText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
   bar.querySelector('[data-tp="dl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { fail(e); } };
-  const getAll = () => api("/export/all-pine", { underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
+  const getAll = () => tvGetAll();
   const failAll = e => alert("Could not build Q DATA All Tabs: " + (e.msg || e.message));
   bar.querySelector('[data-tp="all"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); try { await copyText(r.code); b.textContent = `Copied (${r.tabs.length} tabs, ${r.levels} levels)`; } catch (e) { showText("Q DATA All Tabs (Pine)", r.code); } } catch (e) { failAll(e); } };
   bar.querySelector('[data-tp="alldl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { failAll(e); } };
+  const gotv = bar.querySelector("[data-gotv]");
+  if (gotv) gotv.onclick = e => { e.preventDefault(); S.tab = "tvind"; $("tabs").querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === S.tab)); render(); };
   v.prepend(bar);
 }
 // Copy text to the clipboard. The desktop app's window does not reliably allow the browser clipboard, so the app sets it itself;
