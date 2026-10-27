@@ -66,6 +66,69 @@ CAT_TABS = {
 }
 
 
+# What each kind of level means, in plain words: (short meaning shown next to the label, longer help shown in the settings tooltip)
+HELP_RULES = [
+    ("Stacked areas: HOLD", "stack, should hold", "Several different kinds of levels in one area, and the call is HOLD: price should stall and reject there. Fade it with a stop just past the area."),
+    ("Stacked areas: CHOP", "stack, two-way", "Several kinds stacked, but the call is CHOP: expect back-and-forth around it. No edge either way; wait for price to leave it."),
+    ("Stacked areas: BREAK", "stack, likely breaks", "Several kinds stacked, but the call is BREAK: in this gamma regime price tends to push through. Trade the break, not the fade."),
+    ("HOLD levels", "should hold", "Price should respect this level: stall and reject, wicks through but closes back."),
+    ("CHOP levels", "two-way trade", "Expect chop around this level: no clean hold or break."),
+    ("BREAK levels", "likely breaks", "Price is likely to disrespect this level and push through it."),
+    ("long entries", "buy here", "A Game plan long setup: the entry price. Hover the label for the grade and the team vote."),
+    ("short entries", "sell here", "A Game plan short setup: the entry price. Hover the label for the grade and the team vote."),
+    ("stops", "stop", "Where the setup is wrong: just past the far side of the area."),
+    ("targets", "target", "The setup's target, at the R the Monte Carlo liked best."),
+    ("Stay away", "no edge", "A CHOP area or a setup the team voted down: no edge, stay out."),
+    ("0DTE gamma flip", "0DTE regime line", "Where today's-expiry dealer gamma flips sign. Above it moves get absorbed; below it moves get chased."),
+    ("0DTE flip", "0DTE regime line", "Where today's-expiry dealer gamma flips sign. Above it moves get absorbed; below it moves get chased."),
+    ("Gamma flip", "regime line", "Where total dealer gamma flips sign. Above it dealers dampen moves (range day); below it they add to moves (trend day)."),
+    ("0DTE call wall", "0DTE ceiling", "Today's-expiry strike with the most positive gamma: a magnet and a ceiling while gamma is positive."),
+    ("0DTE put wall", "0DTE floor", "Today's-expiry strike with the most negative gamma: a floor that can give way hard if broken."),
+    ("Call wall", "ceiling", "The biggest call positioning: the main ceiling. Accepted above it, the ceiling is gone."),
+    ("Put wall", "floor", "The biggest put positioning: the main floor. Accepted below it, the floor is gone."),
+    ("Top + 0DTE", "+gamma strike", "Big positive 0DTE gamma: dealers sell rallies and buy dips around it, so price tends to stick."),
+    ("Top - 0DTE", "-gamma strike", "Big negative 0DTE gamma: dealers hedge with the move, so price can speed up through it."),
+    ("Biggest GEX", "big gamma strike", "Strikes with the most dealer gamma. Price often pauses or pins at them."),
+    ("GEX call wall zones", "call wall zone", "Band around the call-side gamma wall: resistance while gamma is positive."),
+    ("GEX put wall zones", "put wall zone", "Band around the put-side gamma wall: support, weaker if gamma turns negative."),
+    ("Positive GEX zones", "+GEX, dampens", "Dealers long gamma here: they dampen moves, so expect slower, mean-reverting trade."),
+    ("Negative GEX zones", "-GEX, speeds up", "Dealers short gamma here: they add to moves, so expect faster trade through it."),
+    ("Call open interest", "call OI", "Heavy call open interest: often resistance."),
+    ("Put open interest", "put OI", "Heavy put open interest: often support."),
+    ("Call volume", "call volume", "Heavy call trading today at this strike."),
+    ("Put volume", "put volume", "Heavy put trading today at this strike."),
+    ("Open interest", "open interest", "Strikes with the most open contracts: positions people care about, often reaction points."),
+    ("Volume", "today's volume", "Strikes trading the most today: where today's money is."),
+    ("Expected move (wider)", "outer move", "The wider expected-move band: price gets here on bigger days only."),
+    ("Expected move", "expected move", "The move options price for the day: about 2 days in 3 stay inside."),
+    ("Straddle", "straddle move", "Spot +/- the at-the-money straddle: the market's price for the move to that expiry."),
+    ("1 sd", "1 sd move", "1 standard deviation from implied volatility: about 68% of the time price stays inside."),
+    ("2 sd", "2 sd move", "2 standard deviations: about 95% of the time price stays inside. Rarely reached."),
+    ("Charm: dealers sell", "charm selling", "Charm makes dealers sell here as time passes: a drift lower into the close."),
+    ("Charm: dealers buy", "charm buying", "Charm makes dealers buy here as time passes: a drift higher into the close."),
+    ("Vanna positive", "vanna +", "If volatility falls, dealers buy here (vanna)."),
+    ("Vanna negative", "vanna -", "If volatility rises, dealers sell here (vanna)."),
+    ("Dealer delta: long", "dealers long delta", "Dealers net long delta here: they sell into rallies to hedge."),
+    ("Dealer delta: short", "dealers short delta", "Dealers net short delta here: they buy dips to hedge."),
+    ("New call", "new calls", "Fresh call positions since the last session."),
+    ("New put", "new puts", "Fresh put positions since the last session."),
+    ("9:30 open", "the open", "Today's 9:30 open: the anchor for the expected move and the cone."),
+    ("Playbook range", "range edge", "The gamma playbook's range: fade failed auctions at the edges, the middle is the first target."),
+    ("Playbook targets", "playbook target", "Targets from the gamma playbook for today's regime."),
+    ("Monte Carlo high", "simulated HOD", "Where simulated paths put today's high: e.g. 80% means 4 paths in 5 top out at or below it."),
+    ("Monte Carlo low", "simulated LOD", "Where simulated paths put today's low."),
+    ("Typical day", "VIX day range", "The 9:30 open +/- the typical day priced by the VIX family: +/-1 holds about 2 days in 3, +/-2 about 19 in 20."),
+    ("Your levels", "your level", "A level you typed into Q DATA."),
+]
+
+
+def help_for(name):
+    for key, short, long_ in HELP_RULES:
+        if key.lower() in name.lower():
+            return short, long_
+    return "", name
+
+
 def sent(*parts):
     """Join bits of text as sentences."""
     out = []
@@ -74,6 +137,12 @@ def sent(*parts):
         if p:
             out.append(p if p[-1] in ".!?:" else p + ".")
     return " ".join(out)
+
+
+def zone_pts(c):
+    """Default distance for joining levels into a stack zone: about 0.04% of price (NQ about 10 points, ES about 2.5)."""
+    px = c["spot_f"] or c["snap"].spot
+    return max(0.25, round(px * 0.0004 * 4) / 4)
 
 
 def pct(v):
@@ -99,17 +168,26 @@ def register(app, h, q):
         tc = (lambda v: None if v is None else c["conv"](v)) if mapped else (lambda v: v)
         groups, levels, table, cone, about = [], [], [], None, ""
 
-        def gi(name):
-            if name not in groups:
-                groups.append(name)
-            return groups.index(name)
+        names = []
+
+        def gi(name, color=None, style="solid", width=1):
+            """A kind of level (one show/hide row in the indicator settings, with its own color, style and width)."""
+            if name not in names:
+                names.append(name)
+                short, long_ = help_for(name)
+                groups.append({"name": name, "color": color, "style": style, "width": width, "short": short, "help": long_})
+            g = groups[names.index(name)]
+            if g["color"] is None and color:
+                g.update({"color": color, "style": style, "width": width})
+            return names.index(name)
 
         def add(price, group, label, color, style="solid", width=1, tip=None, low=None, high=None, convert=True):
             if price is None:
                 return
             f = tc if convert else (lambda v: v)
+            k = gi(group, color, style, width)
             levels.append({"price": f(price), "low": f(low) if low is not None else None, "high": f(high) if high is not None else None,
-                           "group": gi(group), "label": label, "color": color, "style": style, "width": width, "tip": tip or label})
+                           "group": k, "label": label, "boost": max(0, int(width) - int(groups[k]["width"] or 1)), "tip": tip or label})
 
         def from_categories(cats, extra):
             j = h.levels_payload(u, convention, "auto", ",".join(cats), extra.get("top", 2), None, extra.get("by_expiry", 0), extra.get("mid", 0), extra.get("moves", 0))
@@ -124,10 +202,10 @@ def register(app, h, q):
 
         if tab in ("stackmap", "levelmap"):                  # same three boxes every time, even when one call has no levels today
             for call in ("RESPECT", "CHOP", "DISRESPECT"):
-                gi(f"Stacked areas: {CALL_WORD[call]} ({call})" if tab == "stackmap" else f"{CALL_WORD[call]} levels ({call})")
+                gi(f"Stacked areas: {CALL_WORD[call]} ({call})" if tab == "stackmap" else f"{CALL_WORD[call]} levels ({call})", CALL_COLOR[call], "solid", 2 if tab == "stackmap" else 1)
         elif tab in CAT_TABS:
             for cat in CAT_TABS[tab][0]:
-                gi(CAT[cat][0])
+                gi(CAT[cat][0], CAT[cat][1], CAT[cat][2], 2 if cat in ("gamma_flip", "gex0_call_wall", "gex0_put_wall") else 1)
 
         if tab == "stackmap":
             sm = q.stack_map(u, convention, 3, 0.05)
@@ -163,7 +241,7 @@ def register(app, h, q):
                 col = "#3fb96a" if cd["side"] == "LONG" else "#e5534b"
                 why = f"{cd['side']} {cd['kind']} at {cd['label']} ({CALL_WORD.get(cd['call'], cd['call'])}). Grade {cd['grade']}: {cd['yes']} for, {cd['no']} against. Target {cd['r']:.1f}R."
                 grp = "Top setups" if top else "More setups"
-                add(cd["entry"], f"{grp}: entries", f"{tag} entry", col, "solid", 2 if top else 1, why)
+                add(cd["entry"], f"{grp}: {cd['side'].lower()} entries", f"{tag} entry", col, "solid", 2 if top else 1, why)
                 add(cd["stop"], f"{grp}: stops", f"{tag} stop", "#9aa4b8", "dotted", 1, why)
                 add(cd["target"], f"{grp}: targets", f"{tag} target {cd['r']:.1f}R", "#7db7ff", "dashed", 1, why)
             for a in gpj["avoid"]:
@@ -177,8 +255,8 @@ def register(app, h, q):
             b = ep("/api/analytics/bias")(underlying=u, convention=convention)["data"]
             L = b["levels"]
             add(L.get("flip"), "Gamma flip", "Gamma flip", "#e6b422", "solid", 2, b["day_type"]["why"])
-            add(L.get("call_wall"), "Walls", f"Call wall ({L.get('walls_basis')})", "#22d3ee", "solid", 2, "The main ceiling.")
-            add(L.get("put_wall"), "Walls", f"Put wall ({L.get('walls_basis')})", "#ff4d8d", "solid", 2, "The main floor.")
+            add(L.get("call_wall"), "Call wall", f"Call wall ({L.get('walls_basis')})", "#22d3ee", "solid", 2, "The main ceiling.")
+            add(L.get("put_wall"), "Put wall", f"Put wall ({L.get('walls_basis')})", "#ff4d8d", "solid", 2, "The main floor.")
             em = L.get("expected_move") or {}
             add(em.get("high"), "Expected move", f"EM high ({em.get('method')})", "#7db7ff", "dotted")
             add(em.get("low"), "Expected move", f"EM low ({em.get('method')})", "#7db7ff", "dotted")
@@ -189,8 +267,8 @@ def register(app, h, q):
             sj = ep("/api/charts/session")(underlying=u, day=None, scope="all")
             last = lambda k: (sj.get(k) or [{}])[-1].get("value")
             add(last("flip"), "Gamma flip", "Gamma flip", "#e6b422", "solid", 2)
-            add(last("call_wall"), "Walls", "Call wall", "#22d3ee", "solid", 2)
-            add(last("put_wall"), "Walls", "Put wall", "#ff4d8d", "solid", 2)
+            add(last("call_wall"), "Call wall", "Call wall", "#22d3ee", "solid", 2)
+            add(last("put_wall"), "Put wall", "Put wall", "#ff4d8d", "solid", 2)
             op = (sj.get("open") or {}).get("price")
             dmv = (sj.get("day_move") or {}).get("points")
             add(op, "9:30 open", "9:30 open", "#ffffff", "dashed", 1)
@@ -207,9 +285,9 @@ def register(app, h, q):
             gf = an.gamma_flip(snap.contracts, snap.spot, c["now"], convention)
             add(gf["flip"] if gf["found"] else None, "Gamma flip", "Gamma flip", "#e6b422", "solid", 2, r.get("meaning"))
             if z.get("available"):
-                add(z.get("flip"), "0DTE flip and walls", "0DTE flip", "#ffd166", "dashed", 1)
-                add(z.get("call_wall"), "0DTE flip and walls", "0DTE call wall", "#22d3ee", "solid", 1)
-                add(z.get("put_wall"), "0DTE flip and walls", "0DTE put wall", "#ff4d8d", "solid", 1)
+                add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffd166", "dashed", 1)
+                add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#22d3ee", "solid", 1)
+                add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff4d8d", "solid", 1)
             pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
             rg = pb.get("range") or {}
             for k, nm in (("high", "Range high"), ("mid", "Range middle"), ("low", "Range low")):
@@ -249,8 +327,8 @@ def register(app, h, q):
             z = c["z"]
             if not z.get("available"):
                 raise HTTPException(409, "No 0DTE expiry with data right now.")
-            add(z.get("call_wall"), "0DTE walls", "0DTE call wall", "#22d3ee", "solid", 2, "Biggest positive 0DTE gamma strike.")
-            add(z.get("put_wall"), "0DTE walls", "0DTE put wall", "#ff4d8d", "solid", 2, "Biggest negative 0DTE gamma strike.")
+            add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#22d3ee", "solid", 2, "Biggest positive 0DTE gamma strike.")
+            add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff4d8d", "solid", 2, "Biggest negative 0DTE gamma strike.")
             add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffd166", "dashed", 2, z.get("flip_note"))
             for k in (z.get("top_positive") or [])[:5]:
                 if k not in (z.get("call_wall"),):
@@ -310,8 +388,9 @@ def register(app, h, q):
         units = (f"Prices are ESTIMATED {root} points (converted from {m['underlying']})." if mapped
                  else f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved). Use the offset setting.")
         src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}, sign scenario {convention}."
-        code = build_tab_pine(title, short, groups, levels, table, src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone, about=about)
-        return {"code": code, "title": title, "tab": tab, "levels": len(levels), "groups": groups, "mapped": mapped, "futures_root": root, "meta": m,
+        code = build_tab_pine(title, short, groups, levels, table, src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone, about=about,
+                              zone_pts=zone_pts(c))
+        return {"code": code, "title": title, "tab": tab, "levels": len(levels), "groups": [g["name"] for g in groups], "mapped": mapped, "futures_root": root, "meta": m,
                 "filename": f"qdata_{fname}_{u.lstrip('_')}.pine",
                 "note": f"Paste into TradingView's Pine Editor and add to chart. It shows up as '{title}'. Each kind of level has its own show/hide box in the settings, "
                         "and hovering a label shows why it is there. The levels are baked in, so re-copy each session."}
@@ -335,9 +414,9 @@ def register(app, h, q):
                 skipped.append({"tab": tab, "title": title, "reason": str(e.detail)})
                 continue
             cone = cone or cone_
-            sections.append({"tab": tab, "name": title.replace("Q DATA ", ""), "on": tab in want_on, "groups": groups, "levels": levels, "table": table})
+            sections.append({"tab": tab, "name": title.replace("Q DATA ", ""), "on": tab in want_on, "groups": groups, "levels": levels, "table": table, "about": about})
         units, src, sym, data = head(c)
-        code = build_all_pine(sections, [sym, data], src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone)
+        code = build_all_pine(sections, [sym, data], src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone, zone_pts=zone_pts(c))
         return {"code": code, "title": "Q DATA All Tabs", "tabs": [{"tab": x["tab"], "name": x["name"], "levels": len(x["levels"]), "on": x["on"]} for x in sections],
                 "skipped": skipped, "levels": sum(len(x["levels"]) for x in sections), "mapped": c["spot_f"] is not None, "meta": c["m"],
                 "filename": f"qdata_all_tabs_{u.lstrip('_')}.pine",

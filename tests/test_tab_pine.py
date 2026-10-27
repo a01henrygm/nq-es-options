@@ -53,3 +53,15 @@ def test_all_tabs_indicator_has_a_switch_per_tab_and_per_kind():
     assert "showCone" in code and "label.set_text" in code
     on = c.get("/api/export/all-pine", params={"underlying": "_NDX", "on": "oi"}).json()
     assert [t["tab"] for t in on["tabs"] if t["on"]] == ["oi"]
+
+
+def test_indicators_are_fully_customizable_and_draw_stack_zones():
+    c, db, now = simulated_day()
+    j = c.get("/api/export/all-pine", params={"underlying": "_NDX"}).json()
+    code = j["code"]
+    for want in ("zOn", "zMin", "zHeavy", "zDist", "zCount", "zColorMode", "box.new(startX, zh", "Nearest stack zone above", "What the colors mean",
+                 "labelText", "nearestN", "c0 = input.color(", "s0 = input.string(", "w0 = input.int("):
+        assert want in code, want
+    assert "(ceiling)" not in code and '"ceiling"' in code                  # plain-English meanings are baked per kind
+    one = c.get("/api/export/tab-pine", params={"tab": "levelmap", "underlying": "_NDX"}).json()["code"]
+    assert "zOn" in one and "Levels: Level Map" in one

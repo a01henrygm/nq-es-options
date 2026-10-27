@@ -33,6 +33,20 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.18
+
+- **Stack zones on every Q DATA indicator.** Wherever enough of the levels you have switched on sit close together, the indicator
+  shades an estimated zone and labels it ("STACK 5 kinds - resistance?"). Hover the label for what is inside and why it matters.
+  All rules are settings: count different kinds, different tabs or every level; the minimum and "heavy" counts; how close levels
+  must be (points or % of price; starts at about 10 NQ points / 2.5 ES points); widest zone; padding; color by strength or by side
+  of price; transparency, border, label side; and "only zones" to hide the lines inside them. The table shows the nearest zone above and below.
+- **Every setting is yours.** Each kind of level has its own row: show/hide, color, line style and width. Plus label text (name,
+  meaning, price), label size, colors and side, price decimals, merging same-price labels, where lines start and end, distance and
+  "nearest N each side" filters, table and legend position, size and colors.
+- **Easier to read.** Labels say what each level is in plain words (ceiling, floor, should hold, likely breaks...), every setting row
+  has a tooltip explaining that kind of level, and a legend table shows what each color on the chart means.
+- One color per kind of level (walls, flips and long/short entries got their own rows) so the color settings mean one thing each.
+
 ## New in 1.17.2
 
 - **Copy buttons work in the desktop app.** The app window does not reliably allow the browser clipboard, so Copy could fail

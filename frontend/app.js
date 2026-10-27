@@ -882,7 +882,7 @@ function tabPineBar() {
   const old = v.querySelector(".tvbar"); if (old) old.remove();
   const tab = S.tab, bar = document.createElement("div");
   bar.className = "toolbar tvbar";
-  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Each kind of level has its own show/hide box; hover a label for why it is there. Re-copy each session.</span>
+  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Every setting is yours (each kind's color, style and width, labels, tables), it shades estimated stack zones where levels pile up, and hovering a label says why it is there. Re-copy each session.</span>
     <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button><button data-tp="all" title="Every tab's levels in one indicator, Q DATA All Tabs, with an on/off switch per tab and a box per kind of level">Copy all-tabs indicator</button><button data-tp="alldl">Download all-tabs .pine</button></span>`;
   const get = () => api("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
   const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
