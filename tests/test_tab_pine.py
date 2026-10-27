@@ -40,3 +40,16 @@ def test_vix_tab_indicator_uses_the_open_and_typical_day():
 def test_builder_handles_no_levels_and_quotes():
     code = build_tab_pine('Q DATA "Test"', "QD T", ["A"], [], [("Note", 'say "hi"\\')])
     assert 'indicator("Q DATA Test"' in code and "array.from(1.00)" in code and '"say hi"' in code and "0 => g0" in code
+
+
+def test_all_tabs_indicator_has_a_switch_per_tab_and_per_kind():
+    c, db, now = simulated_day()
+    j = c.get("/api/export/all-pine", params={"underlying": "_NDX"}).json()
+    code = j["code"]
+    assert 'indicator("Q DATA All Tabs"' in code and len(j["tabs"]) >= 14 and j["levels"] > 50
+    for i, t in enumerate(j["tabs"]):
+        assert f't{i} = input.bool({"true" if t["on"] else "false"}, "Show {t["name"]}"' in code and f"        {i} => t{i}" in code
+    assert {t["tab"] for t in j["tabs"] if t["on"]} == {"stackmap", "gameplan", "session"}
+    assert "showCone" in code and "label.set_text" in code
+    on = c.get("/api/export/all-pine", params={"underlying": "_NDX", "on": "oi"}).json()
+    assert [t["tab"] for t in on["tabs"] if t["on"]] == ["oi"]

@@ -883,11 +883,15 @@ function tabPineBar() {
   const tab = S.tab, bar = document.createElement("div");
   bar.className = "toolbar tvbar";
   bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Each kind of level has its own show/hide box; hover a label for why it is there. Re-copy each session.</span>
-    <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button></span>`;
+    <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button><button data-tp="all" title="Every tab's levels in one indicator, Q DATA All Tabs, with an on/off switch per tab and a box per kind of level">Copy all-tabs indicator</button><button data-tp="alldl">Download all-tabs .pine</button></span>`;
   const get = () => api("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
   const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
   bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
   bar.querySelector('[data-tp="dl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { fail(e); } };
+  const getAll = () => api("/export/all-pine", { underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });
+  const failAll = e => alert("Could not build Q DATA All Tabs: " + (e.msg || e.message));
+  bar.querySelector('[data-tp="all"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); try { await navigator.clipboard.writeText(r.code); b.textContent = `Copied (${r.tabs.length} tabs, ${r.levels} levels)`; } catch (e) { showText("Q DATA All Tabs (Pine)", r.code); } } catch (e) { failAll(e); } };
+  bar.querySelector('[data-tp="alldl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await getAll(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { failAll(e); } };
   v.prepend(bar);
 }
 function download(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }

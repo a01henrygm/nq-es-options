@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from .services import analytics as an
 from .services import flows as fl
 from .services import quant as qt
-from .services.tab_pine import CALL_COLOR, CALL_WORD, build_tab_pine
+from .services.tab_pine import CALL_COLOR, CALL_WORD, build_all_pine, build_tab_pine
 from .timeutil import to_et
 
 # category -> (show/hide group name, color, line style). Colors match the Key levels indicator.
@@ -92,19 +92,11 @@ def register(app, h, q):
     def tab_pine_tabs():
         return {"tabs": [{"tab": k, "title": v[0]} for k, v in TABS.items()]}
 
-    @app.get("/api/export/tab-pine")
-    def export_tab_pine(tab: str, underlying: str, convention: str = "standard"):
-        """The levels on one tab as a TradingView indicator named after that tab."""
-        if tab not in TABS:
-            raise HTTPException(422, f"tab must be one of {', '.join(TABS)}")
-        if convention not in an.SIGNS:
-            raise HTTPException(422, "invalid convention")
-        u = h.underlying_ok(underlying)
-        c = q.context(u, convention)
-        snap, m, root = c["snap"], c["m"], c["root"]
+    def tab_parts(tab, u, convention, c):
+        """One tab's levels: (groups, levels, table rows, cone, about). Raises HTTPException(409) when the tab has nothing right now."""
+        snap, root = c["snap"], c["root"]
         mapped = c["spot_f"] is not None
         tc = (lambda v: None if v is None else c["conv"](v)) if mapped else (lambda v: v)
-        title, short, fname = TABS[tab]
         groups, levels, table, cone, about = [], [], [], None, ""
 
         def gi(name):
@@ -293,6 +285,27 @@ def register(app, h, q):
             if tab == "preopen" and not levels:
                 table.append(("Note", "Needs the previous session's open interest, stored daily from the next session on."))
 
+        return groups, levels, table, cone, about
+
+    def head(c):
+        m, root, mapped = c["m"], c["root"], c["spot_f"] is not None
+        units = (f"Prices are ESTIMATED {root} points (converted from {m['underlying']})." if mapped
+                 else f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved). Use the offset setting.")
+        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}."
+        return units, src, ("Symbol", f"{m['underlying']} -> {root} (est.)" if mapped else m["underlying"]), ("Data", f"{m['calculated_at_et']} ({m['data_status']})")
+
+    @app.get("/api/export/tab-pine")
+    def export_tab_pine(tab: str, underlying: str, convention: str = "standard"):
+        """The levels on one tab as a TradingView indicator named after that tab."""
+        if tab not in TABS:
+            raise HTTPException(422, f"tab must be one of {', '.join(TABS)}")
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = q.context(u, convention)
+        m, root, mapped = c["m"], c["root"], c["spot_f"] is not None
+        title, short, fname = TABS[tab]
+        groups, levels, table, cone, about = tab_parts(tab, u, convention, c)
         table = [("Symbol", f"{m['underlying']} -> {root} (est.)" if mapped else m["underlying"])] + table + [("Data", f"{m['calculated_at_et']} ({m['data_status']})")]
         units = (f"Prices are ESTIMATED {root} points (converted from {m['underlying']})." if mapped
                  else f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved). Use the offset setting.")
@@ -302,3 +315,30 @@ def register(app, h, q):
                 "filename": f"qdata_{fname}_{u.lstrip('_')}.pine",
                 "note": f"Paste into TradingView's Pine Editor and add to chart. It shows up as '{title}'. Each kind of level has its own show/hide box in the settings, "
                         "and hovering a label shows why it is there. The levels are baked in, so re-copy each session."}
+
+    ALL_DEFAULT_ON = ("stackmap", "gameplan", "session")
+
+    @app.get("/api/export/all-pine")
+    def export_all_pine(underlying: str, convention: str = "standard", on: str | None = None):
+        """Every tab's levels in ONE indicator ("Q DATA All Tabs"): an on/off switch per tab, and under it a box per kind of level.
+        on: comma list of tabs switched on when the indicator is first added (default Stack map, Game plan, Session)."""
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        c = q.context(u, convention)
+        want_on = set((on or ",".join(ALL_DEFAULT_ON)).split(","))
+        sections, skipped, cone = [], [], None
+        for tab, (title, short, fname) in TABS.items():
+            try:
+                groups, levels, table, cone_, about = tab_parts(tab, u, convention, c)
+            except HTTPException as e:
+                skipped.append({"tab": tab, "title": title, "reason": str(e.detail)})
+                continue
+            cone = cone or cone_
+            sections.append({"tab": tab, "name": title.replace("Q DATA ", ""), "on": tab in want_on, "groups": groups, "levels": levels, "table": table})
+        units, src, sym, data = head(c)
+        code = build_all_pine(sections, [sym, data], src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone)
+        return {"code": code, "title": "Q DATA All Tabs", "tabs": [{"tab": x["tab"], "name": x["name"], "levels": len(x["levels"]), "on": x["on"]} for x in sections],
+                "skipped": skipped, "levels": sum(len(x["levels"]) for x in sections), "mapped": c["spot_f"] is not None, "meta": c["m"],
+                "filename": f"qdata_all_tabs_{u.lstrip('_')}.pine",
+                "note": "One indicator with every tab. In its settings each tab has an on/off switch and a box for each kind of level. The levels are baked in, so re-copy each session."}

@@ -33,6 +33,15 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.17
+
+- **Q DATA All Tabs: every tab's levels in one TradingView indicator.** Use the **Copy all-tabs indicator** button at the top of
+  any tab that has levels. In the indicator's settings each tab has its own section with a **Show** switch and a box for each kind
+  of level, so you can turn on only what you want. It starts with Stack map, Game plan and Session on.
+  - Levels at the same price from different tabs share one label with both names (Look > "One label for levels at the same price").
+  - The info table only lists the tabs that are switched on.
+  - Paste over the same script in TradingView each session and your on/off choices stay.
+
 ## New in 1.16
 
 - **A TradingView indicator for every tab that has levels, named after its tab.** A **Copy ... indicator** and **Download .pine**
