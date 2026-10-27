@@ -53,6 +53,7 @@ TABS = {
     "preopen": ("Q DATA Overnight Changes", "QD Overnight", "overnight_changes"),
     "move": ("Q DATA Expected Move", "QD ExpMove", "expected_move"),
     "delta": ("Q DATA Delta Exposure", "QD Delta", "delta_exposure"),
+    "hodlod": ("Q DATA HOD / LOD", "QD HOD/LOD", "hod_lod"),      # last, so adding it did not move the other tabs' settings
 }
 # Tabs whose levels are the app's level list filtered to some categories: (categories, extra levels_payload settings)
 CAT_TABS = {
@@ -68,6 +69,12 @@ CAT_TABS = {
 
 # What each kind of level means, in plain words: (short meaning shown next to the label, longer help shown in the settings tooltip)
 HELP_RULES = [
+    ("High of day so far", "today's high", "The session's high so far. Above it, price is making a new high of day."),
+    ("Low of day so far", "today's low", "The session's low so far. Below it, price is making a new low of day."),
+    ("HOD ladder", "HOD target", "The 9:30 open plus k standard deviations of the day: where the high of day usually lands. Hover for the chance of reaching it."),
+    ("LOD ladder", "LOD target", "The 9:30 open minus k standard deviations of the day: where the low of day usually lands. Hover for the chance of reaching it."),
+    ("Projected HOD", "projected high", "Projected high of the day from here: 50/80/95% of random-walk paths top out at or below it, using the move left in the day."),
+    ("Projected LOD", "projected low", "Projected low of the day from here: 50/80/95% of random-walk paths bottom out at or above it, using the move left in the day."),
     ("Stacked areas: HOLD", "stack, should hold", "Several different kinds of levels in one area, and the call is HOLD: price should stall and reject there. Fade it with a stop just past the area."),
     ("Stacked areas: CHOP", "stack, two-way", "Several kinds stacked, but the call is CHOP: expect back-and-forth around it. No edge either way; wait for price to leave it."),
     ("Stacked areas: BREAK", "stack, likely breaks", "Several kinds stacked, but the call is BREAK: in this gamma regime price tends to push through. Trade the break, not the fade."),
@@ -295,6 +302,35 @@ def register(app, h, q):
             table = [("Regime", f"{r['label']} ({r['confidence']})"), ("Gamma", pb["title"]), ("Meaning", r.get("meaning", "")[:90])]
             for w in (r.get("what_would_change") or [])[:1]:
                 table.append(("Would change", w[:90]))
+        elif tab == "hodlod":
+            hd = ep("/api/analytics/hodlod")(underlying=u, convention=convention)["data"]
+            d = hd["hodlod"]
+            if not d.get("available"):
+                raise HTTPException(409, d.get("reason") or "No HOD / LOD read right now.")
+            sd = d["sigma_open"]
+            add(d["open"], "9:30 open", "9:30 open", "#ffffff", "dashed", 1, "Today's 9:30 open: the HOD / LOD ladder is built from it.")
+            add(d["high"], "High of day so far", "HOD so far", "#3fb96a", "solid", 2, "The session's high so far (from the app's own prices; TradingView's may differ by a tick or two).")
+            add(d["low"], "Low of day so far", "LOD so far", "#e5534b", "solid", 2, "The session's low so far (from the app's own prices; TradingView's may differ by a tick or two).")
+            for side, rows, col, sign in (("HOD", d["up"], "#7db7ff", "+"), ("LOD", d["down"], "#ffb37a", "-")):
+                for r in rows:
+                    tip = sent(f"Open {sign}{r['k']:g} sd ({r['k'] * sd:,.0f} index points)", f"Chance at the open {pct(r['at_open']) or '-'}",
+                               "Already hit today" if r["hit"] else f"Chance from here {pct(r['now']) or '-'}")
+                    add(r["price"], f"{side} ladder (open {sign} sd)", f"{side} {sign}{r['k']:g} sd" + (" (hit)" if r["hit"] else ""), col, "dotted", 1, tip)
+                    groups[names.index(f"{side} ladder (open {sign} sd)")]["on"] = False     # the full ladder is a lot of lines: off until you switch it on
+            pr = d.get("projection")
+            if pr:
+                for side, col in (("hod", "#22d3ee"), ("lod", "#ff4d8d")):
+                    for key, word in (("p50", "50%"), ("p80", "80%"), ("p95", "95%")):
+                        v = pr[side].get(key)
+                        tip = (f"Projected {'high' if side == 'hod' else 'low'} of the day: {word} of random-walk paths from here, with the move left in the day, "
+                               f"{'top out at or below' if side == 'hod' else 'bottom out at or above'} this price.")
+                        add(v, f"Projected {side.upper()}", f"{side.upper()} {word}", col, "dashed", 2 if key == "p80" else 1, tip)
+            ai = hd.get("already_in") or {}
+            table = [("High already in", pct(ai.get("high"))), ("Low already in", pct(ai.get("low"))), ("Range so far", f"{d['range_sd']:.2f} sd"),
+                     ("Minutes left", f"{hd['minutes_left']:.0f}" if hd.get("minutes_left") else "closed")]
+            about = "Today's high and low so far, the open +/- sd ladder (where the high and low usually land), and the projected HOD and LOD from here (50/80/95%)."
+            if not pr:
+                about += " The session has closed, so there is no projection until the next open."
         elif tab == "vix":
             vj = ep("/api/volatility")()
             if not vj.get("available"):
@@ -402,7 +438,7 @@ def register(app, h, q):
     def export_tab_pine_post(tab: str, underlying: str, convention: str = "standard", body: dict = Body(default={})):
         return export_tab_pine(tab, underlying, convention, (body or {}).get("prefs"))
 
-    ALL_DEFAULT_ON = ("stackmap", "gameplan", "session")
+    ALL_DEFAULT_ON = ("stackmap", "gameplan", "session", "hodlod")
 
     @app.get("/api/export/all-pine")
     def export_all_pine_get(underlying: str, convention: str = "standard", on: str | None = None):
@@ -410,7 +446,7 @@ def register(app, h, q):
 
     def export_all_pine(underlying: str, convention: str = "standard", on: str | None = None, prefs: dict | None = None):
         """Every tab's levels in ONE indicator ("Q DATA All Tabs"): an on/off switch and a color per tab, and under it a row per kind of level.
-        on: comma list of tabs switched on when the indicator is first added (default Stack map, Game plan, Session).
+        on: comma list of tabs switched on when the indicator is first added (default Stack map, Game plan, Session, HOD / LOD).
         prefs: the look chosen on Q DATA's TradingView indicator tab (see services/tab_pine.py); its tabs_on wins over `on`.
         Every tab is always in the indicator, even one with no levels right now, so the settings stay in the same places from day
         to day (TradingView remembers settings by their position in the script)."""

@@ -130,7 +130,8 @@ def _group(g) -> dict:
     if isinstance(g, str):
         g = {"name": g}
     return {"name": g.get("name") or "Levels", "color": _hex(g.get("color")), "style": STYLES.get(g.get("style") or "solid", "Solid"),
-            "width": max(1, min(4, int(g.get("width") or 1))), "short": g.get("short") or "", "help": g.get("help") or g.get("name") or "", "on": True}
+            "width": max(1, min(4, int(g.get("width") or 1))), "short": g.get("short") or "", "help": g.get("help") or g.get("name") or "",
+            "on": g.get("on") is not False}
 
 
 def setting_value(spec: dict, prefs_set: dict | None, auto: dict | None = None):

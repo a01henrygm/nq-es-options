@@ -51,7 +51,7 @@ R.tvind = async function () {
       <div class="scroll"><table><tr><th>On</th><th>Color</th><th>Tab</th><th>Levels now</th><th>Kinds</th></tr>
       ${j.tabs.map(t => `<tr><td><input type="checkbox" data-tvt="${t.tab}" ${t.on ? "checked" : ""}></td><td><input type="color" data-tvc="${t.tab}" value="${esc(t.color)}"></td>
         <td>${esc(t.name)}${(j.skipped.find(x => x.tab === t.tab) || {}).reason ? `<br><span class="hint">${esc(j.skipped.find(x => x.tab === t.tab).reason)}</span>` : ""}</td><td class="num">${fmt(t.levels)}</td><td class="num">${fmt(t.kinds)}</td></tr>`).join("")}</table></div>
-      <div class="actions"><button id="tvall">All on</button><button id="tvnone">All off</button><button id="tvdef">Default (Stack map, Game plan, Session)</button></div></div>
+      <div class="actions"><button id="tvall">All on</button><button id="tvnone">All off</button><button id="tvdef">Default (Stack map, Game plan, Session, HOD / LOD)</button></div></div>
     <div class="panel"><h2>Kinds of level</h2><p class="hint" style="margin:0">One row per kind. A change applies on every tab that has that kind. The width here is the base width; very stacked levels are drawn a little thicker.</p>
       <div class="row"><label>Find<input id="tvfind" value="${esc(TVLAST.filter)}" placeholder="GEX, wall, Game plan..."></label><button id="tvkon">Show all kinds</button><button id="tvkdef">Default colors and styles</button></div>
       <div class="scroll"><table><tr><th>Show</th><th>Color</th><th>Style</th><th>Width</th><th>Kind</th><th>Means</th><th>On tabs</th></tr>

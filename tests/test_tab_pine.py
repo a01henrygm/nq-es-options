@@ -20,7 +20,7 @@ def test_every_tab_indicator_is_named_after_its_tab():
         assert j["title"] == t["title"] and f'indicator("{t["title"]}"' in j["code"] and j["code"].startswith("//@version=6")
         assert j["filename"].endswith("_NDX.pine") and j["filename"].startswith("qdata_")
         for i in range(len(j["groups"])):                               # one show/hide box per group, gathered into the kOn array
-            assert f"g{i} = input.bool(true" in j["code"] and re.search(rf"array\.from\([^)]*\bg{i}\b", j["code"])
+            assert re.search(rf"g{i} = input\.bool\((true|false)", j["code"]) and re.search(rf"array\.from\([^)]*\bg{i}\b", j["code"])
     assert built >= 14
     sm = c.get("/api/export/tab-pine", params={"tab": "stackmap", "underlying": "_NDX"}).json()
     assert sm["levels"] >= 1 and "STACK" in sm["code"] and len(sm["groups"]) == 3
@@ -52,7 +52,7 @@ def test_all_tabs_indicator_has_a_switch_per_tab_and_per_kind():
     for i, t in enumerate(j["tabs"]):
         assert f't{i} = input.bool({"true" if t["on"] else "false"}, "Show {t["name"]}"' in code and f"tc{i} = input.color(" in code
     assert "var bool[] tOn = _tOn0()" in code and "array.from(t0, t1" in code
-    assert {t["tab"] for t in j["tabs"] if t["on"]} == {"stackmap", "gameplan", "session"}
+    assert {t["tab"] for t in j["tabs"] if t["on"]} == {"stackmap", "gameplan", "session", "hodlod"}
     assert [t["tab"] for t in j["tabs"]] == list(c.get("/api/export/tab-pine/tabs").json()["tabs"][i]["tab"] for i in range(len(j["tabs"])))  # every tab, always
     assert "showCone" in code and "label.set_text" in code
     on = c.get("/api/export/all-pine", params={"underlying": "_NDX", "on": "oi"}).json()
@@ -182,3 +182,15 @@ def test_quick_setup_comes_first_and_each_tab_has_a_color():
     assert code.index('grpQ = "Quick setup"') < code.index('grp0 = "Tab: ') < code.index('grpZ = "Stack zones') < code.index('grpL = ') < code.index('grpT = ')
     for want in ("showLines", "emphNear", "levelColor(g, array.get(lvT, i), p)", "colUp", "colDn", 'colorMode == "Tab"', "array.get(tName, key)"):
         assert want in code, want
+
+
+def test_hod_and_lod_are_in_the_all_tabs_indicator():
+    c, db, now = simulated_day()
+    j = c.get("/api/export/all-pine", params={"underlying": "_NDX"}).json()
+    hl = next(t for t in j["tabs"] if t["tab"] == "hodlod")
+    assert hl["on"] and hl["levels"] > 5 and j["tabs"][-1]["tab"] == "hodlod"
+    code = j["code"]
+    assert '"Show HOD / LOD"' in code and '"HOD so far"' in code and '"LOD so far"' in code and '"Projected HOD"' in code
+    assert re.search(r'g\d+ = input\.bool\(false, "HOD ladder', code) and re.search(r'g\d+ = input\.bool\(true, "Projected LOD', code)
+    one = c.get("/api/export/tab-pine", params={"tab": "hodlod", "underlying": "_NDX"}).json()
+    assert one["title"] == "Q DATA HOD / LOD" and "Low of day so far" in one["groups"]
