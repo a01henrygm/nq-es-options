@@ -279,14 +279,18 @@ const R = {
       <div class="scroll tall"><table><tr><th>Level</th><th>${esc(S.u.replace(/^_/, ""))}</th><th>${root || "Futures"} estimate</th><th>Score</th><th>${keyMode ? "What lines up here" : "Where it comes from"}</th><th>Since (ET)</th><th>Trust</th></tr>${rows || "<tr><td colspan=7>No levels available</td></tr>"}</table></div>
       <p class="hint">${esc(lv.note)} Trust rule: ${esc(lv.meta.reliability_rule)}</p>
       ${d.available ? `<p class="hint">Mapping check on ${d.n} stored pairs: ratio error ${fmt(d.ratio.mae, 2)}, basis error ${fmt(d.basis.mae, 2)} (mean absolute, futures points). Best so far: ${d.best}.</p>` : `<p class="hint">Mapping accuracy: ${esc(d.note || "not measured yet")}</p>`}
-      <details class="adv" data-k="lv-paste" open><summary>Paste into the TradingView indicator</summary><div class="body">
-        <p class="dim">Click the box, press ${KEY}+A then ${KEY}+C (or use the button), and paste it into the indicator's Levels setting. It holds exactly the rows in the table above.</p>
+      <details class="adv" data-k="lv-paste" open><summary>Paste into the TradingView indicator (Q DATA Key Levels paste-in)</summary><div class="body">
+        <p class="dim"><b>Once:</b> add the official indicator to TradingView: <button id="indscript">Copy the indicator</button> <button id="indscriptdl">Download .pine</button> then Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Every level is drawn as a <b>zone</b> (Zones group in its settings; switch to Lines there if you want). Only needed again if a Q DATA update says the indicator changed.</p>
+        <p class="dim"><b>Each session:</b> click the box, press ${KEY}+A then ${KEY}+C (or use the button), and paste it into the indicator's <b>Levels (paste from the app)</b> setting. It holds exactly the rows in the table above.</p>
         <textarea id="indtext" readonly spellcheck="false" style="width:100%;height:230px;font:calc(13px*var(--z)) ui-monospace,Menlo,Consolas,monospace"></textarea>
         <div class="row"><button class="go" id="indcopy">Copy this text</button><span class="dim" id="indnote"></span></div></div></details>`);
     { const it = indicatorText(lv, m, root); $("indtext").value = it.text;
       $("indnote").textContent = `${it.count} levels, ${it.mapped ? "as estimated " + root + " points" : "in " + S.u + " units. Save a basis above to get " + root + " points"}.`;
       $("indtext").onclick = () => $("indtext").select();
       $("indcopy").onclick = async () => { $("indtext").select(); try { await copyText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = `Copied (or press ${KEY}+C)`; } }; }
+    { const scr = () => api("/export/levels-script", {}), bad = e => alert("Could not get the indicator: " + (e.msg || e.message));
+      $("indscript").onclick = async ev => { const b = ev.currentTarget; try { const r = await scr(); try { await copyText(r.code); b.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); } } catch (e) { bad(e); } };
+      $("indscriptdl").onclick = async ev => { const b = ev.currentTarget; try { const r = await scr(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { bad(e); } }; }
     $("lvtop").value = String(S.lvtop); $("lvtop").onchange = () => { S.lvtop = +$("lvtop").value; render(); };
     $("lvkey").value = S.lvq ? "q" + S.lvq : S.lvnear ? "n" + S.lvnear : S.lvkey ? "k" + S.lvkey : "all";
     $("lvkey").onchange = () => { const v = $("lvkey").value; S.lvq = v[0] === "q" ? v.slice(1) : ""; S.lvkey = v[0] === "k" ? +v.slice(1) : 0; S.lvnear = v[0] === "n" ? +v.slice(1) : 0; render(); };

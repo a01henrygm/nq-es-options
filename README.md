@@ -33,6 +33,14 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.22
+- **Key levels are drawn as zones.** The paste-in Key levels indicator (now named **Q DATA Key Levels (paste-in)**) draws every level
+  as a shaded zone. GEX and call/put wall levels use their real band edges; every other level gets a zone of a set height (auto =
+  0.02% of price: about 5 NQ points, 1.25 ES points), with a thin dotted line at the exact price. New **Zones** group in its settings:
+  Zones or Lines, zone height, use the level's own band, transparency, border, center line. Added at the end, so existing settings stay.
+- **The official indicator is in the app.** Key levels tab > "Paste into the TradingView indicator": **Copy the indicator** and
+  **Download .pine** give you the script that the copied levels are pasted into. Add it once; each session copy the levels and paste.
+
 ## New in 1.21
 - **Key levels indicator rebuilt** (Key levels tab > Pine code, "Q DATA Key Levels"). Same engine as the tab indicators:
   - **Stack zones are back and on by default.** Clean view: where several different kinds of level pile up, a shaded zone replaces

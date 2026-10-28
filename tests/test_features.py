@@ -810,3 +810,20 @@ def test_far_zones_are_drawn_as_a_line_in_both_indicators():
         assert "bandDistPct <= bandFarPct" in text and text.count("(") == text.count(")")
         draw = text.split("bandDistPct <= bandFarPct")[1]
         assert draw.index("box.new(") < draw.index("line.new(")                    # the box is optional; the line is always drawn
+
+
+# ---- 1.22: the paste-in Key levels indicator draws every level as a zone, and the app hands it out ----------------
+def test_key_levels_paste_in_draws_zones_and_is_served_by_the_app():
+    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
+    assert 'indicator("Q DATA Key Levels (paste-in)"' in ind and "max_boxes_count = 500" in ind
+    assert 'drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Lines"]' in ind
+    assert ind.rindex("input.") > ind.index("lzMid") - 20                                    # the new settings are the last inputs, so old settings stay put
+    draw = ind.split('if drawAs == "Zones"')[1]
+    assert "p + half" in draw and "zHigh + offsetPts" in draw and "close * 0.0002" in draw
+    assert ind.count("(") == ind.count(")") and ind.count("[") == ind.count("]") and "\t" not in ind
+    assert all(ord(ch) < 128 for ch in ind)                                                   # plain ASCII only (box-drawing characters break Pine)
+    c, _ = api_client()
+    j = c.get("/api/export/levels-script").json()
+    assert j["code"] == ind and j["filename"].endswith(".pine")
+    js = (ROOT / "frontend" / "app.js").read_text()
+    assert 'id="indscript"' in js and "/export/levels-script" in js

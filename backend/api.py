@@ -679,6 +679,14 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         return {"code": build_pine(rows, src, units, to_et(t0) if t0 else None), "levels": len(rows), "mapped": mapped_used, "meta": m,
                 "note": "Paste into TradingView's Pine Editor and add to chart. Re-export and re-paste each session; your TradingView settings stay put. Clean view by default: stack zones replace the levels inside them, key levels keep their line."}
 
+    @app.get("/api/export/levels-script")
+    def export_levels_script():
+        """Q DATA Key Levels (paste-in): the official indicator for the text the Key levels tab copies. It does not depend on the data:
+        add it to TradingView once, then paste fresh levels into its settings each session."""
+        code = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text(encoding="utf-8")
+        return {"code": code, "title": "Q DATA Key Levels (paste-in)", "filename": "qdata_key_levels_paste_in.pine",
+                "note": "Add this to TradingView once (Pine Editor > paste > Save > Add to chart). Then each session paste the levels from the Key levels tab into its Levels setting."}
+
     @app.get("/api/export/heatmap-pine")
     def export_heatmap_pine(underlying: str, measure: str = "all", side: str = "total", window: float = Query(0.04, ge=0, le=1),
                             expiries: int = Query(8, ge=1, le=30), convention: str = "standard", method: str = "auto", hot: int = Query(5, ge=1, le=12),

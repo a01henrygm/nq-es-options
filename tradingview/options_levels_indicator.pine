@@ -1,7 +1,11 @@
 //@version=6
-indicator("Options levels", overlay = true, max_lines_count = 300, max_labels_count = 300, max_boxes_count = 150)
+indicator("Q DATA Key Levels (paste-in)", shorttitle = "QD Key Zones", overlay = true, max_lines_count = 300, max_labels_count = 300, max_boxes_count = 500)
 
-// Each level is drawn as a line that STARTS when that level first appeared and runs to the current candle,
+// Q DATA's official paste-in indicator for the Key levels tab. Add it to TradingView ONCE; each session click "Copy levels for the
+// indicator" on the Key levels tab and paste into the "Levels (paste from the app)" setting. The script never changes, so your settings stay.
+// ZONES (default): every level is drawn as a shaded zone. GEX and wall levels use their real band edges; every other level gets a zone of
+// the height set in the "Zones" group (auto = 0.02% of price: about 5 NQ points, 1.25 ES points). Switch "Draw each level as" to Lines for the old look.
+// Each level STARTS when that level first appeared and runs to the current candle,
 // ending in a small block that shows the label and price. Nothing extends to infinity.
 //
 // Paste your levels into the setting below, one per line:
@@ -130,6 +134,14 @@ zColH    = input.color(#ff7a2e, "Heavy", group = G_ZONE, inline = "zc")
 zTransp  = input.int(80, "Zone transparency", minval = 0, maxval = 100, group = G_ZONE)
 zLabel   = input.bool(true, "Zone label", group = G_ZONE)
 bgMode   = input.string("Auto", "Chart background", options = ["Auto", "Light (white)", "Dark"], tooltip = "Auto reads your chart background. On a light (white) chart, light colors (yellow, light blue, white...) are drawn darker in the same hue.", group = G_COLS)
+
+const string G_LZ = "Zones (each level)"
+drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Lines"], tooltip = "Zones: every level is a shaded band. GEX and wall levels use their real band edges; the rest get the height below. Lines: one line per level (the old look).", group = G_LZ)
+lzHalf    = input.float(0.0, "Zone height each side (points, 0 = auto)", minval = 0.0, step = 0.25, tooltip = "How far the zone reaches above and below the level. Auto = 0.02% of price: about 5 NQ points, 1.25 ES points.", group = G_LZ)
+lzOwnBand = input.bool(true, "Use the level's own band when it has one", tooltip = "GEX and call / put wall levels come with real band edges from Q DATA. Off = every zone gets the same height.", group = G_LZ)
+lzTransp  = input.int(78, "Zone transparency", minval = 0, maxval = 100, group = G_LZ, inline = "lz")
+lzBorder  = input.bool(true, "Border", group = G_LZ, inline = "lz")
+lzMid     = input.bool(true, "Thin line at the exact level", tooltip = "Keeps the exact price visible inside the zone.", group = G_LZ)
 
 onLight() =>
     bgMode == "Light (white)" ? true : bgMode == "Dark" ? false : 0.299 * color.r(chart.bg_color) + 0.587 * color.g(chart.bg_color) + 0.114 * color.b(chart.bg_color) > 140
@@ -360,7 +372,7 @@ if barstate.islast
     endX = time + extBars * timeframe.in_seconds() * 1000
     n = array.size(prices)
     if n == 0
-        array.push(lbs, label.new(time, close, "Options levels: open the indicator settings and paste your levels", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(color.gray, 70), textcolor = color.white, size = size.small))
+        array.push(lbs, label.new(time, close, "Q DATA Key Levels: open the indicator settings and paste the levels from the Key levels tab", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(color.gray, 70), textcolor = color.white, size = size.small))
     else
         // pick, per family, the highest-scoring levels up to that family's Max levels
         keep = array.new<bool>(n, false)
@@ -455,8 +467,17 @@ if barstate.islast
                 zHigh = array.get(highs, i)
                 isBand = not na(zLow) and not na(zHigh) and zHigh > zLow
                 bandDistPct = isBand ? (close >= zLow + offsetPts and close <= zHigh + offsetPts ? 0.0 : math.min(math.abs(close - zLow - offsetPts), math.abs(close - zHigh - offsetPts)) / close * 100) : 0.0
-                if showBands and isBand and bandDistPct <= bandFarPct
-                    array.push(bxs, box.new(startI, zHigh + offsetPts, endX, zLow + offsetPts, xloc = xloc.bar_time, border_color = c, border_width = 1, bgcolor = color.new(c, bandTransp)))
-                array.push(lns, line.new(startI, p, endX, p, xloc = xloc.bar_time, color = c, width = widthFor(fam), style = styleFor(fam)))
+                if drawAs == "Zones"
+                    half = lzHalf > 0 ? lzHalf : close * 0.0002
+                    useOwn = lzOwnBand and isBand
+                    zTop = useOwn ? zHigh + offsetPts : p + half
+                    zBot = useOwn ? zLow + offsetPts : p - half
+                    array.push(bxs, box.new(startI, zTop, endX, zBot, xloc = xloc.bar_time, border_color = lzBorder ? c : color.new(c, 100), border_width = widthFor(fam), border_style = styleFor(fam), bgcolor = color.new(c, lzTransp)))
+                    if lzMid
+                        array.push(lns, line.new(startI, p, endX, p, xloc = xloc.bar_time, color = color.new(c, 20), width = 1, style = line.style_dotted))
+                else
+                    if showBands and isBand and bandDistPct <= bandFarPct
+                        array.push(bxs, box.new(startI, zHigh + offsetPts, endX, zLow + offsetPts, xloc = xloc.bar_time, border_color = c, border_width = 1, bgcolor = color.new(c, bandTransp)))
+                    array.push(lns, line.new(startI, p, endX, p, xloc = xloc.bar_time, color = c, width = widthFor(fam), style = styleFor(fam)))
                 if showBlocks
                     array.push(lbs, label.new(endX, p, array.get(names, i) + " " + str.tostring(p, "#.##"), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 30), textcolor = color.white, size = textSize()))
