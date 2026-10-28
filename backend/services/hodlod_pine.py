@@ -11,6 +11,8 @@ This was written as conservative Pine v6 and has not been compiled by TradingVie
 from __future__ import annotations
 import re
 
+from .tab_pine import INK_FUNCS
+
 TEMPLATE = r'''//@version=6
 indicator("Q DATA HOD/LOD", "QD HOD/LOD", overlay = true, max_lines_count = 120, max_labels_count = 120, max_bars_back = 600)
 
@@ -46,6 +48,7 @@ string G_VW  = "Chart view"
 
 i_view      = input.string("Clean", "View", options = ["Clean", "Full", "Table only"], group = G_VW, tooltip = "Clean: the open, the steps below, the 0DTE walls and flip, short labels, a short table. Full: every ladder step, projected HOD/LOD lines and the long table with the mean-reversion test, ES/NQ split and Monte Carlo. Table only: nothing drawn on the price chart. In every view all levels are in the Data Window and in TradingView's Export chart data.")
 i_clean_ks  = input.string("1,2", "Steps drawn in Clean view", group = G_VW)
+bgMode      = input.string("Auto", "Chart background", options = ["Auto", "Light (white)", "Dark"], group = G_VW, tooltip = "Auto reads your chart background. On a light (white) chart, light colors are drawn darker in the same hue and label text turns dark so everything stays readable.")
 
 i_lad_on    = input.bool(true, "Show the ladder", group = G_LAD)
 i_lad_ks    = input.string("0.5,0.75,1,1.25,1.5,2,2.5", "Steps (standard deviations)", group = G_LAD)
@@ -82,6 +85,16 @@ i_pca_n     = input.int(120, "Window (bars)", minval = 20, maxval = 500, group =
 i_tbl_on    = input.bool(true, "Show the table", group = G_TBL)
 i_tbl_pos   = input.string("Top right", "Position", options = ["Top right", "Bottom right", "Top left", "Bottom left"], group = G_TBL)
 i_tbl_mc    = input.bool(true, "Show the Monte Carlo rows", group = G_TBL)
+
+// ---- readable colors on a light (white) chart ----
+__INK__
+inkUp   = ink(i_col_up)
+inkDn   = ink(i_col_dn)
+inkOpen = ink(i_col_open)
+inkCall = ink(i_col_call)
+inkPut  = ink(i_col_putw)
+inkFlip = ink(i_col_flip)
+inkTxt  = onLight() ? #1f2329 : color.white
 
 // ---- math ----
 f_ncdf(float x) =>
@@ -168,30 +181,30 @@ if _newRth
         bool _drawLad = i_lad_on and _vDraw
         float[] _shown = f_nums(i_clean_ks)
         if _drawLad
-            array.push(_lns, line.new(time, _open, _closeT, _open, xloc = xloc.bar_time, color = i_col_open, width = 1, style = line.style_dotted))
+            array.push(_lns, line.new(time, _open, _closeT, _open, xloc = xloc.bar_time, color = inkOpen, width = 1, style = line.style_dotted))
         for _k in f_nums(i_lad_ks)
             for _sgn in array.from(1.0, -1.0)
                 float _p = _open + _sgn * _k * _sig
-                color _c = _sgn > 0 ? i_col_up : i_col_dn
+                color _c = _sgn > 0 ? inkUp : inkDn
                 bool _drawK = _drawLad and (_vFull or f_has(_shown, _k))
                 array.push(_lvP, _p)
                 array.push(_lvK, _sgn * _k)
                 if _drawK
                     array.push(_lns, line.new(time, _p, _closeT, _p, xloc = xloc.bar_time, color = color.new(_c, _k >= 2 ? 10 : _k >= 1 ? 30 : 55), width = _k == 1 or _k == 2 ? 2 : 1))
                 if _drawK and i_lab_on
-                    array.push(_lbs, label.new(_closeT, _p, "", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(_c, 75), textcolor = color.white, size = _vFull ? size.small : size.tiny))
+                    array.push(_lbs, label.new(_closeT, _p, "", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(_c, 75), textcolor = inkTxt, size = _vFull ? size.small : size.tiny))
                 else
                     array.push(_lbs, label(na))
     if i_walls_on and _vDraw and (_qdDay or i_walls_any)
         if not na(_QD_CALL)
-            array.push(_lns, line.new(time, _QD_CALL + i_offset, _closeT, _QD_CALL + i_offset, xloc = xloc.bar_time, color = i_col_call, width = 2))
-            array.push(_lbs, label.new(_closeT, _QD_CALL + i_offset, "0DTE call wall", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(i_col_call, 70), textcolor = color.white, size = size.small))
+            array.push(_lns, line.new(time, _QD_CALL + i_offset, _closeT, _QD_CALL + i_offset, xloc = xloc.bar_time, color = inkCall, width = 2))
+            array.push(_lbs, label.new(_closeT, _QD_CALL + i_offset, "0DTE call wall", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(inkCall, 70), textcolor = inkTxt, size = size.small))
         if not na(_QD_PUT)
-            array.push(_lns, line.new(time, _QD_PUT + i_offset, _closeT, _QD_PUT + i_offset, xloc = xloc.bar_time, color = i_col_putw, width = 2))
-            array.push(_lbs, label.new(_closeT, _QD_PUT + i_offset, "0DTE put wall", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(i_col_putw, 70), textcolor = color.white, size = size.small))
+            array.push(_lns, line.new(time, _QD_PUT + i_offset, _closeT, _QD_PUT + i_offset, xloc = xloc.bar_time, color = inkPut, width = 2))
+            array.push(_lbs, label.new(_closeT, _QD_PUT + i_offset, "0DTE put wall", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(inkPut, 70), textcolor = inkTxt, size = size.small))
         if not na(_QD_FLIP)
-            array.push(_lns, line.new(time, _QD_FLIP + i_offset, _closeT, _QD_FLIP + i_offset, xloc = xloc.bar_time, color = i_col_flip, width = 1, style = line.style_dashed))
-            array.push(_lbs, label.new(_closeT, _QD_FLIP + i_offset, "0DTE flip", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(i_col_flip, 70), textcolor = color.white, size = size.small))
+            array.push(_lns, line.new(time, _QD_FLIP + i_offset, _closeT, _QD_FLIP + i_offset, xloc = xloc.bar_time, color = inkFlip, width = 1, style = line.style_dashed))
+            array.push(_lbs, label.new(_closeT, _QD_FLIP + i_offset, "0DTE flip", xloc = xloc.bar_time, style = label.style_label_left, color = color.new(inkFlip, 70), textcolor = inkTxt, size = size.small))
 else if _inRth
     _hi := math.max(_hi, high)
     _lo := math.min(_lo, low)
@@ -260,28 +273,28 @@ float _lod80 = na(_sigRem) ? na : math.min(_lo, close - _sigRem * _q80)
 f_lv(int i) =>
     _inRth and i < array.size(_lvP) ? array.get(_lvP, i) : na
 bool _wOn = _inRth and (_qdDay or i_walls_any)
-plot(_inRth ? _open : na, "Open 9:30", color = i_col_open, display = display.data_window)
-plot(f_lv(0), "Ladder up 1", color = i_col_up, display = display.data_window)
-plot(f_lv(1), "Ladder down 1", color = i_col_dn, display = display.data_window)
-plot(f_lv(2), "Ladder up 2", color = i_col_up, display = display.data_window)
-plot(f_lv(3), "Ladder down 2", color = i_col_dn, display = display.data_window)
-plot(f_lv(4), "Ladder up 3", color = i_col_up, display = display.data_window)
-plot(f_lv(5), "Ladder down 3", color = i_col_dn, display = display.data_window)
-plot(f_lv(6), "Ladder up 4", color = i_col_up, display = display.data_window)
-plot(f_lv(7), "Ladder down 4", color = i_col_dn, display = display.data_window)
-plot(f_lv(8), "Ladder up 5", color = i_col_up, display = display.data_window)
-plot(f_lv(9), "Ladder down 5", color = i_col_dn, display = display.data_window)
-plot(f_lv(10), "Ladder up 6", color = i_col_up, display = display.data_window)
-plot(f_lv(11), "Ladder down 6", color = i_col_dn, display = display.data_window)
-plot(f_lv(12), "Ladder up 7", color = i_col_up, display = display.data_window)
-plot(f_lv(13), "Ladder down 7", color = i_col_dn, display = display.data_window)
-plot(_inRth ? _hod50 : na, "Projected HOD 50%", color = i_col_up, display = display.data_window)
-plot(_inRth ? _hod80 : na, "Projected HOD 80%", color = i_col_up, display = display.data_window)
-plot(_inRth ? _lod50 : na, "Projected LOD 50%", color = i_col_dn, display = display.data_window)
-plot(_inRth ? _lod80 : na, "Projected LOD 80%", color = i_col_dn, display = display.data_window)
-plot(_wOn and not na(_QD_CALL) ? _QD_CALL + i_offset : na, "0DTE call wall", color = i_col_call, display = display.data_window)
-plot(_wOn and not na(_QD_PUT) ? _QD_PUT + i_offset : na, "0DTE put wall", color = i_col_putw, display = display.data_window)
-plot(_wOn and not na(_QD_FLIP) ? _QD_FLIP + i_offset : na, "0DTE flip", color = i_col_flip, display = display.data_window)
+plot(_inRth ? _open : na, "Open 9:30", color = inkOpen, display = display.data_window)
+plot(f_lv(0), "Ladder up 1", color = inkUp, display = display.data_window)
+plot(f_lv(1), "Ladder down 1", color = inkDn, display = display.data_window)
+plot(f_lv(2), "Ladder up 2", color = inkUp, display = display.data_window)
+plot(f_lv(3), "Ladder down 2", color = inkDn, display = display.data_window)
+plot(f_lv(4), "Ladder up 3", color = inkUp, display = display.data_window)
+plot(f_lv(5), "Ladder down 3", color = inkDn, display = display.data_window)
+plot(f_lv(6), "Ladder up 4", color = inkUp, display = display.data_window)
+plot(f_lv(7), "Ladder down 4", color = inkDn, display = display.data_window)
+plot(f_lv(8), "Ladder up 5", color = inkUp, display = display.data_window)
+plot(f_lv(9), "Ladder down 5", color = inkDn, display = display.data_window)
+plot(f_lv(10), "Ladder up 6", color = inkUp, display = display.data_window)
+plot(f_lv(11), "Ladder down 6", color = inkDn, display = display.data_window)
+plot(f_lv(12), "Ladder up 7", color = inkUp, display = display.data_window)
+plot(f_lv(13), "Ladder down 7", color = inkDn, display = display.data_window)
+plot(_inRth ? _hod50 : na, "Projected HOD 50%", color = inkUp, display = display.data_window)
+plot(_inRth ? _hod80 : na, "Projected HOD 80%", color = inkUp, display = display.data_window)
+plot(_inRth ? _lod50 : na, "Projected LOD 50%", color = inkDn, display = display.data_window)
+plot(_inRth ? _lod80 : na, "Projected LOD 80%", color = inkDn, display = display.data_window)
+plot(_wOn and not na(_QD_CALL) ? _QD_CALL + i_offset : na, "0DTE call wall", color = inkCall, display = display.data_window)
+plot(_wOn and not na(_QD_PUT) ? _QD_PUT + i_offset : na, "0DTE put wall", color = inkPut, display = display.data_window)
+plot(_wOn and not na(_QD_FLIP) ? _QD_FLIP + i_offset : na, "0DTE flip", color = inkFlip, display = display.data_window)
 
 // ---- the last bar: live chances, mean reversion, Monte Carlo, table ----
 var table _tb = na
@@ -303,10 +316,10 @@ if barstate.islast and _intra
         line.delete(_l)
     array.clear(_pj)
     if i_proj_on and _vFull and _inRth and not na(_hod50)
-        array.push(_pj, line.new(time, _hod50, _closeT, _hod50, xloc = xloc.bar_time, color = color.new(i_col_up, 20), style = line.style_dashed))
-        array.push(_pj, line.new(time, _hod80, _closeT, _hod80, xloc = xloc.bar_time, color = color.new(i_col_up, 50), style = line.style_dashed))
-        array.push(_pj, line.new(time, _lod50, _closeT, _lod50, xloc = xloc.bar_time, color = color.new(i_col_dn, 20), style = line.style_dashed))
-        array.push(_pj, line.new(time, _lod80, _closeT, _lod80, xloc = xloc.bar_time, color = color.new(i_col_dn, 50), style = line.style_dashed))
+        array.push(_pj, line.new(time, _hod50, _closeT, _hod50, xloc = xloc.bar_time, color = color.new(inkUp, 20), style = line.style_dashed))
+        array.push(_pj, line.new(time, _hod80, _closeT, _hod80, xloc = xloc.bar_time, color = color.new(inkUp, 50), style = line.style_dashed))
+        array.push(_pj, line.new(time, _lod50, _closeT, _lod50, xloc = xloc.bar_time, color = color.new(inkDn, 20), style = line.style_dashed))
+        array.push(_pj, line.new(time, _lod80, _closeT, _lod80, xloc = xloc.bar_time, color = color.new(inkDn, 50), style = line.style_dashed))
 
     // mean reversion: regress each change on the previous distance from the window average
     float _mrT = na
@@ -429,11 +442,11 @@ if barstate.islast and _intra
         table.cell(_tb, 2, _r, "Left", text_color = _dim, text_size = size.tiny)
         table.cell(_tb, 3, _r, str.tostring(math.round(_minsLeft)) + " min", text_color = _tx, text_size = size.tiny)
         _r += 1
-        table.cell(_tb, 0, _r, "HOD 50/80%", text_color = i_col_up, text_size = size.tiny)
+        table.cell(_tb, 0, _r, "HOD 50/80%", text_color = inkUp, text_size = size.tiny)
         table.cell(_tb, 1, _r, na(_hod50) ? "-" : str.tostring(_hod50, format.mintick) + " / " + str.tostring(_hod80, format.mintick), text_color = _tx, text_size = size.tiny)
         table.merge_cells(_tb, 1, _r, 3, _r)
         _r += 1
-        table.cell(_tb, 0, _r, "LOD 50/80%", text_color = i_col_dn, text_size = size.tiny)
+        table.cell(_tb, 0, _r, "LOD 50/80%", text_color = inkDn, text_size = size.tiny)
         table.cell(_tb, 1, _r, na(_lod50) ? "-" : str.tostring(_lod50, format.mintick) + " / " + str.tostring(_lod80, format.mintick), text_color = _tx, text_size = size.tiny)
         table.merge_cells(_tb, 1, _r, 3, _r)
         _r += 1
@@ -495,7 +508,7 @@ def build_hodlod_pine(sigma_pct, state, call_wall, put_wall, flip, flips, source
     state = state if state in ("short", "long", "transition", "unknown") else "unknown"
     ft = [str(int(f["t"].timestamp() * 1000)) for f in flips if f.get("t")] or ["0"]
     fs = [f'"{_s(f["to"])}"' for f in flips if f.get("t")] or ['"none"']
-    return (TEMPLATE.replace("__SOURCE__", _s(source)).replace("__UNITS__", _s(units)).replace("__MADE__", made_at.strftime("%Y-%m-%d %H:%M ET"))
+    return (TEMPLATE.replace("__INK__", "\n".join(INK_FUNCS)).replace("__SOURCE__", _s(source)).replace("__UNITS__", _s(units)).replace("__MADE__", made_at.strftime("%Y-%m-%d %H:%M ET"))
             .replace("__DAY__", day.isoformat()).replace("__SYMBOL__", _s(symbol)).replace("__SIGPCT__", f"{float(sigma_pct or 0):.6f}")
             .replace("__STATE__", state).replace("__CALL__", _f(call_wall)).replace("__PUT__", _f(put_wall)).replace("__FLIP__", _f(flip))
             .replace("__Y__", str(day.year)).replace("__M__", str(day.month)).replace("__D__", str(day.day))

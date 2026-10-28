@@ -37,6 +37,10 @@ TAB_COLORS = ["#2f8bf5", "#ff7a2e", "#3fb96a", "#e6b422", "#7db7ff", "#a371f7", 
 
 GQ, GZ, GL, GT = "Quick setup", "Stack zones (estimated)", "Labels and lines", "Tables"
 COLOR_MODES = ["Kind of level", "Tab", "Above / below price"]
+# What is drawn. Clean / Minimal declutter: levels inside a stack zone fold into the zone (hover its label for what is inside),
+# and only KEY kinds (the "Key" box on each kind's row: flips, walls, your levels...) always keep their line.
+VIEWS = ["Zones + every line", "Clean: zones + key lines + lone levels", "Minimal: zones + key lines only", "Every line, no zones"]
+BG_MODES = ["Auto", "Light (white)", "Dark"]
 
 # Every setting that is not per tab or per kind, in the order it appears in TradingView. default None = worked out from the data.
 SETTINGS = [
@@ -47,6 +51,13 @@ SETTINGS = [
      "tip": "Lines, labels and the estimated stack zones (shaded areas where several levels pile up) can each be switched off here."},
     {"var": "showTable", "type": "bool", "default": True, "title": "Info table", "group": GQ, "inline": "q2"},
     {"var": "showLegend", "type": "bool", "default": True, "title": "Legend", "group": GQ, "inline": "q2"},
+    {"var": "viewMode", "type": "string", "default": VIEWS[0], "title": "View", "group": GQ, "options": VIEWS,
+     "tip": "Zones + every line: everything. Clean: shaded stack zones replace the levels inside them; key levels and levels on their own "
+            "keep their line. Minimal: only the zones and the key levels. Every line, no zones: no stack zones at all. "
+            "Which kinds are key is the Key box on each kind's row."},
+    {"var": "bgMode", "type": "string", "default": "Auto", "title": "Chart background", "group": GQ, "options": BG_MODES,
+     "tip": "Auto reads your chart's background color. On a light (white) background, light colors (yellow, light blue, white...) "
+            "are drawn darker in the same hue so every line, zone and label stays easy to see."},
     {"var": "colorMode", "type": "string", "default": "Kind of level", "title": "Color levels by", "group": GQ, "options": COLOR_MODES,
      "tip": "Kind of level: each kind has its own color (set under each tab). Tab: every level from a tab gets that tab's color. "
             "Above / below price: one color above price, one below (the two colors on the next row)."},
@@ -131,7 +142,7 @@ def _group(g) -> dict:
         g = {"name": g}
     return {"name": g.get("name") or "Levels", "color": _hex(g.get("color")), "style": STYLES.get(g.get("style") or "solid", "Solid"),
             "width": max(1, min(4, int(g.get("width") or 1))), "short": g.get("short") or "", "help": g.get("help") or g.get("name") or "",
-            "on": g.get("on") is not False}
+            "on": g.get("on") is not False, "key": g.get("key") is True}
 
 
 def setting_value(spec: dict, prefs_set: dict | None, auto: dict | None = None):
@@ -187,6 +198,24 @@ def _input(spec: dict, value, group_var: str) -> str:
         parts.append(f"tooltip = {q(spec['tip'], 400)}")
     return f'{spec["var"]} = input.{t}({", ".join(parts)})'
 
+
+# Readable colors on a light chart: on a white background, light colors are drawn darker in the same hue (greys become near black).
+# Shared by every Q DATA indicator; the calling script must have a `bgMode` setting with BG_MODES.
+INK_FUNCS = [
+    'onLight() =>',
+    '    bgMode == "Light (white)" ? true : bgMode == "Dark" ? false : 0.299 * color.r(chart.bg_color) + 0.587 * color.g(chart.bg_color) + 0.114 * color.b(chart.bg_color) > 140', '',
+    'ink(color c) =>',
+    '    color out = c',
+    '    if onLight()',
+    '        cr = color.r(c)', '        cg = color.g(c)', '        cb = color.b(c)',
+    '        lum = 0.299 * cr + 0.587 * cg + 0.114 * cb',
+    '        if lum > 115',
+    '            if math.max(cr, math.max(cg, cb)) - math.min(cr, math.min(cg, cb)) < 40',
+    '                out := color.rgb(38, 42, 52, color.t(c))',
+    '            else',
+    '                k = 115 / lum',
+    '                out := color.rgb(cr * k, cg * k, cb * k, color.t(c))',
+    '    out', '']
 
 CHUNK = 60          # items per array.from(): keeps every function small
 
@@ -249,6 +278,8 @@ def apply_kind_prefs(g: dict, prefs: dict | None) -> dict:
     out = dict(g)
     if isinstance(k.get("on"), bool):
         out["on"] = k["on"]
+    if isinstance(k.get("key"), bool):
+        out["key"] = k["key"]
     if k.get("color"):
         out["color"] = _hex(k["color"], g["color"])
     if k.get("style") in STYLES:
@@ -343,7 +374,8 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
             o += [f'g{gi} = input.bool({"true" if g["on"] else "false"}, {q(g["name"], 50)}, group = grp{si}, inline = "k{gi}")',
                   f'c{gi} = input.color({g["color"]}, "", group = grp{si}, inline = "k{gi}")',
                   f's{gi} = input.string({q(g["style"])}, "", options = ["Solid", "Dashed", "Dotted"], group = grp{si}, inline = "k{gi}")',
-                  f'w{gi} = input.int({g["width"]}, "", minval = 1, maxval = 6, group = grp{si}, inline = "k{gi}", tooltip = {q(g["help"], 300)})']
+                  f'w{gi} = input.int({g["width"]}, "", minval = 1, maxval = 6, group = grp{si}, inline = "k{gi}")',
+                  f'kk{gi} = input.bool({"true" if g.get("key") else "false"}, "Key", group = grp{si}, inline = "k{gi}", tooltip = {q(g["help"] + " Key: in the Clean and Minimal views this kind always keeps its line, even inside a stack zone.", 400)})']
         if cone and si == sess:
             o.append(f'showCone = input.bool(true, "Expected-move cone from the 9:30 open", group = grp{si}, inline = "cone", '
                      f'tooltip = "+/-1 and +/-2 times the day expected move from the 9:30 open, widening through the session. About 2 days in 3 stay inside +/-1.")')
@@ -361,14 +393,17 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
     o += _set_arr("kCol", "color", [f"c{i}" for i in range(ng)])
     o += _set_arr("kSty", "string", [f"s{i}" for i in range(ng)])
     o += _set_arr("kW", "int", [f"w{i}" for i in range(ng)])
+    o += _set_arr("kKey", "bool", [f"kk{i}" for i in range(ng)])
     o += ['',
           'tabOn(int t) =>', '    t == -1 ? true : t < 0 or t >= array.size(tOn) ? false : array.get(tOn, t)', '',
           'groupOn(int g) =>', '    g >= 0 and g < array.size(kOn) ? array.get(kOn, g) : false', '',
-          'kindColor(int g) =>', '    g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray', '',
-          'tabColor(int t) =>', '    t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray', '',
+          'isKey(int g) =>', '    g >= 0 and g < array.size(kKey) ? array.get(kKey, g) : false', '',
+          ] + INK_FUNCS + [
+          'kindColor(int g) =>', '    ink(g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray)', '',
+          'tabColor(int t) =>', '    ink(t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray)', '',
           '// the color a level is drawn in, following "Color levels by"',
           'levelColor(int g, int t, float p) =>',
-          '    colorMode == "Tab" ? tabColor(t) : colorMode == "Above / below price" ? (p > close ? colUp : colDn) : kindColor(g)', '',
+          '    colorMode == "Tab" ? tabColor(t) : colorMode == "Above / below price" ? ink(p > close ? colUp : colDn) : kindColor(g)', '',
           'styleName(int g) =>', '    g >= 0 and g < array.size(kSty) ? array.get(kSty, g) : "Solid"', '',
           'widthOf(int g) =>', '    g >= 0 and g < array.size(kW) ? array.get(kW, g) : 1', '',
           'lineStyle(string nm) =>', '    nm == "Dashed" ? line.style_dashed : nm == "Dotted" ? line.style_dotted : line.style_solid', '',
@@ -446,7 +481,7 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '                zl = lo + offsetPts - zPad', '                zh = hi + offsetPts + zPad',
           '                heavy = cnt >= zHeavy',
           '                above = (zl + zh) / 2 > close',
-          '                zc = zColorMode == "Strength" ? (heavy ? zColH : zCol) : (above ? zColUp : zColDn)',
+          '                zc = ink(zColorMode == "Strength" ? (heavy ? zColH : zCol) : (above ? zColUp : zColDn))',
           '                array.push(bxs, box.new(startX, zh, endX, zl, xloc = xloc.bar_time, border_color = zBorder ? color.new(zc, 30) : color.new(zc, 100), border_width = heavy ? 2 : 1, bgcolor = color.new(zc, zTransp)))',
           '                array.push(zLos, zl)', '                array.push(zHis, zh)', '                array.push(zNs, cnt)',
           '                if zLabel',
@@ -472,7 +507,9 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '                if pe <= close and (nearDn < 0 or pe > array.get(lvP, math.max(nearDn, 0)) + offsetPts)',
           '                    nearDn := i',
           '    for i = 0 to n - 1',
-          '        if array.get(vis, i) and not (zOnly and array.get(inZone, i))',
+          '        kindI = array.get(lvG, i)',
+          '        folded = (zOnly or viewMode == "Clean: zones + key lines + lone levels") and array.get(inZone, i) and not isKey(kindI)',
+          '        if array.get(vis, i) and not folded and not (viewMode == "Minimal: zones + key lines only" and not isKey(kindI))',
           '            g = array.get(lvG, i)',
           '            p = array.get(lvP, i) + offsetPts',
           '            c = levelColor(g, array.get(lvT, i), p)',
@@ -529,8 +566,8 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '                table.cell(out, 0, row, array.get(tbK, r), text_color = color.new(#aeb7cc, 0), text_size = tsz, text_halign = text.align_left)',
           '                table.cell(out, 1, row, array.get(tbV, r), text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '                row += 1',
-          '        zU = zOn ? "none in range" : "zones off"',
-          '        zD = zOn ? "none in range" : "zones off"',
+          '        zU = zOn and viewMode != "Every line, no zones" ? "none in range" : "zones off"',
+          '        zD = zOn and viewMode != "Every line, no zones" ? "none in range" : "zones off"',
           '        if upI >= 0',
           '            zU := fmtP(array.get(zLos, upI)) + " - " + fmtP(array.get(zHis, upI)) + " (" + str.tostring(array.get(zNs, upI)) + ")"',
           '        if dnI >= 0',
@@ -558,9 +595,9 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '        table.cell(out, 0, 0, "", bgcolor = color.new(#162036, 0))',
           '        table.cell(out, 1, 0, "What the colors mean", text_color = tableTxt, text_size = tsz, bgcolor = color.new(#162036, 0), text_halign = text.align_left)',
           '        if bySide',
-          '            table.cell(out, 0, 1, "  ", bgcolor = colUp, text_size = tsz)',
+          '            table.cell(out, 0, 1, "  ", bgcolor = ink(colUp), text_size = tsz)',
           '            table.cell(out, 1, 1, "Level above price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
-          '            table.cell(out, 0, 2, "  ", bgcolor = colDn, text_size = tsz)',
+          '            table.cell(out, 0, 2, "  ", bgcolor = ink(colDn), text_size = tsz)',
           '            table.cell(out, 1, 2, "Level below price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '        else if array.size(used) > 0',
           '            for k = 0 to array.size(used) - 1',
@@ -568,7 +605,7 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '                mean = byTab ? "" : array.get(gShort, key)',
           '                table.cell(out, 0, k + 1, "  ", bgcolor = byTab ? tabColor(key) : kindColor(key), text_size = tsz)',
           '                table.cell(out, 1, k + 1, (byTab ? array.get(tName, key) : array.get(gName, key)) + (mean != "" ? ": " + mean : ""), text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
-          '        zc0 = zColorMode == "Strength" ? zCol : zColUp',
+          '        zc0 = ink(zColorMode == "Strength" ? zCol : zColUp)',
           '        table.cell(out, 0, rowsN + 1, "  ", bgcolor = color.new(zc0, 40), text_size = tsz)',
           '        table.cell(out, 1, rowsN + 1, zColorMode == "Strength" ? "Shaded: estimated stack zone (heavy color = heavily stacked)" : "Shaded: stack zone (above price / below price colors)", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '    out', '',
@@ -583,7 +620,7 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '    vis = qdVisible(n)',
           '    inZone = array.new<bool>(n, false)',
           '    zLos = array.new<float>()', '    zHis = array.new<float>()', '    zNs = array.new<int>()',
-          '    if zOn',
+          '    if zOn and viewMode != "Every line, no zones"',
           '        qdZones(vis, n, startX, endX, inZone, zLos, zHis, zNs)',
           '    qdLevels(vis, inZone, n, startX, endX)',
           '    if not na(tb)', '        table.delete(tb)',
@@ -598,8 +635,8 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
               f'inCone = t{sess} and showCone and time >= cOpenT and time <= cCloseT',
               'coneFrac = math.max(0.0, math.min(1.0, float(time - cOpenT) / float(cCloseT - cOpenT)))',
               'coneW = coneMove * math.sqrt(coneFrac)',
-              'plot(inCone ? coneOpen + offsetPts + coneW : na, "Cone +1", color = coneC1, style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts - coneW : na, "Cone -1", color = coneC1, style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts + 2 * coneW : na, "Cone +2", color = color.new(coneC2, 40), style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts - 2 * coneW : na, "Cone -2", color = color.new(coneC2, 40), style = plot.style_linebr)']
+              'plot(inCone ? coneOpen + offsetPts + coneW : na, "Cone +1", color = ink(coneC1), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts - coneW : na, "Cone -1", color = ink(coneC1), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts + 2 * coneW : na, "Cone +2", color = color.new(ink(coneC2), 40), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts - 2 * coneW : na, "Cone -2", color = color.new(ink(coneC2), 40), style = plot.style_linebr)']
     return "\n".join(o) + "\n"

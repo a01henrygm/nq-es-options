@@ -663,12 +663,12 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         for x in (j["zones"] if j["selection"]["mode"] != "all" else j["levels"]):
             mp = x.get("mapped")
             if mp and mp.get("mapped") is not None and mp.get("status") != "invalid":
-                rows.append({"label": x["label"], "category": x["category"], "price": mp["mapped"], "start": parse_ts(x.get("first_seen")),
-                             "low": x.get("mapped_low"), "high": x.get("mapped_high")})
+                rows.append({"label": x["label"], "category": x["category"], "price": mp["mapped"], "low": x.get("mapped_low"), "high": x.get("mapped_high"),
+                             "tip": f"{x['label']}. {x.get('method') or ''}".strip(), "importance": x.get("importance")})
                 mapped_used = True
             else:
-                rows.append({"label": x["label"], "category": x["category"], "price": x["value"], "start": parse_ts(x.get("first_seen")),
-                             "low": x.get("low"), "high": x.get("high")})
+                rows.append({"label": x["label"], "category": x["category"], "price": x["value"], "low": x.get("low"), "high": x.get("high"),
+                             "tip": f"{x['label']}. {x.get('method') or ''}".strip(), "importance": x.get("importance")})
         if mapped_used:
             first = next(x for x in (j["zones"] if j["selection"]["mode"] != "all" else j["levels"]) if x.get("mapped"))
             units = f"Levels are ESTIMATED {root} points (converted from {m['underlying']} with a {first['mapped']['method']} method)."
@@ -677,7 +677,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}."
         t0 = parse_ts(m["source_timestamp"])
         return {"code": build_pine(rows, src, units, to_et(t0) if t0 else None), "levels": len(rows), "mapped": mapped_used, "meta": m,
-                "note": "Paste into TradingView's Pine Editor and add to chart. Re-export and re-paste each session. I could not compile Pine from here; if TradingView reports an error, send it to me."}
+                "note": "Paste into TradingView's Pine Editor and add to chart. Re-export and re-paste each session; your TradingView settings stay put. Clean view by default: stack zones replace the levels inside them, key levels keep their line."}
 
     @app.get("/api/export/heatmap-pine")
     def export_heatmap_pine(underlying: str, measure: str = "all", side: str = "total", window: float = Query(0.04, ge=0, le=1),

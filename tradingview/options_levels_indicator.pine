@@ -14,6 +14,9 @@ indicator("Options levels", overlay = true, max_lines_count = 300, max_labels_co
 // First seen example: 2026-10-16 09:50 . The app also writes a line  // @start 2026-10-16 09:40  used for levels without their own time.
 // Lines starting with // are ignored. Do not use commas inside a label.
 // The levels are ESTIMATES from delayed options data. They are context, not signals.
+// DECLUTTER: the "Stack zones" group shades areas where several different kinds of level pile up. In the Clean view (default) the
+// levels inside a zone fold into it (hover the zone label for what is inside); key types (flips, walls, your levels) keep their line.
+// Chart background: Auto reads your chart color; on a white chart light colors are drawn darker so everything stays visible.
 
 const string G_GEN  = "General"
 const string G_FLIP = "Gamma flip"
@@ -112,6 +115,43 @@ showCustom = input.bool(true, "Show", group = G_MINE, inline = "mine")
 cCustom    = input.color(#ffffff, "", group = G_MINE, inline = "mine")
 wCustom    = input.int(2, "Width", minval = 1, maxval = 6, group = G_MINE, inline = "mine")
 sCustom    = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_MINE, inline = "mine")
+
+const string G_ZONE = "Stack zones (declutter)"
+const string G_COLS = "Colors"
+viewMode = input.string("Clean: zones + key lines + lone levels", "View", options = ["Clean: zones + key lines + lone levels", "Minimal: zones + key lines only", "Zones + every line", "Every line, no zones"], tooltip = "Clean: shaded stack zones replace the levels inside them; key types and levels on their own keep their line. Minimal: only the zones and the key types. Zones + every line: everything. Every line, no zones: the old view.", group = G_ZONE)
+keyCats  = input.string("gamma_flip,gex0_flip,gex0_call_wall,gex0_put_wall,gex_call_zone,gex_put_zone,custom", "Key types (always keep their line)", tooltip = "Comma list of level types (the third field of each pasted line). These keep their line even inside a stack zone.", group = G_ZONE)
+zMin     = input.int(3, "Different kinds to make a zone", minval = 2, maxval = 10, group = G_ZONE, inline = "zn")
+zHeavy   = input.int(5, "Heavy at", minval = 2, maxval = 10, group = G_ZONE, inline = "zn", tooltip = "A zone needs at least this many different kinds of level (GEX, OI, volume, move, charm...). At the heavy count it gets the heavy color.")
+zDist    = input.float(0.0, "Join levels within (points, 0 = auto)", minval = 0.0, step = 0.25, tooltip = "Levels this close join one zone. Auto = 0.04% of price: about 10 NQ points, 2.5 ES points.", group = G_ZONE)
+zMaxW    = input.float(0.0, "Widest zone (points, 0 = 4x the join distance)", minval = 0.0, step = 1.0, group = G_ZONE)
+zPad     = input.float(2.0, "Pad each side (points)", minval = 0.0, step = 0.25, group = G_ZONE)
+zCol     = input.color(#2f8bf5, "Stacked", group = G_ZONE, inline = "zc")
+zColH    = input.color(#ff7a2e, "Heavy", group = G_ZONE, inline = "zc")
+zTransp  = input.int(80, "Zone transparency", minval = 0, maxval = 100, group = G_ZONE)
+zLabel   = input.bool(true, "Zone label", group = G_ZONE)
+bgMode   = input.string("Auto", "Chart background", options = ["Auto", "Light (white)", "Dark"], tooltip = "Auto reads your chart background. On a light (white) chart, light colors (yellow, light blue, white...) are drawn darker in the same hue.", group = G_COLS)
+
+onLight() =>
+    bgMode == "Light (white)" ? true : bgMode == "Dark" ? false : 0.299 * color.r(chart.bg_color) + 0.587 * color.g(chart.bg_color) + 0.114 * color.b(chart.bg_color) > 140
+
+// on a light chart, light colors are drawn darker in the same hue (greys become near black)
+ink(color c) =>
+    color out = c
+    if onLight()
+        cr = color.r(c)
+        cg = color.g(c)
+        cb = color.b(c)
+        lum = 0.299 * cr + 0.587 * cg + 0.114 * cb
+        if lum > 115
+            if math.max(cr, math.max(cg, cb)) - math.min(cr, math.min(cg, cb)) < 40
+                out := color.rgb(38, 42, 52, color.t(c))
+            else
+                k = 115 / lum
+                out := color.rgb(cr * k, cg * k, cb * k, color.t(c))
+    out
+
+isKeyCat(string cat) =>
+    str.contains("," + str.replace_all(keyCats, " ", "") + ",", "," + cat + ",")
 
 // which settings group a level type belongs to
 famOf(string cat) =>
@@ -341,15 +381,76 @@ if barstate.islast
                     lim = maxFor(fam) == 0 ? cnt : math.min(maxFor(fam), cnt)
                     for k = 0 to lim - 1
                         array.set(keep, array.get(idx, array.get(ord, k)), true)
+        // stack zones: chain the kept levels that sit close together; a chain with enough different kinds becomes a shaded zone
+        inZone = array.new<bool>(n, false)
+        zonesOn = viewMode != "Every line, no zones"
+        if zonesOn
+            vi = array.new<int>()
+            vp = array.new<float>()
+            for i = 0 to n - 1
+                if array.get(keep, i)
+                    array.push(vi, i)
+                    array.push(vp, array.get(prices, i))
+            m = array.size(vi)
+            if m > 0
+                ord = array.sort_indices(vp, order.ascending)
+                joinD = zDist > 0 ? zDist : close * 0.0004
+                maxW = zMaxW > 0 ? zMaxW : joinD * 4
+                cid = array.new<int>(m, 0)
+                nc = 0
+                lastP = 0.0
+                firstP = 0.0
+                for k = 0 to m - 1
+                    pk = array.get(vp, array.get(ord, k))
+                    if k == 0
+                        firstP := pk
+                    else if pk - lastP > joinD or pk - firstP > maxW
+                        nc += 1
+                        firstP := pk
+                    array.set(cid, k, nc)
+                    lastP := pk
+                for z = 0 to nc
+                    seen = array.new<string>()
+                    zNames = array.new<string>()
+                    lo = 1e12
+                    hi = -1e12
+                    for k = 0 to m - 1
+                        if array.get(cid, k) == z
+                            ii = array.get(vi, array.get(ord, k))
+                            pz = array.get(prices, ii)
+                            lo := math.min(lo, pz)
+                            hi := math.max(hi, pz)
+                            if not array.includes(seen, array.get(fams, ii))
+                                array.push(seen, array.get(fams, ii))
+                            if array.size(zNames) < 12
+                                array.push(zNames, array.get(names, ii))
+                    cnt = array.size(seen)
+                    if cnt >= zMin
+                        for k = 0 to m - 1
+                            if array.get(cid, k) == z
+                                array.set(inZone, array.get(vi, array.get(ord, k)), true)
+                        zl = lo + offsetPts - zPad
+                        zh = hi + offsetPts + zPad
+                        heavy = cnt >= zHeavy
+                        above = (zl + zh) / 2 > close
+                        zc = ink(heavy ? zColH : zCol)
+                        array.push(bxs, box.new(startX, zh, endX, zl, xloc = xloc.bar_time, border_color = color.new(zc, 30), border_width = heavy ? 2 : 1, bgcolor = color.new(zc, zTransp)))
+                        if zLabel
+                            ztxt = (heavy ? "HEAVY STACK " : "STACK ") + str.tostring(cnt) + " kinds" + (above ? " - resistance?" : " - support?")
+                            ztip = "Stack zone " + str.tostring(zl, "#.##") + " to " + str.tostring(zh, "#.##") + ": " + str.tostring(cnt) + " different kinds of level. Inside: " + array.join(zNames, ", ") + ". More separate reasons at one price = more likely price reacts there. An estimate, not a signal."
+                            array.push(lbs, label.new(endX, zh, ztxt, xloc = xloc.bar_time, style = label.style_label_lower_left, color = color.new(zc, 15), textcolor = color.white, size = textSize(), tooltip = ztip))
         for i = 0 to n - 1
-            if array.get(keep, i)
+            cat0 = array.get(cats, i)
+            folded = viewMode == "Clean: zones + key lines + lone levels" and array.get(inZone, i) and not isKeyCat(cat0)
+            hidden = viewMode == "Minimal: zones + key lines only" and not isKeyCat(cat0)
+            if array.get(keep, i) and not folded and not hidden
                 cat = array.get(cats, i)
                 fam = array.get(fams, i)
                 p = array.get(prices, i) + offsetPts
                 ownStart = array.get(starts, i)
                 startI = startMode == "Level time" ? (na(ownStart) ? startX : math.min(ownStart, time)) : startX
                 isMinor = cat == "oi_mid" or cat == "volume_mid" or cat == "oi_by_expiry" or cat == "volume_by_expiry"
-                c = isMinor ? color.new(colorFor(cat), 45) : colorFor(cat)
+                c = isMinor ? color.new(ink(colorFor(cat)), 45) : ink(colorFor(cat))
                 zLow = array.get(lows, i)
                 zHigh = array.get(highs, i)
                 isBand = not na(zLow) and not na(zHigh) and zHigh > zLow

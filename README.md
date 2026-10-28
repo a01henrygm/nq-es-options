@@ -33,6 +33,20 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.21
+- **Key levels indicator rebuilt** (Key levels tab > Pine code, "Q DATA Key Levels"). Same engine as the tab indicators:
+  - **Stack zones are back and on by default.** Clean view: where several different kinds of level pile up, a shaded zone replaces
+    the lines inside it (hover the zone label for what is inside). Flips, walls and your own levels always keep their line.
+    View switch: Clean / Minimal (zones + key lines only) / Zones + every line / Every line, no zones.
+  - A row per kind of level (show, color, style, width, **Key**). Every kind is always listed in the same order, so your
+    TradingView settings survive re-pasting a fresh copy each session.
+  - Only GEX levels and the call/put walls are drawn as shaded bands; everything else stays a single line.
+- **The paste-in "Options levels" indicator** gets the same stack zones and Clean view (new "Stack zones (declutter)" group,
+  with an editable list of key types). New inputs were added at the end, so existing settings stay put.
+- **Readable on a white chart, in every Q DATA indicator** (Key levels, Options levels, every tab indicator, All Tabs, HOD / LOD,
+  heatmap): new "Chart background" setting. Auto reads your chart color; on a light background yellows, light blues, white and
+  other light colors are drawn darker in the same hue, and translucent labels get dark text.
+
 ## New in 1.18.1
 
 - **Checked on Mac and Windows on every release.** The Mac (Apple Silicon and Intel) and Windows builders now run the indicator,

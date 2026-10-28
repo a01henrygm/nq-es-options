@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 import textwrap
 
+from .tab_pine import INK_FUNCS
+
 MEASURE_KEYS = ("oi_change", "volume", "oi", "gex", "charm", "vanna", "dex")
 MODELED = {"gex", "charm", "vanna", "dex"}
 # measure key -> (name in the TradingView settings, short name for labels, Pine array suffix)
@@ -119,6 +121,7 @@ showMk    = input.bool(true, "Colored marker per measure at the current candle",
 mkGap     = input.int(2, "Marker spacing (bars)", minval = 1, maxval = 10, group = G_OTH)
 clusterIn = input.float(0.6, "Group levels closer than (strike widths)", minval = 0.1, maxval = 3.0, step = 0.1, group = G_OTH)
 stackMin  = input.int(3, "Highlight groups with at least this many measures", minval = 2, maxval = 7, group = G_OTH)
+bgMode    = input.string("Auto", "Chart background", options = ["Auto", "Light (white)", "Dark"], group = G_GEN, tooltip = "Auto reads your chart background. On a light (white) chart, light colors are drawn darker in the same hue so the heat, lines and markers stay visible.")
 
 showTbl   = input.bool(true, "Show info table", group = G_TBL)
 tblPos    = input.string("Top right", "Position", options = ["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"], group = G_TBL)
@@ -157,6 +160,7 @@ var string[] ctSum   = array.from(__CT_SUM__)
 
 BODY = '''
 // ================================================================ helpers
+__INK__
 keyOf(string name) =>
     switch name
         "Combined (all measures)" => "combined"
@@ -247,7 +251,7 @@ palette(float t, int pm) =>
         c := grad5(t, #1b2a8a, #00b4d8, #7be32b, #ffb000, #ff1e1e)
     else
         c := grad5(t, #2a2f86, #6a2cb0, #e2506a, #ff9a4c, #fff4b8)
-    c
+    ink(c)
 
 // Gaussian-smoothed heat on an even price grid: each strike spreads its activity to the prices around it.
 smoothField(float[] vals, float lo, float stp, int G, float sig) =>
@@ -483,7 +487,7 @@ if barstate.islast
                 array.push(hpHeat, g >= 0 ? array.get(fAll, g) / allMax * 100.0 : 0.0)
                 array.push(hpText, str.tostring(array.get(hsShare, h) * 100, "#") + "% · " + array.get(hsText, h))
                 if hotZone and showHot
-                    array.push(bxs, box.new(startX, bHi, endX, bLo, xloc = xloc.bar_time, border_color = color.new(hotCol, 40), border_width = 1, border_style = line.style_dotted, bgcolor = color.new(hotCol, 100)))
+                    array.push(bxs, box.new(startX, bHi, endX, bLo, xloc = xloc.bar_time, border_color = color.new(ink(hotCol), 40), border_width = 1, border_style = line.style_dotted, bgcolor = color.new(ink(hotCol), 100)))
     // every measure's levels: each measure's hot spots and activity center, grouped where they land on the same price
     lvP = array.new_float(0)
     lvC = array.new_color(0)
@@ -495,7 +499,7 @@ if barstate.islast
             ok = array.get(mKeys, m)
             if array.get(othOn, m) and array.get(mAvail, m) and (comb or ok != mk)
                 os = sideKey(sideIn, ok)
-                oc = array.get(othCol, m)
+                oc = ink(array.get(othCol, m))
                 if array.size(hsKey) > 0
                     for h = 0 to array.size(hsKey) - 1
                         if array.get(hsKey, h) == ok and array.get(hsSide, h) == os and array.get(hsRank, h) <= othCount
@@ -556,7 +560,7 @@ if barstate.islast
             stacked = nn >= stackMin
             lc = stacked ? stackCol : array.get(clC, c)
             if lvLines and array.size(lns) < 140
-                array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = color.new(lc, stacked ? 25 : 55), width = stacked ? 2 : 1, style = stacked ? line.style_solid : line.style_dashed))
+                array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = color.new(ink(lc), stacked ? 25 : 55), width = stacked ? 2 : 1, style = stacked ? line.style_solid : line.style_dashed))
             if showLbl and not array.get(clUsed, c) and array.size(lbs) < 192
                 array.push(lbs, label.new(lblX, p, str.tostring(p, "#.##") + "  " + (nn >= 2 ? "x" + str.tostring(nn) + "  " : "") + array.get(clT, c), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(#0c1226, stacked ? 0 : 20), textcolor = lc, size = sizeOf(lblSize)))
 
@@ -566,17 +570,17 @@ if barstate.islast
             ht = array.get(hpHeat, j2)
             if math.abs(p - close) / close * 100.0 <= maxDist
                 if hotLine
-                    array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = color.new(hotCol, j2 == 0 ? 15 : 50), width = 1, style = line.style_dotted))
-                array.push(lbs, label.new(endX + barMs, p, "", xloc = xloc.bar_time, style = label.style_circle, color = color.new(hotCol, 0), size = j2 == 0 ? size.small : size.tiny))
+                    array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = color.new(ink(hotCol), j2 == 0 ? 15 : 50), width = 1, style = line.style_dotted))
+                array.push(lbs, label.new(endX + barMs, p, "", xloc = xloc.bar_time, style = label.style_circle, color = color.new(ink(hotCol), 0), size = j2 == 0 ? size.small : size.tiny))
                 if showLbl
-                    array.push(lbs, label.new(lblX, p, "#" + str.tostring(j2 + 1) + "  " + str.tostring(p, "#.##") + "  heat " + str.tostring(ht, "#") + "  " + array.get(hpText, j2) + array.get(hpExtra, j2), xloc = xloc.bar_time, style = label.style_label_left, color = j2 == 0 ? color.new(hotCol, 0) : color.new(#0c1226, 5), textcolor = j2 == 0 ? #1a1206 : hotCol, size = sizeOf(lblSize)))
+                    array.push(lbs, label.new(lblX, p, "#" + str.tostring(j2 + 1) + "  " + str.tostring(p, "#.##") + "  heat " + str.tostring(ht, "#") + "  " + array.get(hpText, j2) + array.get(hpExtra, j2), xloc = xloc.bar_time, style = label.style_label_left, color = j2 == 0 ? color.new(ink(hotCol), 0) : color.new(#0c1226, 5), textcolor = j2 == 0 ? #1a1206 : hotCol, size = sizeOf(lblSize)))
 
     // activity center of the measure the heat shows
     if avail and showCtr and not comb and array.size(ctKey) > 0
         for q = 0 to array.size(ctKey) - 1
             if array.get(ctKey, q) == mk and array.get(ctSide, q) == sd and not na(array.get(ctPrice, q))
                 cp = array.get(ctPrice, q) + offsetPts
-                array.push(lns, line.new(startX, cp, lblX, cp, xloc = xloc.bar_time, color = ctrCol, width = 2, style = line.style_dashed))
+                array.push(lns, line.new(startX, cp, lblX, cp, xloc = xloc.bar_time, color = ink(ctrCol), width = 2, style = line.style_dashed))
                 if showLbl
                     array.push(lbs, label.new(lblX, cp, "Center " + shortOf(mk) + " " + str.tostring(cp, "#.##"), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(ctrCol, 20), textcolor = #0a0f1c, size = sizeOf(lblSize)))
 
@@ -739,4 +743,4 @@ def build_heatmap_pine(strikes: list, measures: dict, source: str, units: str, w
     out = HEADER
     for k, v in rep.items():
         out = out.replace(k, v)
-    return out + BODY
+    return out + BODY.replace("__INK__", "\n".join(INK_FUNCS))

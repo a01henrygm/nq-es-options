@@ -156,7 +156,7 @@ def test_previous_day_open_interest_feeds_heatmap_and_levels():
     used = q["selection"]["used"]
     assert used["new"] == 1 and used["charm"] <= 1 and used["vanna"] <= 1 and used["dex"] <= 1 and used["charm"] + used["vanna"] + used["dex"] >= 1
     txt = c.get("/api/export/pine", params={"underlying": "_NDX", "quota": "gex:2,charm:1,new:1"}).json()["code"]
-    assert "new_call_zone" in txt and "showFlows" in txt
+    assert '"New call positions"' in txt and '"Charm: dealers sell"' in txt
 
 
 def test_collector_keeps_per_contract_open_interest_per_day():

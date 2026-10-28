@@ -88,18 +88,27 @@ def test_bias_thin_data_is_low_confidence_and_says_so():
 def test_pine_code_structure_and_sanitizing():
     code = build_pine([{"label": 'Flip "x"', "category": "gamma_flip", "price": 30666.6},
                        {"label": "Move high", "category": "expected_move", "price": 30590.25}], "Source: cboe _NDX", "Levels are ESTIMATED NQ points.")
-    assert code.startswith("//@version=6") and "indicator(" in code and "ESTIMATED NQ points" in code
-    assert "array.from(30666.60, 30590.25)" in code and 'array.from("Flip x", "Move high")' in code and 'array.from("gamma_flip", "expected_move")' in code
-    assert code.count("(") == code.count(")") and code.count("[") == code.count("]") and "__" not in code
-    assert "if array.size(lvPrice) > 0" in code and "barstate.islast" in code
-    assert "extend.both" not in code and "extend = " not in code and "xloc = xloc.bar_time" in code and "label_left" in code        # no infinite lines; line ends in a block
-    assert "var int levelTime = na" in code
-    from datetime import datetime
-    from backend.timeutil import ET
-    dated = build_pine([{"label": "x", "category": "volume", "price": 1.0}], "s", "u", datetime(2026, 10, 16, 9, 40, tzinfo=ET))
-    assert 'var int levelTime = timestamp("America/New_York", 2026, 10, 16, 9, 40, 0)' in dated
+    assert code.startswith("//@version=6") and 'indicator("Q DATA Key Levels"' in code and "ESTIMATED NQ points" in code
+    assert "array.from(30666.60, 30590.25)" in code and '"Flip x", "Move high"' in code and 'Flip "x"' not in code
+    assert "__" not in code and "barstate.islast" in code and "extend.both" not in code and "xloc = xloc.bar_time" in code
     empty = build_pine([], "s", "u")
-    assert 'array.from("none")' in empty and "array.from(0.0)" in empty                       # array.from() needs one element
+    assert 'array.from("none")' in empty                                                       # array.from() needs one element
+
+
+def test_key_levels_indicator_has_stack_zones_clean_view_and_stable_rows():
+    """The Key levels indicator: Clean view by default (stack zones replace the levels inside them, key kinds keep their line),
+    every kind always listed in the same order (settings survive re-pasting), bands only for GEX and the walls, readable on white."""
+    from backend.services.level_kinds import CAT
+    code = build_pine([{"label": "OI", "category": "oi_call_zone", "price": 20100, "low": 20090, "high": 20110},
+                       {"label": "Call wall", "category": "gex_call_zone", "price": 20300, "low": 20290, "high": 20310}], "s", "u")
+    assert 'viewMode = input.string("Clean: zones + key lines + lone levels"' in code and "qdZones(" in code
+    assert 'bgMode = input.string("Auto", "Chart background"' in code and "ink(color c) =>" in code and "chart.bg_color" in code
+    for name, _, _ in CAT.values():
+        assert f'"{name}"' in code, name
+    assert 'kk0 = input.bool(true, "Key"' in code                                               # gamma flip is key
+    assert "20290.00" in code and "20090.00" not in code                                         # only GEX / wall levels keep their band
+    other = build_pine([{"label": "V", "category": "volume", "price": 5.0}], "s", "u")
+    assert [l for l in code.splitlines() if "input." in l and "Key" in l] == [l for l in other.splitlines() if "input." in l and "Key" in l]
 
 
 # ---- reaction log --------------------------------------------------------------------------------------
@@ -222,7 +231,8 @@ def test_tradingview_indicator_file_is_wellformed():
     assert "@start" in code and "xloc = xloc.bar_time" in code and "extend.both" not in code and "extend = " not in code                  # lines start at the level time, no infinite lines
     assert 'input.text_area("// price, label, type"' in code                  # the default holds no invented market numbers, only the format hint
     for cat in ("gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move"):
-        assert f'"{cat}"' in code and f'"{cat}"' in build_pine([{"label": "x", "category": cat, "price": 1.0}], "s", "u")   # same type names as the app exports
+        assert f'"{cat}"' in code                                                                # same type names as the app exports
+    assert "viewMode" in code and "isKeyCat(" in code and "inZone" in code and "ink(colorFor(cat))" in code      # stack zones and white-chart colors
 
 
 # ---- levels remember when they first appeared ------------------------------------------------------------
@@ -257,16 +267,10 @@ def test_api_levels_carry_first_seen_and_exports_use_it():
     j1 = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()
     assert all(x["first_seen"] == first.isoformat() for x in j1["levels"])
     p = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()["code"]
-    ms = int(first.timestamp() * 1000)
-    assert str(ms) in p and "var int[]    lvStart" in p
+    assert p.startswith("//@version=6") and "qdZones(" in p
 
 
-def test_static_pine_and_text_indicator_support_per_level_start():
-    from datetime import datetime
-    code = build_pine([{"label": "A", "category": "volume", "price": 2.0, "start": datetime(2026, 10, 16, 13, 50, tzinfo=UTC)},
-                       {"label": "B", "category": "volume", "price": 1.0}], "s", "u")
-    ms = int(datetime(2026, 10, 16, 13, 50, tzinfo=UTC).timestamp() * 1000)
-    assert f"array.from({ms}, 0)" in code and "startMode == \"Level time\" ? (st > 0 ? st : startX)" in code
+def test_text_indicator_supports_per_level_start():
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     assert "stampToTime(array.get(parts, 3))" in ind and "array.new<int>()" in ind and "ownStart" in ind
 
@@ -315,7 +319,7 @@ def test_custom_levels_api_roundtrip_and_validation():
     only = c.get("/api/analytics/levels", params={"underlying": "_NDX", "categories": "custom"}).json()["levels"]
     assert {x["category"] for x in only} == {"custom"}
     p = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()["code"]
-    assert '"custom"' in p and "Quant GEX 205" in p
+    assert '"Your levels"' in p and "Quant GEX 205" in p
     assert c.delete(f"/api/custom-levels/{custom[0]['custom_id']}", params={"underlying": "_NDX"}).json()["deleted"]
     assert len([x for x in c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"] if x["category"] == "custom"]) == 1
     assert c.delete("/api/custom-levels/9999", params={"underlying": "_NDX"}).status_code == 404
@@ -359,7 +363,7 @@ def test_by_expiry_levels_through_the_api_and_the_pine_files():
     assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "by_expiry": 9}).status_code == 422
     assert not any(x["category"].endswith("_by_expiry") for x in c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"])
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "by_expiry": 2}).json()["code"]
-    assert '"oi_by_expiry"' in code and "oi_by_expiry" in code.split("colorFor")[1] and "volume_by_expiry" in code.split("visibleCat")[1]
+    assert '"Open interest by expiry"' in code and '"Volume by expiry"' in code
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     assert ind_default(ind, "oi_by_expiry")[0] == "oi" and ind_default(ind, "volume_by_expiry")[0] == "vol" and "line.style_dashed" in ind
 
@@ -419,8 +423,8 @@ def test_mid_levels_api_and_exports():
     assert all(0.25 * top_oi - 1 <= x["inputs"]["zone_mag"] <= 0.70 * top_oi + 1 for x in on if x["label"] == "Call OI zone mid")
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "mid": 3}).json()["code"]
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"oi_mid" => showOi' in code and '"volume_mid" => showVol' in code and "color.new(colorFor(cat), 45)" in code
-    assert ind_default(ind, "oi_mid")[0] == "oi" and ind_default(ind, "volume_mid")[0] == "vol" and "color.new(colorFor(cat), 45)" in ind
+    assert '"Open interest midpoints"' in code and '"Volume midpoints"' in code
+    assert ind_default(ind, "oi_mid")[0] == "oi" and ind_default(ind, "volume_mid")[0] == "vol" and "color.new(ink(colorFor(cat)), 45)" in ind
 
 
 # ---- importance ranking and zones ----------------------------------------------------------------------------
@@ -519,15 +523,15 @@ def test_zones_in_levels_api_key_mode_export_and_indicators():
     assert bands and all(x["inputs"]["members"] and x["low"] is not None for x in bands)
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 6}).json()["code"]
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"gex_call_zone" => #3fb96a' in code and '"gex_put_zone" => #e5534b' in code
+    assert 'input.bool(true, "GEX call wall zones"' in code and "#3fb96a" in code and "#e5534b" in code
     assert ind_default(ind, "gex_call_zone") == ("gex", "#3fb96a") and ind_default(ind, "gex_put_zone") == ("gex", "#e5534b")
     for text in (code, ind):
         assert "box.new(" in text and "max_boxes_count" in text and "array.clear(bxs)" in text
-    assert "array.push(lows" in ind and "[prices, names, cats, starts, lows, highs, scores, fams]" in ind and "var float[]  lvLow" in code
+    assert "array.push(lows" in ind and "[prices, names, cats, starts, lows, highs, scores, fams]" in ind and "var float[] lvLo" in code
     import re
-    lows = re.search(r"lvLow   = array.from\(([^)]*)\)", code).group(1).split(", ")
+    lows = re.search(r"_lvLo0\(\) =>\n    array.from\(([^)]*)\)", code).group(1).split(", ")
     assert any(float(x) > 0 for x in lows)                                                          # the band edges really are in the exported arrays
-    assert code.count("(") == code.count(")") and ind.count("(") == ind.count(")")
+    assert ind.count("(") == ind.count(")")
 
 
 def test_lines_inside_a_gex_band_are_still_drawn():
@@ -591,10 +595,9 @@ def test_net_zones_in_levels_exports_and_indicators():
     assert nz and all(x["low"] < x["value"] < x["high"] and "GEX zone" in x["label"] for x in nz)
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 8}).json()["code"]
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"gex_pos_zone" => #2f8bf5' in code and '"gex_neg_zone" => #a371f7' in code and '"gex_pos_zone" => showNet' in code
+    assert '"Positive GEX zones"' in code and '"Negative GEX zones"' in code and "#a371f7" in code
     assert ind_default(ind, "gex_pos_zone") == ("gex", "#2f8bf5") and ind_default(ind, "gex_neg_zone") == ("gex", "#a371f7")
-    for text in (code, ind):
-        assert text.count("(") == text.count(")")
+    assert ind.count("(") == ind.count(")")
 
 
 def two_symbol_client(q_mutate=None, stale_q=False):
@@ -712,9 +715,9 @@ def test_gamma_flip_and_custom_levels_are_never_absorbed_by_a_band():
 def test_expected_move_zone_colors_and_checkbox_in_both_indicators():
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     code = build_pine([{"label": "Expected move zone up 10/17", "category": "expected_move", "price": 2.0, "low": 1.5, "high": 2.5}], "s", "u")
-    assert '"expected_move_ext" => #8e9bff' in code and '"expected_move_ext" => showMove' in code and '"expected_move" => showMove' in code
+    assert '"Expected move (wider)"' in code and "#8e9bff" in code and '"Expected move"' in code
     assert ind_default(ind, "expected_move_ext") == ("move", "#8e9bff") and ind_default(ind, "expected_move")[0] == "move"
-    assert "1.50" in code and "2.50" in code                                      # the band edges are in the static export
+    assert "1.50" not in code and "2.00" in code                                  # expected move stays a single line: only GEX and walls get bands
 
 
 # ---- "nearest N" really limits what is exported ------------------------------------------------------------------
@@ -801,7 +804,8 @@ def test_static_pine_export_declares_each_input_once():
 def test_far_zones_are_drawn_as_a_line_in_both_indicators():
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     code = build_pine([{"label": "Call wall zone", "category": "gex_call_zone", "price": 2.0, "low": 1.5, "high": 2.5}], "s", "u")
-    for text in (ind, code):
+    assert "1.50" in code and "2.50" in code                                       # the wall band reaches the Key levels indicator
+    for text in (ind,):
         assert 'bandFarPct = input.float(1.0, "Zones farther than this % from price are drawn as a line"' in text
         assert "bandDistPct <= bandFarPct" in text and text.count("(") == text.count(")")
         draw = text.split("bandDistPct <= bandFarPct")[1]

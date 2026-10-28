@@ -20,7 +20,7 @@ Written as conservative Pine v6; it has not been compiled by TradingView from he
 from __future__ import annotations
 import re
 
-from .tab_pine import POS_EXPR, POSITIONS, TAB_COLORS, _arr, _hex, _set_arr, q
+from .tab_pine import BG_MODES, INK_FUNCS, POS_EXPR, POSITIONS, TAB_COLORS, _arr, _hex, _set_arr, q
 
 MAX_CHARS = 30000          # keep the pasted text well under Pine's string limit (40,960 characters)
 TIP_CHARS = 110
@@ -136,6 +136,7 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
           'offsetPts  = input.float(0.0, "Add to every level (points)", step = 0.25, group = grpQ, tooltip = "Use this if your chart is a different contract or month, or Q DATA had no NQ/ES price or basis saved.")',
           'hideKinds  = input.string("", "Hide kinds whose name contains", group = grpQ, tooltip = "Comma list, part of a name is enough, for example: midpoints, by expiry, vanna")',
           'warnOld    = input.bool(true, "Warn when the pasted levels are from an earlier day", group = grpQ)',
+          f'bgMode     = input.string("Auto", "Chart background", options = [{", ".join(q(x) for x in BG_MODES)}], group = grpQ, tooltip = "Auto reads your chart background. On a light (white) chart, light colors are drawn darker in the same hue so every line, zone and label is easy to see.")',
           'grpTb = "Tabs"']
     for i, (k, n) in enumerate(tabs):
         o.append(f't{i} = input.bool(true, {q(n, 40)}, group = grpTb, inline = "t{i}", tooltip = "Only tabs you included in Q DATA have levels in the pasted text. Switch a tab off here to hide it without copying again.")'
@@ -256,16 +257,16 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
           '        if fld(a, 0) == "C" and array.size(a) >= 6',
           '            co := num(a, 1)', '            cm := num(a, 2)', '            cy := int(num(a, 3))', '            cmo := int(num(a, 4))', '            cd := int(num(a, 5))',
           '    [co, cm, cy, cmo, cd]', '',
-          '// ---- helpers ----',
+          '// ---- helpers ----'] + INK_FUNCS + [
           'tabOn(int t) =>', '    t >= 0 and t < array.size(tOn) ? array.get(tOn, t) : false', '',
-          'tabColor(int t) =>', '    t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray', '',
-          'kindColor(int g) =>', '    g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray', '',
+          'tabColor(int t) =>', '    ink(t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray)', '',
+          'kindColor(int g) =>', '    ink(g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray)', '',
           'kindHidden(int g) =>', '    g >= 0 and g < array.size(kHide) ? array.get(kHide, g) : false', '',
           'kindStyle(int g) =>', '    sn = g >= 0 and g < array.size(kSty) ? array.get(kSty, g) : "Solid"', '    sn == "Dashed" ? line.style_dashed : sn == "Dotted" ? line.style_dotted : line.style_solid', '',
           'kindWidth(int g) =>', '    g >= 0 and g < array.size(kW) ? array.get(kW, g) : 1', '',
           'kindText(string[] a, int g) =>', '    g >= 0 and g < array.size(a) ? array.get(a, g) : ""', '',
           'levelColor(int g, int t, float p) =>',
-          '    colorMode == "Tab" ? tabColor(t) : colorMode == "Above / below price" ? (p > close ? colUp : colDn) : kindColor(g)', '',
+          '    colorMode == "Tab" ? tabColor(t) : colorMode == "Above / below price" ? ink(p > close ? colUp : colDn) : kindColor(g)', '',
           'sizeOf(string nm) =>', '    nm == "Tiny" ? size.tiny : nm == "Normal" ? size.normal : nm == "Large" ? size.large : size.small', '',
           'fmtP(float p) =>', '    str.tostring(p, priceDec == 0 ? "#,###" : "#,###." + str.repeat("0", priceDec))', '',
           'joinDist() =>', '    zDistMode == "Auto" ? close * 0.0005 : zDistMode == "Points" ? zDist : close * zDist / 100', '',
@@ -331,7 +332,7 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
           '                zl = lo + offsetPts - pad', '                zh = hi + offsetPts + pad',
           '                heavy = cnt >= zHeavy',
           '                above = (zl + zh) / 2 > close',
-          '                zc = zColorMode == "Strength" ? (heavy ? zColH : zCol) : (above ? zColUp : zColDn)',
+          '                zc = ink(zColorMode == "Strength" ? (heavy ? zColH : zCol) : (above ? zColUp : zColDn))',
           '                array.push(bxs, box.new(startX, zh, endX, zl, xloc = xloc.bar_time, border_color = zBorder ? color.new(zc, 30) : color.new(zc, 100), border_width = heavy ? 2 : 1, bgcolor = color.new(zc, zTransp)))',
           '                array.push(zLos, zl)', '                array.push(zHis, zh)', '                array.push(zNs, cnt)',
           '                if zLabel and showLabels',
@@ -477,9 +478,9 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
           '        table.cell(out, 0, 0, "", bgcolor = color.new(#162036, 0))',
           '        table.cell(out, 1, 0, "What the colors mean", text_color = tableTxt, text_size = tsz, bgcolor = color.new(#162036, 0), text_halign = text.align_left)',
           '        if bySide',
-          '            table.cell(out, 0, 1, "  ", bgcolor = colUp, text_size = tsz)',
+          '            table.cell(out, 0, 1, "  ", bgcolor = ink(colUp), text_size = tsz)',
           '            table.cell(out, 1, 1, "Level above price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
-          '            table.cell(out, 0, 2, "  ", bgcolor = colDn, text_size = tsz)',
+          '            table.cell(out, 0, 2, "  ", bgcolor = ink(colDn), text_size = tsz)',
           '            table.cell(out, 1, 2, "Level below price", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '        else if rowsN > 0',
           '            for k = 0 to rowsN - 1',
@@ -487,7 +488,7 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
           '                mean = byTab ? "" : kindText(kShort, key)',
           '                table.cell(out, 0, k + 1, "  ", bgcolor = byTab ? tabColor(key) : kindColor(key), text_size = tsz)',
           '                table.cell(out, 1, k + 1, (byTab ? array.get(tName, key) : kindText(kName, key)) + (mean != "" ? ": " + mean : ""), text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
-          '        zc0 = zColorMode == "Strength" ? zCol : zColUp',
+          '        zc0 = ink(zColorMode == "Strength" ? zCol : zColUp)',
           '        table.cell(out, 0, rowsN + 1, "  ", bgcolor = color.new(zc0, 40), text_size = tsz)',
           '        table.cell(out, 1, rowsN + 1, "Shaded: stack zone (where several levels pile up)", text_color = tableTxt, text_size = tsz, text_halign = text.align_left)',
           '    out', '',
@@ -535,8 +536,8 @@ def build_paste_script(tabs: list, session_tab: str = "session", default_on: tup
               f'inCone = hasCone and t{sess} and showCone and time >= cOpenT and time <= cCloseT',
               'coneFrac = math.max(0.0, math.min(1.0, float(time - cOpenT) / float(cCloseT - cOpenT)))',
               'coneW = hasCone ? coneMove * math.sqrt(coneFrac) : 0.0',
-              'plot(inCone ? coneOpen + offsetPts + coneW : na, "Cone +1", color = coneC1, style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts - coneW : na, "Cone -1", color = coneC1, style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts + 2 * coneW : na, "Cone +2", color = color.new(coneC2, 40), style = plot.style_linebr)',
-              'plot(inCone ? coneOpen + offsetPts - 2 * coneW : na, "Cone -2", color = color.new(coneC2, 40), style = plot.style_linebr)']
+              'plot(inCone ? coneOpen + offsetPts + coneW : na, "Cone +1", color = ink(coneC1), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts - coneW : na, "Cone -1", color = ink(coneC1), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts + 2 * coneW : na, "Cone +2", color = color.new(ink(coneC2), 40), style = plot.style_linebr)',
+              'plot(inCone ? coneOpen + offsetPts - 2 * coneW : na, "Cone -2", color = color.new(ink(coneC2), 40), style = plot.style_linebr)']
     return "\n".join(o) + "\n"
