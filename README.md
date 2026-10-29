@@ -33,6 +33,12 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.24.3
+- **Levels start at:** new last setting in both indicators: when the data first showed it (default), the 9:30 open, the start of chart
+  data, or the last N bars.
+- **Every section shows in Clean.** The nearest-levels limit is now per section (default 3 each side), so charm / vanna, expected move
+  and the rest are never crowded out by open interest and volume. The nearest expiry's straddle and 1 sd lines are always shown.
+
 ## New in 1.24.2
 - **Levels start where the data first showed them, even from before the tracker ran.** The app replays every stored snapshot of
   the day in order (each as of its own time), so a level that formed at 10:30 starts on the 10:30 candle and every move shows as a step.

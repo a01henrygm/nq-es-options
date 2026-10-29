@@ -26,7 +26,7 @@ def _q(s: str) -> str:
 
 
 TEMPLATE = r'''//@version=6
-indicator(__TITLE__, shorttitle = __SHORT__, overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
+indicator(__TITLE__, shorttitle = __SHORT__, overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 5000)
 
 // ---- __NAME__ (paste-in) ----
 // Add this script once. Each session (or when Q DATA alerts that levels changed): in Q DATA open the TradingView tab, click
@@ -38,8 +38,8 @@ indicator(__TITLE__, shorttitle = __SHORT__, overlay = true, max_lines_count = 5
 grpD = "Paste the levels from Q DATA"
 dataTxt = input.text_area("", "Levels", group = grpD, tooltip = "Q DATA > TradingView tab > __COPYBTN__, then paste here and press OK.")
 grpQ = "Quick setup"
-look      = input.string("Clean", "Look", options = ["Clean", "Everything nearby", "Key levels only"], group = grpQ, tooltip = "Clean: the key levels plus the nearest few on each side. Everything nearby: every level within the distance below. Key levels only: __KEYS__.")
-perSide   = input.int(6, "Levels on each side of price (Clean)", minval = 1, maxval = 40, group = grpQ)
+look      = input.string("Clean", "Look", options = ["Clean", "Everything nearby", "Key levels only"], group = grpQ, tooltip = "Clean: the key levels plus the nearest few on each side from every section. Everything nearby: every level within the distance below. Key levels only: __KEYS__.")
+perSide   = input.int(3, "Levels on each side of price, per section (Clean)", minval = 1, maxval = 40, group = grpQ, tooltip = "Clean keeps the key levels plus this many of the nearest levels above and below price from EACH section you have on (charm, expected move, open interest...), so one busy section never crowds out the others.")
 zoneNear  = input.float(0.0, "Zones within (points, 0 = auto)", minval = 0.0, step = 1.0, group = grpQ, tooltip = "Levels this close to price are drawn as see-through zones; farther ones are thin lines. Auto: 0.35% of price (about 75 NQ points, 20 ES points).")
 maxPct    = input.float(2.0, "Hide levels farther than (% of price)", minval = 0.1, step = 0.25, group = grpQ)
 showRead  = input.bool(true, "What price should do at each level", group = grpQ, tooltip = "HOLD: should reject (down from above, up from below). BREAK: likely pushes through. CHOP: two-way trade around it. From the gamma regime and dealer gamma at the level. Hover a label for why.")
@@ -58,6 +58,10 @@ histT     = input.int(60, "Faded history transparency", minval = 0, maxval = 100
 hideKinds = input.string("", "Hide kinds whose name contains", group = grpF, tooltip = "Comma list, part of a name is enough, for example: midpoints, 0DTE")
 extBars   = input.int(10, "Run past the last candle (bars)", minval = 0, maxval = 300, group = grpF)
 warnOld   = input.bool(true, "Warn when the pasted levels are from an earlier day", group = grpF)
+// added in 1.24.3 (last, so earlier settings keep their place)
+grpT = "Where levels start"
+startMode = input.string("When the data first showed it", "Levels start at", options = ["When the data first showed it", "9:30 open", "Start of chart data", "Last N bars"], group = grpT, inline = "st", tooltip = "When the data first showed it: each level starts on the candle of the options data time it first appeared, and moves show as faded steps. 9:30 open: every level starts at today's open (the last session's open before 9:30). Start of chart data: from the left edge. Last N bars: the number on the right.")
+startBars = input.int(100, "", minval = 1, maxval = 5000, group = grpT, inline = "st")
 
 __SECTION_ARRAY__
 
@@ -221,6 +225,26 @@ var int firstT = time
 clampT(float t) =>
     int(math.max(float(firstT), math.min(t, float(time))))
 
+var int barsT = time
+barsT := bar_index >= startBars ? time[startBars] : firstT
+
+dataStart() =>
+    startMode == "When the data first showed it"
+
+// where a level's line or zone starts, following "Levels start at"
+startX(float levelStart) =>
+    int out = 0
+    if startMode == "When the data first showed it"
+        out := clampT(levelStart)
+    else if startMode == "9:30 open"
+        op = timestamp("America/New_York", year(time, "America/New_York"), month(time, "America/New_York"), dayofmonth(time, "America/New_York"), 9, 30, 0)
+        out := clampT(float(op > time ? op - 86400000 : op))
+    else if startMode == "Start of chart data"
+        out := firstT
+    else
+        out := barsT
+    out
+
 // a current level passes the switches and the distance filter
 visibleAt(int i) =>
     g = array.get(lvG, i)
@@ -242,8 +266,9 @@ qdPick(int n) =>
             else if look == "Clean"
                 pi = array.get(lvP, i) + offsetPts
                 closer = 0
+                si = kindOf(g, 0)
                 for j = 0 to n - 1
-                    if j != i and array.get(vis, j) and not kindKey(array.get(lvG, j))
+                    if j != i and array.get(vis, j) and not kindKey(array.get(lvG, j)) and kindOf(array.get(lvG, j), 0) == si
                         pj = array.get(lvP, j) + offsetPts
                         if (pj > close) == (pi > close) and math.abs(pj - close) < math.abs(pi - close)
                             closer += 1
@@ -260,7 +285,7 @@ qdDraw(int n, bool[] pick, int endX) =>
     labTip = array.new<string>()
     drawn = 0
     // faded history first, so current levels sit on top
-    if showHist
+    if showHist and dataStart()
         for i = 0 to n - 1
             e = array.get(lvE, i)
             g = array.get(lvG, i)
@@ -273,7 +298,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             g = array.get(lvG, i)
             c = kindColor(g)
             p = array.get(lvP, i) + offsetPts
-            x1 = clampT(array.get(lvS, i))
+            x1 = startX(array.get(lvS, i))
             lo = array.get(lvLo, i)
             hi = array.get(lvHi, i)
             band = hi > lo and lo > 0
@@ -287,7 +312,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             else
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 5 : 15), width = kindOf(g, 1), style = kindStyle(g)))
             pv = array.get(lvPv, i)
-            if showHist and pv > 0
+            if showHist and dataStart() and pv > 0
                 array.push(lns, line.new(x1, pv + offsetPts, x1, p, xloc = xloc.bar_time, color = color.new(c, histT), width = 1, style = line.style_dotted))
             drawn += 1
             nm = array.get(lvN, i)

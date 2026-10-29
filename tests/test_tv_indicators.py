@@ -126,3 +126,23 @@ def test_the_script_reads_every_field_where_the_text_puts_it():
     assert len(k) >= 8 and k[6] == "1" and k[7] == "1"                        # section 1 (Walls), key
     assert len(l) >= 10 and l[4] == "0" and l[5] == "1000" and l[9] == "Call wall"
     assert len("|".join(l[:10]).split("|")) >= 10                              # still readable when the hover text is dropped
+
+
+def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
+    for ind in ("gex", "lv"):
+        code = build_script(ind)
+        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        assert inputs[-2].startswith("startMode = input.string(\"When the data first showed it\"") and inputs[-1].startswith("startBars")
+        for opt in ("9:30 open", "Start of chart data", "Last N bars"):
+            assert f'"{opt}"' in code
+        assert "x1 = startX(array.get(lvS, i))" in code and "showHist and dataStart()" in code and "max_bars_back = 5000" in code
+
+
+def test_clean_view_keeps_every_section_and_the_expected_move():
+    code = build_script("lv")
+    assert "kindOf(array.get(lvG, j), 0) == si" in code and 'perSide   = input.int(3, "Levels on each side of price, per section' in code
+    assert tv.is_key("Straddle (nearest expiry)") and tv.is_key("1 sd (nearest expiry)") and not tv.is_key("2 sd (later expiries)")
+    c, db, now = simulated_day()
+    l = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "lv"}).json()
+    secs = {k["sec"] for k in l["kinds"]}
+    assert {2, 3} <= secs                                                       # expected move and charm / vanna are in the pasted levels

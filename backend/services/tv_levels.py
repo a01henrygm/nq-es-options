@@ -47,7 +47,8 @@ WHITE = [
     ("long entries", "#15803d"), ("short entries", "#b91c1c"), ("stops", "#64748b"), ("targets", "#2563eb"), ("stay away", "#ca8a04"),
     ("typical day +/-2", "#9333ea"), ("typical day", "#7c3aed"), ("playbook", "#0f766e"), ("monte carlo high", "#15803d"), ("monte carlo low", "#b91c1c"),
 ]
-KEY_KINDS = ("gamma flip", "0dte flip", "call wall", "put wall", "of day so far", "long entries", "short entries", "stacked areas", "projected hod", "projected lod")
+KEY_KINDS = ("gamma flip", "0dte flip", "call wall", "put wall", "of day so far", "long entries", "short entries", "stacked areas", "projected hod", "projected lod",
+             "straddle (nearest expiry)", "1 sd (nearest expiry)")
 LIVE_KINDS = ("so far", "projected", "monte carlo", "ladder", "typical day", "9:30 open", "straddle", "1 sd", "2 sd", "playbook", "expected move")
 STY = {"solid": "S", "dashed": "D", "dotted": "O"}
 
