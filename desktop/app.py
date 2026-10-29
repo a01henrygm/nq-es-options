@@ -533,8 +533,8 @@ def main(argv=None):
                 extra["copy"] = bool(r.get("ok")) and (got is None or got == probe)
                 r = httpx.post(f"{url}/api/desktop/save-file", json={"name": "qdata_smoke.pine", "text": "//@version=6"}, timeout=10).json()
                 extra["save"] = bool(r.get("ok")) and Path(r["path"]).read_text() == "//@version=6"
-                r = httpx.get(f"{url}/api/export/tab-pine/tabs", timeout=10)
-                extra["indicators"] = r.status_code == 200 and len(r.json()["tabs"]) >= 14
+                codes = [httpx.get(f"{url}/api/tv/script", params={"ind": ind}, timeout=10) for ind in ("gex", "lv")]
+                extra["indicators"] = all(r.status_code == 200 and r.json()["code"].startswith("//@version=6") for r in codes)
             except Exception as e:
                 extra["error"] = str(e)[:200]
             if os.environ.get("QDATA_SMOKE_STRICT") and not all(extra.get(k) for k in ("copy", "save", "indicators")):
