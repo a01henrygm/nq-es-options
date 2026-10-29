@@ -21,7 +21,6 @@ from .services import flows as fl
 from .services import gameplan as gp
 from .services import stack as sk
 from .services import quant as qt
-from .services.hodlod_pine import build_hodlod_pine
 from .services.mapping import FUTURES_FOR, INDEX_GROUP
 from .timeutil import ET, iso, parse_ts, to_et
 
@@ -212,27 +211,6 @@ def register(app, h):
         return {"meta": c["m"], "data": {"playbook": pb, "mean_reversion": mr, "monte_carlo": mc, "pca": pc, "open": c["open"], "open_note": c["open_note"],
                                          "sigma_open": c["sig_open"], "sigma_remaining": c["sig_rem"], "minutes_left": c["mins_left"], "futures_root": c["root"],
                                          "ratio": c["ratio"], "model_used": "pull" if hl else "walk", "stop_index": stop_idx}}
-
-    @app.get("/api/export/hodlod-pine")
-    def export_hodlod_pine(underlying: str, convention: str = "standard"):
-        """The HOD / LOD indicator: options inputs baked in, everything price-based computed live on the chart."""
-        if convention not in an.SIGNS:
-            raise HTTPException(422, "invalid convention")
-        u = h.underlying_ok(underlying)
-        c, data = hodlod_data(u, convention)
-        snap, m, z, pb = c["snap"], c["m"], c["z"], data["playbook"]
-        sig_pct = (c["sig_open"] / snap.spot) if c["sig_open"] else 0.0
-        to_chart = (lambda v: fut(c, v)) if c["spot_f"] is not None else (lambda v: v)
-        units = (f"Walls and flip are ESTIMATED {c['root']} points (converted from {m['underlying']})." if c["spot_f"] is not None
-                 else f"Walls and flip are in {m['underlying']} units (no {c['root'] or 'futures'} price or basis saved). Use the offset setting.")
-        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}."
-        flips = [{"t": parse_ts(f["t"]), "to": f["to"]} for f in pb["flips"]]
-        code = build_hodlod_pine(sigma_pct=sig_pct, state=pb["state"], call_wall=to_chart(z.get("call_wall")) if z.get("available") else None,
-                                 put_wall=to_chart(z.get("put_wall")) if z.get("available") else None, flip=to_chart(z.get("flip")) if z.get("available") else None,
-                                 flips=flips, source=src, units=units, made_at=to_et(c["now"]), day=c["day"], symbol=m["underlying"])
-        return {"code": code, "meta": m, "state": pb["state"], "sigma_pct": sig_pct, "mapped": c["spot_f"] is not None,
-                "note": "Paste into TradingView's Pine Editor and add to chart. It opens in Clean view (open, +/-1 and +/-2 sd, walls, short table); switch View to Full in its settings for everything. Every level is also in the Data Window and in Export chart data without being drawn. The ladder, chances, mean-reversion test, Monte Carlo and ES/NQ split run live "
-                        "on your chart; the expected move, regime and walls are today's values from Q DATA, so re-copy each session."}
 
     @app.get("/api/charts/level-map")
     def level_map(underlying: str, convention: str = "standard", count: int = Query(40, ge=5, le=80)):

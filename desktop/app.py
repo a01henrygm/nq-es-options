@@ -393,6 +393,7 @@ def main(argv=None):
             time.sleep(0.1)
         for c in collectors:
             c.start()
+        getattr(app.state, "start_tv_tracker", lambda: None)()
         log.info("desktop app %s on %s", __version__, url)
 
     # ---- quitting ---------------------------------------------------------------------------------------------------
@@ -446,6 +447,11 @@ def main(argv=None):
     icon = pystray.Icon("nqes", _icon_image(), APP_NAME, menu)
     state["icon"] = icon
     icon.run_detached()
+    try:                                                     # level-change alerts from the TradingView tracker show as tray notifications
+        from backend import notify as _notify
+        _notify.SENDER = lambda title, body: icon.notify(body[:250], title[:60])
+    except Exception:
+        log.exception("could not hook up level alerts")
 
     # ---- window -----------------------------------------------------------------------------------------------------
     from desktop.splash import splash_html

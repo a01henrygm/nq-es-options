@@ -15,7 +15,7 @@ def tab_keys():
 
 def test_every_tab_is_in_exactly_one_group_and_has_a_help_text():
     keys = tab_keys()
-    assert len(keys) == 39 and len(set(keys)) == 39
+    assert len(keys) == 38 and len(set(keys)) == 38
     groups = JS[JS.index("const GROUPS = ["):JS.index("const HELP = {")]
     grouped = re.findall(r'"([a-z]+)"', groups)
     for k in keys:
@@ -51,7 +51,7 @@ def test_text_size_buttons_and_scalable_fonts():
 
 def test_levels_tab_is_grouped_not_a_wall_of_checkboxes():
     block = JS[JS.index("const FAMILIES"):JS.index("const ALLCATS")]
-    assert block.count('"#') >= 6 and "data-fam" in JS and 'data-k="lv-more"' in JS and 'data-k="lv-paste"' in JS
+    assert block.count('"#') >= 6 and "data-fam" in JS and 'data-k="lv-more"' in JS and "data-gotv" in JS
     assert "data-cat=" not in JS
 
 

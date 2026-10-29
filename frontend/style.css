@@ -217,3 +217,11 @@ footer{margin-top:20px;font-size:.8em}
 input.wt { width: 5.5em; text-align: right; }
 
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#162036;color:#e7ecf5;border:1px solid #2a3554;border-radius:8px;padding:10px 16px;z-index:9999;font-size:.92em;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+
+/* TradingView tab and level-change alerts */
+.tvgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.tvgrid .panel { margin: 0; }
+button.big { font-size: calc(15px * var(--z)); padding: 9px 18px; }
+.tvgex, .badge.tvgexb { color: #f59e0b; }
+.toastmsg.tvalert { border-left: 4px solid #f59e0b; max-width: 520px; }
+.toastmsg.tvalert ul li { margin: 2px 0; }

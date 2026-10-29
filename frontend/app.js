@@ -7,10 +7,10 @@ const et = iso => iso ? new Date(iso).toLocaleString("en-US", { timeZone: "Ameri
 const TABS = [["home", "Home"], ["gameplan", "Game plan"], ["levels", "Key levels"], ["bias", "Bias and plan"], ["session", "Session"], ["regime", "Regime"], ["vix", "Volatility (VIX)"], ["earnings", "Earnings"], ["levelmap", "Level map"], ["stackmap", "Stack map"], ["chartread", "Chart read"], ["hodlod", "HOD / LOD"], ["quant", "Quant lab"], ["overview", "All symbols"], ["sheet", "Pre-market sheet"],
   ["chain", "Options chain"], ["gex", "GEX by strike"], ["zerodte", "0DTE GEX"], ["flip", "Gamma flip"], ["flows", "Charm and vanna"], ["oi", "Open interest"], ["volume", "Volume"], ["heatmap", "Activity heatmap"], ["preopen", "Overnight changes"],
   ["iv", "IV by strike"], ["surface", "Vol surface"], ["move", "Expected move"], ["delta", "Delta exposure"], ["journal", "Journal"], ["scorecard", "Scorecard"], ["react", "Level reactions"], ["flow", "Unusual volume"],
-  ["events", "Events"], ["history", "History"], ["replay", "Replay"], ["indicators", "All indicators"], ["tvind", "TradingView indicator"], ["status", "Data status"], ["phone", "Phone access"]];
+  ["events", "Events"], ["history", "History"], ["replay", "Replay"], ["tv", "TradingView"], ["status", "Data status"], ["phone", "Phone access"]];
 const TABICON = { vix: "implied_volatility", earnings: "calendar", replay: "live_charts", home: "home", gameplan: "insights", levels: "key_levels", bias: "insights", session: "live_charts", regime: "market_data", levelmap: "live_charts", stackmap: "tools", chartread: "search", hodlod: "volume", quant: "delta", overview: "watchlist", sheet: "reports", chain: "search", gex: "options_analytics",
   zerodte: "gamma", flip: "logout", flows: "options_flow", oi: "open_interest", volume: "volume", heatmap: "tools", preopen: "news", iv: "implied_volatility", surface: "data_feeds", move: "market_data",
-  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help", tvind: "tools", indicators: "key_levels" };
+  delta: "delta", journal: "account", scorecard: "reports", react: "alerts", flow: "options_flow", events: "calendar", history: "news", status: "settings", phone: "help", tv: "key_levels" };
 const RB = [[128, 0, 255], [47, 139, 245], [27, 224, 214], [127, 233, 122], [255, 211, 77], [255, 122, 46], [255, 0, 0]];
 const RCS = RB.map((c, i) => [i / 6, `rgb(${c})`]);
 function rgbAt(t) { t = Math.max(0, Math.min(1, t)) * 6; const i = Math.min(5, Math.floor(t)), u = t - i; return "rgb(" + RB[i].map((v, j) => Math.round(v + (RB[i + 1][j] - v) * u)).join(",") + ")"; }
@@ -71,10 +71,9 @@ const FAMILIES = [["flip", "Gamma flip", ["gamma_flip"], "#ffc400"], ["gex", "GE
   ["new", "New positions", ["new_call_zone", "new_put_zone"], "#b5e48c"], ["mine", "My levels", ["custom"], "#ffffff"]];
 const ALLCATS = new Set(FAMILIES.flatMap(f => f[2]));
 const GROUPS = [["Today", ["home", "gameplan", "levels", "bias", "session", "regime", "earnings", "levelmap", "stackmap", "chartread", "hodlod", "quant", "overview", "sheet"]], ["Options", ["chain", "gex", "zerodte", "flip", "flows", "oi", "volume", "heatmap", "preopen"]],
-  ["Volatility", ["vix", "iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history", "replay"]], ["App", ["indicators", "tvind", "status", "phone"]]];
+  ["Volatility", ["vix", "iv", "surface", "move", "delta"]], ["Review", ["journal", "scorecard", "react", "flow", "events", "history", "replay"]], ["App", ["tv", "status", "phone"]]];
 const HELP = {
-  indicators: ["Every TradingView indicator Q DATA makes, in one place: the paste-in Key Levels and All Tabs indicators, HOD / LOD, the Activity heatmap and one indicator per tab, each with Copy and Download buttons.", "Paste-in indicators are added once and only their levels are copied each session. The others hold today's levels inside the script, so copy them again each session. Zones are bright but see-through, and the key and GEX levels near price are drawn as zones."],
-  tvind: ["Q DATA All Tabs, the paste-in TradingView indicator: add the script to TradingView once, then each session copy the levels here and paste them into its settings (Levels from Q DATA). Choose which tabs go in and how each kind of level looks.", "It opens in a Clean view: shaded zones where levels pile up and only the key levels as lines (pick which kinds are key here). Colors, styles and widths travel with the levels, so they change as soon as you paste. Everything else is set in TradingView and stays put, because the script never changes."],
+  tv: ["The two TradingView indicators: Q DATA GEX (gamma levels) and Q DATA Levels (everything else). Add each to TradingView once; when levels change Q DATA alerts you, then copy and paste the new levels.", "Each level starts on your chart at the options data time it first appeared, and moves show as faded steps. Zones only near price, and every label says what price should do there. The Level log lists every change with its time."],
   vix: ["The volatility backdrop for NQ and ES from Cboe's VIX family: VIX1D (today), VIX9D, VIX, VIX3M, VIX6M, VXN (the Nasdaq-100's own VIX) and VVIX (how wild VIX itself is). The regime label comes from the shape of the curve: upward-sloping is calm, inverted is stress.", "Typical NQ day is one standard deviation of a day's move priced by VXN (adjusted by today's VIX1D/VIX), in NQ points once a basis is saved: about two days in three stay inside it. Percentiles compare today with the last year. Volatility rising is shown red because fear is rising."],
   earnings: ["When the biggest Nasdaq-100 companies report, how far their options say the stock will move, and what that one stock moves NQ by itself (index weight x implied move x NQ).", "The implied move is the at-the-money straddle of the first expiry after the report. Weights apply the Nasdaq-100 capping rule to market caps and are approximate; type your own and press Save. Nights with several reports are added together. Sympathy moves in related stocks are not counted, so the real move is often bigger."],
   replay: ["Replay any stored session snapshot by snapshot: watch the GEX profile, the call and put walls and the gamma flip move while price travels through them.", "Press Play or drag the slider; arrow keys step one snapshot and the space bar plays and pauses. The table lists every wall move, flip crossing and wall touch; click one to jump there. Built only from what the app stored while it ran, about every 2 minutes."],
@@ -274,24 +273,13 @@ const R = {
         <div class="row"><label>${root} contract<input id="fc" value="${esc((map.roll && map.roll.contract) || "")}" size="8"></label><label>${root} price<input id="fp" size="10" placeholder="e.g. 21500.25"></label>
           <label>Price as of (ET, optional)<input id="fa" size="10" placeholder="HH:MM"></label><button id="fsave">Save ${root} price</button>
           <span class="dim">${esc(S.u)} reference: ${fmt(m.spot, 2)} at ${et(m.spot_timestamp)}. Enter the ${root} price from that same moment.</span></div></div></details>` : ""}
-      <div class="actions"><button class="go" id="ftxt">Copy levels for the indicator</button>${root ? `<button id="fpine">Copy Pine code</button><button id="fpinedl">Download .pine</button><button id="fcopy">Copy ${root} levels as text</button>` : ""}</div>
+      <div class="actions"><button class="go" data-gotv>TradingView indicators</button>${root ? `<button id="fcopy">Copy ${root} levels as text</button>` : ""}</div>
       ${root && map.roll && map.roll.note ? note(map.roll.note, map.roll.status === "expired") : ""}${root && warns.length ? note("Mapping warnings: " + warns.join(" ")) : ""}
       ${root && !map.available ? note(map.note || "No futures price entered yet, so levels are shown in " + S.u + " units only.") : ""}
       <div class="scroll tall"><table><tr><th>Level</th><th>${esc(S.u.replace(/^_/, ""))}</th><th>${root || "Futures"} estimate</th><th>Score</th><th>${keyMode ? "What lines up here" : "Where it comes from"}</th><th>Since (ET)</th><th>Trust</th></tr>${rows || "<tr><td colspan=7>No levels available</td></tr>"}</table></div>
       <p class="hint">${esc(lv.note)} Trust rule: ${esc(lv.meta.reliability_rule)}</p>
       ${d.available ? `<p class="hint">Mapping check on ${d.n} stored pairs: ratio error ${fmt(d.ratio.mae, 2)}, basis error ${fmt(d.basis.mae, 2)} (mean absolute, futures points). Best so far: ${d.best}.</p>` : `<p class="hint">Mapping accuracy: ${esc(d.note || "not measured yet")}</p>`}
-      <details class="adv" data-k="lv-paste" open><summary>Paste into the TradingView indicator (Q DATA Key Levels paste-in)</summary><div class="body">
-        <p class="dim"><b>Once:</b> add the official indicator to TradingView: <button id="indscript">Copy the indicator</button> <button id="indscriptdl">Download .pine</button> then Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Every level is drawn as a <b>zone</b> (Zones group in its settings; switch to Lines there if you want). Only needed again if a Q DATA update says the indicator changed.</p>
-        <p class="dim"><b>Each session:</b> click the box, press ${KEY}+A then ${KEY}+C (or use the button), and paste it into the indicator's <b>Levels (paste from the app)</b> setting. It holds exactly the rows in the table above.</p>
-        <textarea id="indtext" readonly spellcheck="false" style="width:100%;height:230px;font:calc(13px*var(--z)) ui-monospace,Menlo,Consolas,monospace"></textarea>
-        <div class="row"><button class="go" id="indcopy">Copy this text</button><span class="dim" id="indnote"></span></div></div></details>`);
-    { const it = indicatorText(lv, m, root); $("indtext").value = it.text;
-      $("indnote").textContent = `${it.count} levels, ${it.mapped ? "as estimated " + root + " points" : "in " + S.u + " units. Save a basis above to get " + root + " points"}.`;
-      $("indtext").onclick = () => $("indtext").select();
-      $("indcopy").onclick = async () => { $("indtext").select(); try { await copyText(it.text); $("indcopy").textContent = "Copied"; } catch (e) { document.execCommand("copy"); $("indcopy").textContent = `Copied (or press ${KEY}+C)`; } }; }
-    { const scr = () => api("/export/levels-script", {}), bad = e => alert("Could not get the indicator: " + (e.msg || e.message));
-      $("indscript").onclick = async ev => { const b = ev.currentTarget; try { const r = await scr(); try { await copyText(r.code); b.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); } } catch (e) { bad(e); } };
-      $("indscriptdl").onclick = async ev => { const b = ev.currentTarget; try { const r = await scr(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { bad(e); } }; }
+`);
     $("lvtop").value = String(S.lvtop); $("lvtop").onchange = () => { S.lvtop = +$("lvtop").value; render(); };
     $("lvkey").value = S.lvq ? "q" + S.lvq : S.lvnear ? "n" + S.lvnear : S.lvkey ? "k" + S.lvkey : "all";
     $("lvkey").onchange = () => { const v = $("lvkey").value; S.lvq = v[0] === "q" ? v.slice(1) : ""; S.lvkey = v[0] === "k" ? +v.slice(1) : 0; S.lvnear = v[0] === "n" ? +v.slice(1) : 0; render(); };
@@ -320,12 +308,7 @@ const R = {
       const txt = `${root} levels (estimates, ${S.u} ${et(m.source_timestamp)})\n` + lines.join("\n");
       try { await copyText(txt); cp.textContent = "Copied"; } catch (e) { prompt("Copy this text:", txt); }
     };
-    const pineGet = async () => api("/export/pine", { underlying: S.u, convention: $("conv").value, method: $("method").value, categories: [...S.cats].join(","), top: S.lvtop, expiration: exps(), by_expiry: S.lvexp, mid: S.lvmid, moves: S.lvmov, ...selParams() });
-    const pc = $("fpine"), pd = $("fpinedl");
-    if (pc) pc.onclick = async () => { try { const r = await pineGet(); try { await copyText(r.code); pc.textContent = `Copied ${r.levels} levels`; } catch (e) { showText("Pine code", r.code); } } catch (e) { alert("Could not build Pine code: " + (e.msg || e.message)); } };
-    if (pd) pd.onclick = async () => { try { const r = await pineGet(); download("options_levels.pine", r.code); pd.textContent = "Downloaded"; } catch (e) { alert("Could not build Pine code: " + (e.msg || e.message)); } };
-    const tx = $("ftxt");
-    if (tx) tx.onclick = async () => { const it = indicatorText(lv, m, root); try { await copyText(it.text); tx.textContent = `Copied ${it.count} levels`; } catch (e) { showText("Levels for the indicator", it.text); } };
+    document.querySelectorAll("[data-gotv]").forEach(b => b.onclick = () => goTab("tv"));
     const sv = $("fsave");
     if (sv) sv.onclick = async () => {
       const t = $("fa").value.trim(); let as_of = null;
@@ -392,13 +375,10 @@ const R = {
       <label>Side<select id="hms"><option value="total">Calls + puts</option><option value="call">Calls only</option><option value="put">Puts only</option>${modeled ? "" : '<option value="net">Calls minus puts</option>'}</select></label>
       <label>Strikes within<select id="hmw"><option value="0.015">1.5% of price</option><option value="0.02">2% of price</option><option value="0.04">4% of price</option><option value="0.08">8% of price</option><option value="0">All strikes</option></select></label>
       <label>Expirations<select id="hmx"><option value="2">Next 2</option><option value="4">Next 4</option><option value="8">Next 8</option><option value="15">Next 15</option><option value="30">Up to 30</option></select></label>
-      <span class="actions"><button class="go" id="hmpine" title="One TradingView indicator with every measure's heat, hot points and activity centers from this page">Copy heatmap indicator</button><button id="hmpinedl">Download .pine</button></span></div>`;
+      <span class="dim">On your chart: Q DATA Levels indicator, Heatmap switch in its settings.</span></div>`;
     const wire = () => { $("hmm").value = S.hma; $("hms").value = modeled && S.hms === "net" ? "total" : S.hms; $("hmw").value = S.hmw; $("hmx").value = S.hmx;
       ["hmm", "hms", "hmw", "hmx"].forEach(id => $(id).onchange = () => { S.hma = $("hmm").value; S.hms = $("hms").value; S.hmw = $("hmw").value; S.hmx = $("hmx").value; render(); });
-      const hp = $("hmpine"), hd = $("hmpinedl"), hget = () => api("/export/heatmap-pine", want);
-      const fail = e => alert("Could not build the heatmap indicator: " + (e.msg || e.message));
-      hp.onclick = async () => { try { const r = await hget(); try { await copyText(r.code); hp.textContent = `Copied (${r.measures.length} measures, ${r.strikes} strikes)`; } catch (e) { showText("Heatmap indicator (Pine)", r.code); } } catch (e) { fail(e); } };
-      hd.onclick = async () => { try { const r = await hget(); download(`qdata_heatmap_${S.u.replace(/^_/, "")}.pine`, r.code); hd.textContent = "Downloaded"; } catch (e) { fail(e); } }; };
+ };
     if (!j.available) { $("view").innerHTML = panel(`Activity heatmap, ${S.u}`, j.meta, ctl + note(j.reason)); wire(); return; }
     const d = j.data, m = j.meta, root = j.futures_root, all = d.measure === "all", fut = v => v == null ? "" : `<i class="fut">${esc(root)} ${fmt(v, 0)}</i>`;
     const px = v => fmt(v, v % 1 ? 2 : 0);
@@ -885,27 +865,7 @@ function showText(title, text) {
     catch (e) { ta.focus(); ta.select(); b.textContent = `Selected: press ${KEY}+C`; }
   };
 }
-// Each tab that has levels gets its own TradingView indicator, named after the tab (built by /api/export/tab-pine).
-const TAB_PINE = { stackmap: "Q DATA Stack Map", levelmap: "Q DATA Level Map", gameplan: "Q DATA Game Plan", bias: "Q DATA Bias and Plan", session: "Q DATA Session",
-  regime: "Q DATA Regime", vix: "Q DATA Volatility (VIX)", quant: "Q DATA Quant Lab", gex: "Q DATA GEX by Strike", zerodte: "Q DATA 0DTE GEX", flip: "Q DATA Gamma Flip",
-  flows: "Q DATA Charm and Vanna", oi: "Q DATA Open Interest", volume: "Q DATA Volume", preopen: "Q DATA Overnight Changes", move: "Q DATA Expected Move", delta: "Q DATA Delta Exposure" };
-function tabPineBar() {
-  const name = TAB_PINE[S.tab], v = $("view");
-  if (!name || !v || !S.u) return;
-  const old = v.querySelector(".tvbar"); if (old) old.remove();
-  const tab = S.tab, bar = document.createElement("div");
-  bar.className = "toolbar tvbar";
-  bar.innerHTML = `<span class="dim">This tab's levels on your TradingView chart as <b>${esc(name)}</b>. Every setting is yours (each kind's color, style and width, labels, tables), it shades estimated stack zones where levels pile up, and hovering a label says why it is there. Re-copy each session. For every tab in one indicator, use the paste-in Q DATA All Tabs (<a href="#" data-gotv>TradingView indicator</a> tab).</span>
-    <span class="actions"><button class="go" data-tp="copy">Copy ${esc(name.replace("Q DATA ", ""))} indicator</button><button data-tp="dl">Download .pine</button><button data-tp="all" title="The levels for the paste-in Q DATA All Tabs indicator: paste them into its settings (Levels from Q DATA)">Copy all-tabs levels</button></span>`;
-  const get = () => tvPost("/export/tab-pine", { tab, underlying: S.u, convention: $("conv") ? $("conv").value : "standard" });      // with the look from the TradingView indicator tab
-  const fail = e => alert(`Could not build ${name}: ` + (e.msg || e.message));
-  bar.querySelector('[data-tp="copy"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); try { await copyText(r.code); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText(`${name} (Pine)`, r.code); } } catch (e) { fail(e); } };
-  bar.querySelector('[data-tp="dl"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await get(); download(r.filename, r.code); b.textContent = "Downloaded"; } catch (e) { fail(e); } };
-  bar.querySelector('[data-tp="all"]').onclick = async ev => { const b = ev.currentTarget; try { const r = await tvLevels(); try { await copyText(r.text); b.textContent = `Copied (${r.levels} levels)`; } catch (e) { showText("Levels for Q DATA All Tabs", r.text); } } catch (e) { alert("Could not build the all-tabs levels: " + (e.msg || e.message)); } };
-  const gotv = bar.querySelector("[data-gotv]");
-  if (gotv) gotv.onclick = e => { e.preventDefault(); S.tab = "tvind"; $("tabs").querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === S.tab)); render(); };
-  v.prepend(bar);
-}
+function goTab(tab) { S.tab = tab; $("tabs").querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === S.tab)); render(); }
 // Copy text to the clipboard. The desktop app's window does not reliably allow the browser clipboard, so the app sets it itself;
 // in a browser it uses the clipboard API, then the older copy command. Throws if nothing worked (callers then show the text to copy by hand).
 async function copyText(text) {
@@ -958,7 +918,7 @@ async function render() {
   if (S.busy) { S.again = true; return; }                  // something changed while a refresh was running: run again right after it
   S.busy = true; $("clock").textContent = "Updating...";
   saveUI();
-  try { await R[S.tab](); tabPineBar(); } catch (e) { showError(e); } finally { S.busy = false; }
+  try { await R[S.tab](); } catch (e) { showError(e); } finally { S.busy = false; }
   if (S.again) { S.again = false; return render(); }
   addHelp(); persistDetails(); eventsBanner();
   $("clock").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });

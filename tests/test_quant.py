@@ -5,7 +5,6 @@ import re
 from datetime import date, datetime, timedelta
 
 from backend.services import quant as qt
-from backend.services.hodlod_pine import build_hodlod_pine
 from backend.timeutil import ET, UTC
 from tests.test_session_features import simulated_day
 
@@ -101,30 +100,10 @@ def test_hodlod_and_quant_endpoints_on_a_simulated_day():
     assert c.get("/api/analytics/quant", params={"underlying": "_NDX", "model": "nope"}).status_code == 422
 
 
-def test_hodlod_indicator_export():
-    c, db, now = simulated_day()
-    r = c.get("/api/export/hodlod-pine", params={"underlying": "_NDX"}).json()
-    code = r["code"]
-    assert code.startswith("//@version=6")
-    assert not re.search(r"__[A-Z]+__", code)                                           # every placeholder filled
-    assert all(ord(ch) < 128 for ch in code) and "\t" not in code                       # plain ASCII, spaces only
-    assert f"_QD_SIG_PCT = {r['sigma_pct']:.6f}" in code and r["sigma_pct"] > 0
-    assert f'_QD_STATE   = "{r["state"]}"' in code and "_QD_Y       = 2026" in code
 
 
-def test_pine_builder_handles_missing_values():
-    code = build_hodlod_pine(0, "weird", None, None, None, [], 'a "quoted" source', "units", datetime(2026, 10, 14, 9, 0, tzinfo=ET), date(2026, 10, 14), "_SPX")
-    assert '_QD_STATE   = "unknown"' in code and "_QD_CALL    = na" in code and "array.from(0)" in code and 'array.from("none")' in code
-    assert '"quoted"' not in code
 
 
-def test_pine_does_not_shadow_the_random_state_and_exports_levels_quietly():
-    import re
-    code = build_hodlod_pine(0.013, "long", 29580.0, 29177.0, 29165.0, [], "src", "units", datetime(2026, 10, 27, 2, 0, tzinfo=ET), date(2026, 10, 26), "_NDX")
-    assert "float[] _st = " in code and not re.search(r"\bfor _st\b", code)     # a loop named _st hid the array f_rnd needs (CE10123)
-    assert 'i_view      = input.string("Clean"' in code
-    plots = re.findall(r'^plot\(.*display = display\.data_window\)$', code, re.M)
-    assert len(plots) == 22 and len(set(re.findall(r'^plot\([^"]*"([^"]+)"', code, re.M))) == 22
 
 
 def test_stay_inside_matches_the_two_barrier_value():

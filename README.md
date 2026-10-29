@@ -33,6 +33,23 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.24
+- **Two TradingView indicators, both paste-in.** **Q DATA GEX** (gamma flips, call / put walls, 0DTE walls, biggest GEX strikes, GEX
+  zones) and **Q DATA Levels** (open interest, volume, expected move, charm / vanna, dealer delta, new positions, HOD / LOD, stack
+  zones, Game plan setups, VIX day, Quant targets, plus the Activity heatmap, off until you switch it on). Add each script once; after
+  that only the levels are copied (TradingView tab > Copy GEX levels / Copy Levels). The old per-tab, All Tabs, Key Levels, HOD / LOD
+  and heatmap indicators are gone.
+- **Levels start when they appeared.** Each level starts on the candle of the options data time it first showed up (not when the
+  delayed data arrived), and when a level moves the old spot stays as a faded dotted line with a step to the new price. Earlier
+  attempts failed because times were stamped on arrival (about 15 minutes late), the tracked list differed from the copied one, a
+  one-strike move counted as the same level, and 1.21 dropped per-level times. All four are fixed.
+- **Clean, white-chart look.** Zones only near price (auto 0.35% of price), thin lines farther out, the key levels plus the nearest few
+  each side, deep colors with soft see-through fills, light label pills with dark text. Every label says what price should do there
+  (HOLD: rejects down / bounces up, BREAK: pushes through, CHOP). Settings cut to a short Quick setup, a What to show list and Fine tuning.
+- **Alerts when levels change.** One desktop notification per data update describing what changed ("0DTE call wall moved 21,400 ->
+  21,450"), with three different sounds: GEX, other important levels, everything else. A banner in the app has Copy GEX / Copy Levels
+  buttons. Choose any change, GEX and important, or GEX only. The **Level log** lists every change with its data time.
+
 ## New in 1.23
 - **All indicators tab.** Every TradingView indicator Q DATA makes, in one place (App > All indicators): the paste-in Key Levels and
   All Tabs indicators (copy the script once, copy the levels each session), plus HOD / LOD, the Activity heatmap and one indicator per

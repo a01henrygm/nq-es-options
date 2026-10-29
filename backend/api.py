@@ -20,8 +20,6 @@ from .services.bias import compute_bias
 from .services.regime import compute_regime
 from .services.importance import RULE as IMPORTANCE_RULE, QUOTA_RULE, make_zones, parse_quota, score_levels, select_by_quota
 from .services.levels import RELIABILITY_RULE, build_levels
-from .services.pine import build_pine
-from .services.heatmap_pine import MEASURE_KEYS as HM_KEYS, MODELED as HM_MODELED, build_heatmap_pine
 from .services import reactions as rx
 from .services.mapping import (FUTURES_FOR, INDEX_GROUP, SAME_SCALE, PricePoint, evaluate_methods, map_level, map_with_typed_basis, pair_observations, roll_status)
 from .timeutil import iso, parse_ts, to_et, utcnow
@@ -652,108 +650,6 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         if not db.delete_custom_level(underlying_ok(underlying), level_id):
             raise HTTPException(404, "No such level")
         return {"deleted": True}
-
-    @app.get("/api/export/pine")
-    def export_pine(underlying: str, convention: str = "standard", method: str = "auto", categories: str | None = None,
-                    top: int = Query(2, ge=1, le=10), expiration: str | None = None, by_expiry: int = Query(0, ge=0, le=8),
-                    mid: int = Query(0, ge=0, le=3), moves: int = Query(0, ge=0, le=8), key: int = Query(0, ge=0, le=25), near: int = Query(0, ge=0, le=60), quota: str | None = None):
-        j = levels_payload(underlying, convention, method, categories, top, expiration, by_expiry, mid, moves, key, near, quota)
-        m, root = j["meta"], j["mapping"].get("futures_root")
-        rows, mapped_used = [], False
-        for x in (j["zones"] if j["selection"]["mode"] != "all" else j["levels"]):
-            mp = x.get("mapped")
-            if mp and mp.get("mapped") is not None and mp.get("status") != "invalid":
-                rows.append({"label": x["label"], "category": x["category"], "price": mp["mapped"], "low": x.get("mapped_low"), "high": x.get("mapped_high"),
-                             "tip": f"{x['label']}. {x.get('method') or ''}".strip(), "importance": x.get("importance")})
-                mapped_used = True
-            else:
-                rows.append({"label": x["label"], "category": x["category"], "price": x["value"], "low": x.get("low"), "high": x.get("high"),
-                             "tip": f"{x['label']}. {x.get('method') or ''}".strip(), "importance": x.get("importance")})
-        if mapped_used:
-            first = next(x for x in (j["zones"] if j["selection"]["mode"] != "all" else j["levels"]) if x.get("mapped"))
-            units = f"Levels are ESTIMATED {root} points (converted from {m['underlying']} with a {first['mapped']['method']} method)."
-        else:
-            units = f"Levels are in {m['underlying']} units (no {root or 'futures'} price or basis typed in yet). Use the offset input in TradingView to add your basis."
-        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}."
-        t0 = parse_ts(m["source_timestamp"])
-        return {"code": build_pine(rows, src, units, to_et(t0) if t0 else None), "levels": len(rows), "mapped": mapped_used, "meta": m,
-                "note": "Paste into TradingView's Pine Editor and add to chart. Re-export and re-paste each session; your TradingView settings stay put. Clean view by default: stack zones replace the levels inside them, key levels keep their line."}
-
-    @app.get("/api/export/levels-script")
-    def export_levels_script():
-        """Q DATA Key Levels (paste-in): the official indicator for the text the Key levels tab copies. It does not depend on the data:
-        add it to TradingView once, then paste fresh levels into its settings each session."""
-        code = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text(encoding="utf-8")
-        return {"code": code, "title": "Q DATA Key Levels (paste-in)", "filename": "qdata_key_levels_paste_in.pine",
-                "note": "Add this to TradingView once (Pine Editor > paste > Save > Add to chart). Then each session paste the levels from the Key levels tab into its Levels setting."}
-
-    @app.get("/api/export/heatmap-pine")
-    def export_heatmap_pine(underlying: str, measure: str = "all", side: str = "total", window: float = Query(0.04, ge=0, le=1),
-                            expiries: int = Query(8, ge=1, le=30), convention: str = "standard", method: str = "auto", hot: int = Query(5, ge=1, le=12),
-                            max_strikes: int = Query(240, ge=10, le=400)):
-        """Everything on the Activity heatmap page as one TradingView indicator: every measure and side, the strike profile,
-        hot spots and activity centers. The indicator opens on the combined heat with every measure's levels drawn on it;
-        a single measure and side can be picked from its own settings."""
-        if (measure not in fl.MEASURES and measure != "all") or side not in fl.SIDES or convention not in an.SIGNS:
-            raise HTTPException(422, f"measure must be all or one of {', '.join(fl.MEASURES)}; side one of {', '.join(fl.SIDES)}")
-        u = underlying_ok(underlying)
-        snap = snapshot(u)
-        m, _, now = meta(snap, {"convention": convention})
-        poi, poi_t = prev_oi_for(u, snap)
-        mapper, mapping = futures_mapper(u, snap, now, method)
-        root = mapping["futures_root"]
-        conv = (lambda v: (lambda r: r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None)(mapper(v))) if mapper else (lambda v: None)
-        spot_f = conv(snap.spot)
-        mapped = spot_f is not None
-        basis = (spot_f - snap.spot) if mapped else 0.0
-        to_chart = (lambda v: None if v is None else (conv(v) if conv(v) is not None else v + basis)) if mapped else (lambda v: v)
-        maps, union = {}, set()
-        for key in HM_KEYS:
-            if key == "oi_change" and not poi:
-                maps[key] = None
-                continue
-            per = {}
-            for sd in fl.SIDES:
-                if sd == "net" and key in HM_MODELED:
-                    continue                            # same as total for the modeled measures
-                per[sd] = fl.activity_map(snap.contracts, snap.spot, now, key, sd, window, expiries, convention, poi if key == "oi_change" else None, hot)
-            maps[key] = per
-            union.update(per["total"]["strikes"])
-        strikes = sorted(union, key=lambda k: abs(k - snap.spot))[:max_strikes]
-        strikes.sort()
-        idx = {k: i for i, k in enumerate(strikes)}
-        fp = lambda k: f"{to_chart(k):,.0f}" if mapped else f"{k:,.0f}"
-        measures = {}
-        for key in HM_KEYS:
-            per = maps[key]
-            if per is None:
-                measures[key] = {"available": False, "note": "Needs the previous session's open interest, stored daily from the next session on."}
-                continue
-            tot = per["total"]
-            call, put = [0.0] * len(strikes), [0.0] * len(strikes)
-            for k, c, p in zip(tot["strikes"], tot["profile_call"], tot["profile_put"]):
-                if k in idx:
-                    call[idx[k]], put[idx[k]] = c, p
-            sides = {}
-            for sd, d in per.items():
-                sides[sd] = {"hot_spots": [{"rank": i + 1, "price": to_chart(h["price"]), "low": to_chart(h["low"]), "high": to_chart(h["high"]),
-                                            "share": h["share"], "meaning": h["meaning"], "value": h["value"], "top_expiry": h["top_expiry"]}
-                                           for i, h in enumerate(d["hot_spots"])],
-                             "center": to_chart(d["center"]), "share_above": d["share_above"], "share_below": d["share_below"],
-                             "summary": fl.summary_line(d, fp)}
-            measures[key] = {"available": True, "note": tot["units"], "call": call, "put": put, "sides": sides}
-        if mapped:
-            units = f"Prices are ESTIMATED {root} points (converted from {m['underlying']} with a {mapping.get('method') or 'saved basis'} method)."
-        else:
-            units = f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved yet). Use the offset setting in TradingView to add your basis."
-        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}."
-        wtxt = f"strikes within {window * 100:g}% of price" if window else "all strikes"
-        t0 = parse_ts(m["source_timestamp"])
-        code = build_heatmap_pine(strikes if not mapped else [to_chart(k) for k in strikes], measures, src, units, wtxt, f"next {expiries}",
-                                  to_et(t0) if t0 else None, measure, side)
-        return {"code": code, "strikes": len(strikes), "measures": [k for k in HM_KEYS if measures[k]["available"]], "mapped": mapped,
-                "futures_root": root, "oi_from": poi_t, "meta": m,
-                "note": "Paste into TradingView's Pine Editor and add to chart. It opens on the combined heat with every measure's levels on it; single measures and sides are in the indicator settings. Re-export each session."}
 
     @app.get("/api/analytics/scenarios")
     def scenario_view(underlying: str):

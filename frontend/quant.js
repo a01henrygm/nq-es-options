@@ -15,16 +15,14 @@ function playbookBanner(pb) {
     ${pb.gamma_at_spot != null ? `<span class="dim">0DTE dealer gamma at price ${big(pb.gamma_at_spot)}.</span>` : ""}</p></div>`;
 }
 
-function pineButtons(idB, idD) {
-  return `<span class="actions"><button class="go" id="${idB}" title="Projected HOD/LOD ladder, live chances, regime playbook, mean-reversion test, Monte Carlo and ES/NQ split on your TradingView chart">Copy HOD/LOD indicator</button><button id="${idD}">Download .pine</button></span>`;
+// These levels go to TradingView through the Q DATA Levels indicator (TradingView tab); the old per-tab indicators are gone.
+function pineButtons(idB) {
+  return `<span class="actions"><button id="${idB}" title="HOD / LOD and Quant levels are in the Q DATA Levels indicator">TradingView indicators</button></span>`;
 }
 
-function wirePine(idB, idD) {
-  const want = { underlying: S.u, convention: $("conv").value }, get = () => api("/export/hodlod-pine", want);
-  const fail = e => alert("Could not build the HOD/LOD indicator: " + (e.msg || e.message));
-  const b = $(idB), d = $(idD);
-  if (b) b.onclick = async () => { try { const r = await get(); try { await copyText(r.code); b.textContent = `Copied (${r.state} gamma, 1 sd ${fmt(r.sigma_pct * 100, 2)}%)`; } catch (e) { showText("HOD/LOD indicator (Pine)", r.code); } } catch (e) { fail(e); } };
-  if (d) d.onclick = async () => { try { const r = await get(); download(`qdata_hodlod_${S.u.replace(/^_/, "")}.pine`, r.code); d.textContent = "Downloaded"; } catch (e) { fail(e); } };
+function wirePine(idB) {
+  const b = $(idB);
+  if (b) b.onclick = () => goTab("tv");
 }
 
 // Every HOD / LOD level as one CSV (opens in Excel or Sheets), so the chart can stay clean.

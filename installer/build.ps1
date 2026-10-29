@@ -14,7 +14,7 @@ UPDATE_REPO = "$Repo"          # owner/repo on GitHub that publishes releases; t
 "@ | Set-Content backend\version.py -Encoding utf8
 
 python -m PyInstaller --noconfirm --clean --windowed --name "NQ-ES Options" --icon assets\icon.ico `
-  --add-data "frontend;frontend" --add-data "tradingview;tradingview" --add-data "assets;assets" --add-data ".env.example;." `
+  --add-data "frontend;frontend" --add-data "assets;assets" --add-data ".env.example;." `
   --collect-submodules uvicorn --collect-data tzdata `
   --hidden-import webview.platforms.edgechromium --hidden-import webview.platforms.winforms --hidden-import pystray._win32 `
   NQES.py

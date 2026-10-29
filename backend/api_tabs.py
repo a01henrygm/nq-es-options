@@ -1,19 +1,18 @@
-"""/api/export/tab-pine: one TradingView indicator per Q DATA tab that has levels, each named after its tab.
+"""Each Q DATA tab's levels (tab_parts), gathered by the level tracker for the two paste-in TradingView indicators (api_tv).
 
 register() is called from api_quant.register with the quant helpers (context, stack_map, level_map, game_plan, quant).
 Prices are converted to the futures contract (NQ / ES) whenever the app can, the same way the Level map and Stack map tabs do.
 """
 from __future__ import annotations
 
-from fastapi import Body, HTTPException
+from fastapi import HTTPException
 
 from .services import analytics as an
 from .services import flows as fl
 from .services import quant as qt
-from .services.tab_pine import CALL_COLOR, CALL_WORD, SETTINGS, STYLES, TAB_COLORS, apply_kind_prefs, build_all_pine, build_tab_pine, setting_value, _group
-from .services.paste_pine import build_levels_text, build_paste_script, is_key_kind
-from .services.level_kinds import CAT, HELP_RULES, help_for  # noqa: F401  (shared with the Key levels indicator)
-from .timeutil import to_et
+CALL_COLOR = {"RESPECT": "#16a34a", "CHOP": "#ca8a04", "DISRESPECT": "#dc2626"}
+CALL_WORD = {"RESPECT": "HOLD", "CHOP": "CHOP", "DISRESPECT": "BREAK"}
+from .services.level_kinds import CAT, help_for
 
 # tab key -> (indicator title, short title, file name part). Only tabs that draw levels.
 TABS = {
@@ -75,10 +74,6 @@ def register(app, h, q):
             if getattr(r, "path", None) == path:
                 return r.endpoint
         raise HTTPException(500, f"missing route {path}")
-
-    @app.get("/api/export/tab-pine/tabs")
-    def tab_pine_tabs():
-        return {"tabs": [{"tab": k, "title": v[0]} for k, v in TABS.items()]}
 
     def tab_parts(tab, u, convention, c):
         """One tab's levels: (groups, levels, table rows, cone, about). Raises HTTPException(409) when the tab has nothing right now."""
@@ -313,175 +308,8 @@ def register(app, h, q):
 
         return groups, levels, table, cone, about
 
-    def head(c):
-        m, root, mapped = c["m"], c["root"], c["spot_f"] is not None
-        units = (f"Prices are ESTIMATED {root} points (converted from {m['underlying']})." if mapped
-                 else f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved). Use the offset setting.")
-        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}."
-        return units, src, ("Symbol", f"{m['underlying']} -> {root} (est.)" if mapped else m["underlying"]), ("Data", f"{m['calculated_at_et']} ({m['data_status']})")
-
-    @app.get("/api/export/tab-pine")
-    def export_tab_pine_get(tab: str, underlying: str, convention: str = "standard"):
-        return export_tab_pine(tab, underlying, convention)
-
-    def export_tab_pine(tab: str, underlying: str, convention: str = "standard", prefs: dict | None = None):
-        """The levels on one tab as a TradingView indicator named after that tab. prefs: the look chosen on the TradingView indicator tab."""
-        if tab not in TABS:
-            raise HTTPException(422, f"tab must be one of {', '.join(TABS)}")
-        if convention not in an.SIGNS:
-            raise HTTPException(422, "invalid convention")
-        u = h.underlying_ok(underlying)
-        c = q.context(u, convention)
-        m, root, mapped = c["m"], c["root"], c["spot_f"] is not None
-        title, short, fname = TABS[tab]
-        groups, levels, table, cone, about = tab_parts(tab, u, convention, c)
-        table = [("Symbol", f"{m['underlying']} -> {root} (est.)" if mapped else m["underlying"])] + table + [("Data", f"{m['calculated_at_et']} ({m['data_status']})")]
-        units = (f"Prices are ESTIMATED {root} points (converted from {m['underlying']})." if mapped
-                 else f"Prices are in {m['underlying']} units (no {root or 'futures'} price or basis saved). Use the offset setting.")
-        src = f"Source: {m['provider']} {m['underlying']}, snapshot {m['calculated_at_et']}, data status: {m['data_status']}, sign scenario {convention}."
-        code = build_tab_pine(title, short, groups, levels, table, src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone, about=about,
-                              zone_pts=zone_pts(c), prefs=clean_prefs(prefs), tab=tab)
-        return {"code": code, "title": title, "tab": tab, "levels": len(levels), "groups": [g["name"] for g in groups], "mapped": mapped, "futures_root": root, "meta": m,
-                "filename": f"qdata_{fname}_{u.lstrip('_')}.pine",
-                "note": f"Paste into TradingView's Pine Editor and add to chart. It shows up as '{title}'. Each kind of level has its own show/hide box in the settings, "
-                        "and hovering a label shows why it is there. The levels are baked in, so re-copy each session."}
-
-    @app.post("/api/export/tab-pine")
-    def export_tab_pine_post(tab: str, underlying: str, convention: str = "standard", body: dict = Body(default={})):
-        return export_tab_pine(tab, underlying, convention, (body or {}).get("prefs"))
-
-    ALL_DEFAULT_ON = ("stackmap", "gameplan", "session", "hodlod")
-
-    @app.get("/api/export/all-pine")
-    def export_all_pine_get(underlying: str, convention: str = "standard", on: str | None = None):
-        return export_all_pine(underlying, convention, on)
-
-    def export_all_pine(underlying: str, convention: str = "standard", on: str | None = None, prefs: dict | None = None):
-        """Every tab's levels in ONE indicator ("Q DATA All Tabs"): an on/off switch and a color per tab, and under it a row per kind of level.
-        on: comma list of tabs switched on when the indicator is first added (default Stack map, Game plan, Session, HOD / LOD).
-        prefs: the look chosen on Q DATA's TradingView indicator tab (see services/tab_pine.py); its tabs_on wins over `on`.
-        Every tab is always in the indicator, even one with no levels right now, so the settings stay in the same places from day
-        to day (TradingView remembers settings by their position in the script)."""
-        if convention not in an.SIGNS:
-            raise HTTPException(422, "invalid convention")
-        u = h.underlying_ok(underlying)
-        c = q.context(u, convention)
-        prefs = clean_prefs(prefs)
-        want_on = set(prefs["tabs_on"]) if isinstance(prefs.get("tabs_on"), list) else set((on or ",".join(ALL_DEFAULT_ON)).split(","))
-        prefs.pop("tabs_on", None)
-        sections, skipped, cone = [], [], None
-        for tab, (title, short, fname) in TABS.items():
-            try:
-                groups, levels, table, cone_, about = tab_parts(tab, u, convention, c)
-            except HTTPException as e:
-                skipped.append({"tab": tab, "title": title, "reason": str(e.detail)})
-                groups, levels, table, cone_, about = [], [], [], None, str(e.detail)
-            cone = cone or cone_
-            sections.append({"tab": tab, "name": title.replace("Q DATA ", ""), "on": tab in want_on, "groups": groups, "levels": levels, "table": table, "about": about})
-        units, src, sym, data = head(c)
-        zp = zone_pts(c)
-        code = build_all_pine(sections, [sym, data], src, units, to_et(c["now"]).strftime("%Y-%m-%d %H:%M ET"), cone, zone_pts=zp, prefs=prefs)
-        kinds = {}
-        for sec in sections:
-            for g in sec["groups"]:
-                k = apply_kind_prefs(_group(g), prefs)
-                d = _group(g)
-                row = kinds.setdefault(k["name"], {"name": k["name"], "on": k["on"], "color": k["color"], "style": k["style"].lower(), "width": k["width"],
-                                                   "default": {"color": d["color"], "style": d["style"].lower(), "width": d["width"]},
-                                                   "short": k["short"], "help": k["help"], "tabs": []})
-                row["tabs"].append(sec["name"])
-        auto = {"maxDistPct": 4.0, "zDist": zp, "zMaxW": zp * 4}
-        settings = [{**x, "value": setting_value(x, prefs.get("set"), auto), "auto": x["default"] is None, "default": x["default"] if x["default"] is not None else auto[x["var"]]}
-                    for x in SETTINGS]
-        return {"code": code, "title": "Q DATA All Tabs",
-                "tabs": [{"tab": x["tab"], "name": x["name"], "levels": len(x["levels"]), "on": x["on"], "kinds": len(x["groups"]),
-                          "color": (prefs.get("tab_colors") or {}).get(x["tab"]) or TAB_COLORS[i % len(TAB_COLORS)], "default_color": TAB_COLORS[i % len(TAB_COLORS)],
-                          "default_on": x["tab"] in ALL_DEFAULT_ON}
-                         for i, x in enumerate(sections)],
-                "kinds": list(kinds.values()), "settings": settings,
-                "skipped": skipped, "levels": sum(len(x["levels"]) for x in sections), "mapped": c["spot_f"] is not None, "meta": c["m"],
-                "filename": f"qdata_all_tabs_{u.lstrip('_')}.pine",
-                "note": "One indicator with every tab. In its settings each tab has an on/off switch and a color, and a row for each kind of level. The levels are baked in, so re-copy each session."}
-
-    @app.post("/api/export/all-pine")
-    def export_all_pine_post(underlying: str, convention: str = "standard", body: dict = Body(default={})):
-        """Same as the GET, with the look from Q DATA's TradingView indicator tab in the body: {"prefs": {...}}."""
-        return export_all_pine(underlying, convention, None, (body or {}).get("prefs"))
-
-    # ---- Q DATA All Tabs as a paste-in indicator: the script once, the levels text each session ----
-    PASTE_DEFAULT_ON = ("stackmap", "gameplan", "session", "hodlod")
-
-    @app.get("/api/export/all-script")
-    def export_all_script():
-        """The paste-in All Tabs script. It does not depend on the data: add it to TradingView once."""
-        code = build_paste_script([(k, v[0].replace("Q DATA ", "")) for k, v in TABS.items()])
-        return {"code": code, "title": "Q DATA All Tabs", "filename": "qdata_all_tabs_paste_in.pine",
-                "note": "Add this to TradingView once (Pine Editor > paste > Save > Add to chart). Then each session paste the levels from Q DATA into its settings."}
-
-    @app.post("/api/export/all-levels")
-    def export_all_levels(underlying: str, convention: str = "standard", body: dict = Body(default={})):
-        """The levels text to paste into the paste-in All Tabs indicator. body: {"prefs": {...}} from the TradingView indicator tab:
-        tabs_on = which tabs go into the text (default Stack map, Game plan, Session, HOD / LOD), kinds = each kind's look
-        (on, color, style, width, key)."""
-        if convention not in an.SIGNS:
-            raise HTTPException(422, "invalid convention")
-        u = h.underlying_ok(underlying)
-        c = q.context(u, convention)
-        prefs = clean_prefs((body or {}).get("prefs"))
-        want = set(prefs["tabs_on"]) if isinstance(prefs.get("tabs_on"), list) else set(PASTE_DEFAULT_ON)
-        sections, skipped, cone, every = [], [], None, []
-        for tab, (title, short, fname) in TABS.items():
-            name = title.replace("Q DATA ", "")
-            try:
-                groups, levels, table, cone_, about = tab_parts(tab, u, convention, c)
-            except HTTPException as e:
-                skipped.append({"tab": tab, "title": title, "reason": str(e.detail)})
-                every.append({"tab": tab, "name": name, "on": tab in want, "levels": 0, "kinds": 0, "reason": str(e.detail), "default_on": tab in PASTE_DEFAULT_ON})
-                continue
-            every.append({"tab": tab, "name": name, "on": tab in want, "levels": len(levels), "kinds": len(groups), "reason": "", "default_on": tab in PASTE_DEFAULT_ON,
-                          "groups": groups})
-            if tab in want:
-                cone = cone or cone_
-                sections.append({"tab": tab, "name": name, "groups": groups, "levels": levels, "table": table})
-        units, src, sym, data = head(c)
-        m = c["m"]
-        made = to_et(c["now"]).strftime("%b %d %H:%M ET")
-        out = build_levels_text(sections, [sym, data], made, to_et(c["now"]).strftime("%Y-%m-%d"), m["underlying"], units, cone,
-                                c["spot_f"] or c["snap"].spot, prefs)
-        kp = prefs.get("kinds") or {}
-        kinds = {}
-        for tb in every:
-            for g in tb.get("groups") or []:
-                d = _group(g)
-                p = kp.get(d["name"]) or {}
-                row = kinds.setdefault(d["name"], {"name": d["name"], "on": p["on"] if isinstance(p.get("on"), bool) else d["on"],
-                                                   "key": p["key"] if isinstance(p.get("key"), bool) else is_key_kind(d["name"]),
-                                                   "color": p.get("color") or d["color"], "style": (p.get("style") or d["style"]).lower(), "width": p.get("width") or d["width"],
-                                                   "default": {"color": d["color"], "style": d["style"].lower(), "width": d["width"], "on": d["on"], "key": is_key_kind(d["name"])},
-                                                   "short": d["short"], "help": d["help"], "tabs": []})
-                row["tabs"].append(tb["name"])
-            tb.pop("groups", None)
-        return {"text": out["text"], "levels": out["levels"], "chars": out["chars"], "tips_dropped": out["tips_dropped"], "cut": out["cut"],
-                "tabs": every, "kinds": list(kinds.values()), "skipped": skipped, "mapped": c["spot_f"] is not None, "meta": m,
-                "key_lines": sum(1 for line in out["text"].splitlines() if line.startswith("L|") and line.split("|")[7 - 1] == "1"),
-                "note": "Paste into the Q DATA All Tabs indicator's settings (Levels from Q DATA). Copy again each session."}
+    # the two paste-in TradingView indicators (Q DATA GEX and Q DATA Levels) and the level tracker behind them
+    from .api_tv import register as register_tv
+    register_tv(app, h, q, tab_parts)
 
 
-def clean_prefs(prefs) -> dict:
-    """Keep only the parts of the indicator look that the builder understands, with sane types. Bad values are dropped
-    (the builder then uses its defaults), never an error: an old saved look must not stop the indicator being made."""
-    if not isinstance(prefs, dict):
-        return {}
-    out = {}
-    if isinstance(prefs.get("set"), dict):
-        out["set"] = {k: v for k, v in prefs["set"].items() if isinstance(k, str) and isinstance(v, (bool, int, float, str))}
-    if isinstance(prefs.get("tabs_on"), list):
-        out["tabs_on"] = [x for x in prefs["tabs_on"] if x in TABS]
-    if isinstance(prefs.get("tab_colors"), dict):
-        out["tab_colors"] = {k: v for k, v in prefs["tab_colors"].items() if k in TABS and isinstance(v, str)}
-    if isinstance(prefs.get("kinds"), dict):
-        out["kinds"] = {}
-        for name, k in list(prefs["kinds"].items())[:500]:
-            if isinstance(name, str) and isinstance(k, dict):
-                out["kinds"][name] = {kk: k[kk] for kk in ("on", "color", "style", "width", "key") if kk in k}
-    return out

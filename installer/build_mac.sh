@@ -30,7 +30,7 @@ iconutil -c icns build/icon.iconset -o build/icon.icns
 
 python -m PyInstaller --noconfirm --clean --windowed --name "Q DATA" --icon build/icon.icns \
   --osx-bundle-identifier com.qdata.app \
-  --add-data "frontend:frontend" --add-data "tradingview:tradingview" --add-data "assets:assets" --add-data ".env.example:." \
+  --add-data "frontend:frontend" --add-data "assets:assets" --add-data ".env.example:." \
   --collect-submodules uvicorn --collect-data tzdata \
   --hidden-import webview.platforms.cocoa --hidden-import pystray._darwin \
   NQES.py

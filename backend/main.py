@@ -121,6 +121,7 @@ def main():
         print(f"\nPort {s.port} is used by another program, so this run uses port {port} instead.")
     for c in collectors:
         c.start()
+    getattr(app.state, "start_tv_tracker", lambda: None)()
     print("Data sources running: " + ", ".join(getattr(c, "label", None) or c.s.provider for c in collectors))
     print(f"\nDashboard on this PC: http://127.0.0.1:{port}")
     if s.host not in LOOPBACK:

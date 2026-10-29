@@ -11,7 +11,6 @@ from backend.services import analytics as an
 from backend.services import reactions as rx
 from backend.services.bias import compute_bias
 from backend.services.freshness import classify
-from backend.services.pine import build_pine
 from backend.timeutil import UTC
 from tests.conftest import NOW, make_chain
 from backend.config import ROOT
@@ -85,30 +84,8 @@ def test_bias_thin_data_is_low_confidence_and_says_so():
 
 
 # ---- Pine export ---------------------------------------------------------------------------------------
-def test_pine_code_structure_and_sanitizing():
-    code = build_pine([{"label": 'Flip "x"', "category": "gamma_flip", "price": 30666.6},
-                       {"label": "Move high", "category": "expected_move", "price": 30590.25}], "Source: cboe _NDX", "Levels are ESTIMATED NQ points.")
-    assert code.startswith("//@version=6") and 'indicator("Q DATA Key Levels"' in code and "ESTIMATED NQ points" in code
-    assert "array.from(30666.60, 30590.25)" in code and '"Flip x", "Move high"' in code and 'Flip "x"' not in code
-    assert "__" not in code and "barstate.islast" in code and "extend.both" not in code and "xloc = xloc.bar_time" in code
-    empty = build_pine([], "s", "u")
-    assert 'array.from("none")' in empty                                                       # array.from() needs one element
 
 
-def test_key_levels_indicator_has_stack_zones_clean_view_and_stable_rows():
-    """The Key levels indicator: Clean view by default (stack zones replace the levels inside them, key kinds keep their line),
-    every kind always listed in the same order (settings survive re-pasting), bands only for GEX and the walls, readable on white."""
-    from backend.services.level_kinds import CAT
-    code = build_pine([{"label": "OI", "category": "oi_call_zone", "price": 20100, "low": 20090, "high": 20110},
-                       {"label": "Call wall", "category": "gex_call_zone", "price": 20300, "low": 20290, "high": 20310}], "s", "u")
-    assert 'viewMode = input.string("Clean: zones + key lines + lone levels"' in code and "qdZones(" in code
-    assert 'bgMode = input.string("Auto", "Chart background"' in code and "ink(color c) =>" in code and "chart.bg_color" in code
-    for name, _, _ in CAT.values():
-        assert f'"{name}"' in code, name
-    assert 'kk0 = input.bool(true, "Key"' in code                                               # gamma flip is key
-    assert "20290.00" in code and "20090.00" not in code                                         # only GEX / wall levels keep their band
-    other = build_pine([{"label": "V", "category": "volume", "price": 5.0}], "s", "u")
-    assert [l for l in code.splitlines() if "input." in l and "Key" in l] == [l for l in other.splitlines() if "input." in l and "Key" in l]
 
 
 # ---- reaction log --------------------------------------------------------------------------------------
@@ -184,20 +161,6 @@ def api_client(with_levels=True, mutate=None):
     return TestClient(create_app(s, db, col, lambda: NOW)), db
 
 
-def test_bias_scenarios_and_export_endpoints():
-    c, db = api_client()
-    b = c.get("/api/analytics/bias", params={"underlying": "_NDX"}).json()
-    assert b["data"]["verdict"] and b["meta"]["provider"] == "cboe" and b["data"]["signals"]
-    assert c.get("/api/analytics/bias", params={"underlying": "_NDX", "convention": "bad"}).status_code == 422
-    sc = c.get("/api/analytics/scenarios", params={"underlying": "_NDX"}).json()["data"]
-    assert [r["weight"] for r in sc["rows"]] == ["oi", "volume"]
-    p = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()
-    assert p["code"].startswith("//@version=6") and p["mapped"] is False and "Use the offset input" in p["code"]
-    c.post("/api/basis", json={"root": "NQ", "basis": 250.0})
-    p2 = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()
-    assert p2["mapped"] is True and "ESTIMATED NQ points" in p2["code"] and "typed_basis" in p2["code"]
-    only = c.get("/api/export/pine", params={"underlying": "_NDX", "categories": "gamma_flip"}).json()
-    assert only["levels"] <= 1
 
 
 def test_levels_history_and_reactions_endpoints():
@@ -224,15 +187,6 @@ def test_autostart_scripts_are_present_and_consistent():
     assert "--no-browser" in (ROOT / "backend" / "main.py").read_text()
 
 
-def test_tradingview_indicator_file_is_wellformed():
-    code = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert code.startswith("//@version=6") and "input.text_area" in code and "parseLevels" in code and "barstate.islast" in code
-    assert code.count("(") == code.count(")") and code.count("[") == code.count("]")
-    assert "@start" in code and "xloc = xloc.bar_time" in code and "extend.both" not in code and "extend = " not in code                  # lines start at the level time, no infinite lines
-    assert 'input.text_area("// price, label, type"' in code                  # the default holds no invented market numbers, only the format hint
-    for cat in ("gamma_flip", "gex_concentration", "open_interest", "volume", "expected_move"):
-        assert f'"{cat}"' in code                                                                # same type names as the app exports
-    assert "viewMode" in code and "isKeyCat(" in code and "inZone" in code and "ink(colorFor(cat))" in code      # stack zones and white-chart colors
 
 
 # ---- levels remember when they first appeared ------------------------------------------------------------
@@ -254,25 +208,8 @@ def test_level_runs_keep_first_seen_while_a_level_persists():
     assert db.active_level_runs("U", "2026-10-15") == []                                            # a new session starts fresh
 
 
-def test_api_levels_carry_first_seen_and_exports_use_it():
-    c, db = api_client()
-    first = (NOW - timedelta(hours=2)).replace(microsecond=0)
-    from backend.services.levels import build_levels
-    from backend.services.freshness import classify
-    snap = c.app.router  # noqa: F841  (keep the client alive)
-    j0 = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()
-    assert j0["levels"] and all(x["first_seen"] is None for x in j0["levels"])                      # nothing tracked yet: honest, not guessed
-    day = "2026-10-14"
-    db.update_level_runs("_NDX", day, [{"category": x["category"], "label": x["label"], "value": x["value"]} for x in j0["levels"]], first)
-    j1 = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()
-    assert all(x["first_seen"] == first.isoformat() for x in j1["levels"])
-    p = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()["code"]
-    assert p.startswith("//@version=6") and "qdZones(" in p
 
 
-def test_text_indicator_supports_per_level_start():
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert "stampToTime(array.get(parts, 3))" in ind and "array.new<int>()" in ind and "ownStart" in ind
 
 
 # ---- levels that were missing: top-N, call/put GEX strikes, expirations, typed-in levels -----------------
@@ -303,26 +240,6 @@ def test_levels_can_be_limited_to_chosen_expirations():
     assert only != allv and all(float(x["value"]) % 2.5 == 0 for x in only if x["category"] == "open_interest")
 
 
-def test_custom_levels_api_roundtrip_and_validation():
-    c, db = api_client()
-    assert c.post("/api/custom-levels", json={"underlying": "_NDX", "label": "", "value": 30205}).status_code == 422
-    assert c.post("/api/custom-levels", json={"underlying": "_NDX", "label": "x", "value": -5}).status_code == 422
-    assert c.post("/api/custom-levels", json={"underlying": "_NDX", "label": "NQ type", "value": 30470, "units": "futures"}).status_code == 422     # no basis saved yet
-    r = c.post("/api/custom-levels", json={"underlying": "_NDX", "label": 'Quant, "GEX" 205', "value": 30205}).json()
-    assert r["saved"] and r["label"] == "Quant GEX 205"                                           # commas and quotes removed so exports stay valid
-    c.post("/api/basis", json={"root": "NQ", "basis": 262.5})
-    r2 = c.post("/api/custom-levels", json={"underlying": "_NDX", "label": "NQ typed", "value": 30467.5, "units": "futures"}).json()
-    assert r2["value_in_underlying_units"] == pytest.approx(30205.0)
-    lv = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"]
-    custom = [x for x in lv if x["category"] == "custom"]
-    assert len(custom) == 2 and all(x["first_seen"] and x["mapped"]["mapped"] == pytest.approx(x["value"] + 262.5) for x in custom)
-    only = c.get("/api/analytics/levels", params={"underlying": "_NDX", "categories": "custom"}).json()["levels"]
-    assert {x["category"] for x in only} == {"custom"}
-    p = c.get("/api/export/pine", params={"underlying": "_NDX"}).json()["code"]
-    assert '"Your levels"' in p and "Quant GEX 205" in p
-    assert c.delete(f"/api/custom-levels/{custom[0]['custom_id']}", params={"underlying": "_NDX"}).json()["deleted"]
-    assert len([x for x in c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"] if x["category"] == "custom"]) == 1
-    assert c.delete("/api/custom-levels/9999", params={"underlying": "_NDX"}).status_code == 404
 
 
 def test_top_parameter_is_validated():
@@ -356,16 +273,6 @@ def test_levels_by_expiry_are_zones_from_each_expirys_own_profile():
     assert not [x for x in build_levels(Snap(cons), NOW, "standard", classify(NOW, NOW, "delayed")) if x["category"].endswith("_by_expiry")]   # off by default
 
 
-def test_by_expiry_levels_through_the_api_and_the_pine_files():
-    c, db = api_client()
-    j = c.get("/api/analytics/levels", params={"underlying": "_NDX", "by_expiry": 2}).json()["levels"]
-    assert any(x["category"] == "oi_by_expiry" for x in j) and any(x["category"] == "volume_by_expiry" for x in j)
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "by_expiry": 9}).status_code == 422
-    assert not any(x["category"].endswith("_by_expiry") for x in c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"])
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "by_expiry": 2}).json()["code"]
-    assert '"Open interest by expiry"' in code and '"Volume by expiry"' in code
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert ind_default(ind, "oi_by_expiry")[0] == "oi" and ind_default(ind, "volume_by_expiry")[0] == "vol" and "line.style_dashed" in ind
 
 
 # ---- mid-size levels: meaningful but not the biggest ----------------------------------------------------------
@@ -408,23 +315,6 @@ def test_mid_zones_in_build_levels_combined_and_per_expiry():
     assert any(x["label"].endswith(f"{e1:%m/%d} mid") and x["inputs"].get("expiry") == e1.isoformat() for x in mids)           # per-expiry mid zones exist too
 
 
-def test_mid_levels_api_and_exports():
-    def varied(cons):                                                # a profile with a clear top and several mid-size peaks
-        pat = [300, 500, 3000, 800, 6000, 700, 2000, 9000, 400]
-        for i, k in enumerate(cons):
-            k.oi, k.volume = float(pat[i % 9]), float(pat[(i * 2) % 9] / 10)
-    c, db = api_client(mutate=varied)
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "mid": 4}).status_code == 422
-    off = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"]
-    on = c.get("/api/analytics/levels", params={"underlying": "_NDX", "mid": 3, "by_expiry": 2}).json()["levels"]
-    assert not [x for x in off if x["category"].endswith("_mid")] and len(on) > len(off)
-    assert any(x["category"].endswith("_mid") for x in on)
-    top_oi = max(x["inputs"]["zone_mag"] for x in on if x["category"] == "oi_call_zone")
-    assert all(0.25 * top_oi - 1 <= x["inputs"]["zone_mag"] <= 0.70 * top_oi + 1 for x in on if x["label"] == "Call OI zone mid")
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "mid": 3}).json()["code"]
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"Open interest midpoints"' in code and '"Volume midpoints"' in code
-    assert ind_default(ind, "oi_mid")[0] == "oi" and ind_default(ind, "volume_mid")[0] == "vol" and "color.new(ink(colorFor(cat)), 45)" in ind
 
 
 # ---- importance ranking and zones ----------------------------------------------------------------------------
@@ -462,19 +352,6 @@ def test_nearby_levels_stay_separate_lines_and_same_price_levels_share_one():
     assert make_zones([], 30000.0) == []
 
 
-def test_key_zones_through_the_api_and_exports():
-    c, db = api_client()
-    c.post("/api/basis", json={"root": "NQ", "basis": 262.5})
-    full = c.get("/api/analytics/levels", params={"underlying": "_NDX", "top": 5, "mid": 3, "by_expiry": 2, "moves": 2}).json()
-    assert len(full["levels"]) > 20 and full["zones"] == [] and all("importance" in x for x in full["levels"])
-    k = c.get("/api/analytics/levels", params={"underlying": "_NDX", "top": 5, "mid": 3, "by_expiry": 2, "moves": 2, "key": 6}).json()
-    assert 1 <= len(k["zones"]) <= 6 and all(z["zone"] and z["mapped"]["mapped"] == pytest.approx(z["value"] + 262.5) and z["inputs"]["members"] for z in k["zones"])
-    assert len(k["zones"]) < len(k["levels"]) and "own judgement" in k["importance_rule"]
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "key": 26}).status_code == 422
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "top": 5, "key": 3}).json()
-    assert code["levels"] <= 3 and code["code"].count('"') > 0
-    allc = c.get("/api/export/pine", params={"underlying": "_NDX", "top": 5, "mid": 3}).json()
-    assert allc["levels"] > code["levels"]
 
 
 # ---- GEX wall zones --------------------------------------------------------------------------------------------
@@ -510,28 +387,6 @@ def test_zone_size_ties_gaps_and_thresholds():
     assert an.gex_wall_zones([], 100.0) == [] and an.gex_wall_zones(gstrikes([(100, 0, 0)]), 100.0) == []
 
 
-def test_zones_in_levels_api_key_mode_export_and_indicators():
-    c, db = api_client()
-    c.post("/api/basis", json={"root": "NQ", "basis": 250.0})
-    lv = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"]
-    z = [x for x in lv if x["category"] in ("gex_call_zone", "gex_put_zone")]
-    assert z and not any("Largest call GEX strike" in x["label"] for x in lv)                     # the old single-strike lines are gone
-    for x in z:
-        assert x["low"] < x["value"] < x["high"] and x["mapped_low"] == pytest.approx(x["low"] + 250.0) and x["mapped_high"] == pytest.approx(x["high"] + 250.0)
-    key = c.get("/api/analytics/levels", params={"underlying": "_NDX", "key": 6}).json()["zones"]
-    bands = [x for x in key if x.get("band")]
-    assert bands and all(x["inputs"]["members"] and x["low"] is not None for x in bands)
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 6}).json()["code"]
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert 'input.bool(true, "GEX call wall zones"' in code and "#00d65c" in code and "#ff3b30" in code
-    assert ind_default(ind, "gex_call_zone") == ("gex", "#00d65c") and ind_default(ind, "gex_put_zone") == ("gex", "#ff3b30")
-    for text in (code, ind):
-        assert "box.new(" in text and "max_boxes_count" in text and "array.clear(bxs)" in text
-    assert "array.push(lows" in ind and "[prices, names, cats, starts, lows, highs, scores, fams]" in ind and "var float[] lvLo" in code
-    import re
-    lows = re.search(r"_lvLo0\(\) =>\n    array.from\(([^)]*)\)", code).group(1).split(", ")
-    assert any(float(x) > 0 for x in lows)                                                          # the band edges really are in the exported arrays
-    assert ind.count("(") == ind.count(")")
 
 
 def test_lines_inside_a_gex_band_are_still_drawn():
@@ -588,16 +443,6 @@ def test_positive_and_negative_net_gex_zones():
     assert an.gex_net_zones([], 100.0) == []
 
 
-def test_net_zones_in_levels_exports_and_indicators():
-    c, db = api_client()
-    lv = c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["levels"]
-    nz = [x for x in lv if x["category"] in ("gex_pos_zone", "gex_neg_zone")]
-    assert nz and all(x["low"] < x["value"] < x["high"] and "GEX zone" in x["label"] for x in nz)
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 8}).json()["code"]
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"Positive GEX zones"' in code and '"Negative GEX zones"' in code and "#a64dff" in code
-    assert ind_default(ind, "gex_pos_zone") == ("gex", "#1e7bff") and ind_default(ind, "gex_neg_zone") == ("gex", "#a64dff")
-    assert ind.count("(") == ind.count(")")
 
 
 def two_symbol_client(q_mutate=None, stale_q=False):
@@ -677,26 +522,6 @@ def test_zones_start_and_end_on_their_own_side():
     assert len(sand) == 1 and sand[0]["side"] == "call" and [m["strike"] for m in sand[0]["members"]] == [100, 125, 150]
 
 
-def test_only_gex_bands_stay_zones_and_other_zone_types_have_their_own_colors():
-    from backend.services.importance import make_zones, score_levels
-    def band(cat, label, centre, lo, hi, mag):
-        return lvl(cat, label, centre, zone_mag=mag, call_strikes=2, put_strikes=0, members=[{"strike": centre, "side": "call", "gex": mag}]) | {"low": lo, "high": hi, "method": "m"}
-    gex = band("gex_call_zone", "Call wall zone", 30100.0, 30075.0, 30150.0, 900.0)
-    gex2 = band("gex_pos_zone", "Positive GEX zone", 30110.0, 30080.0, 30160.0, 800.0)
-    oi = band("oi_call_zone", "Call OI zone", 30125.0, 30100.0, 30175.0, 900.0)
-    far = band("volume_put_zone", "Put volume zone", 29500.0, 29475.0, 29525.0, 900.0)
-    lv = [gex, gex2, oi, far]
-    score_levels(lv, 30000.0, 400.0)
-    zs = make_zones(lv, 30000.0, top_n=10)
-    bands = [z for z in zs if z.get("band")]
-    assert len(bands) == 1 and len(bands[0]["label"].split(" / ")) == 2 and "Call wall zone" in bands[0]["label"]     # overlapping GEX bands merge
-    lines = [z for z in zs if not z.get("band")]
-    assert sorted(z["value"] for z in lines) == [29500.0, 30125.0] and all(z.get("low") is None for z in lines)  # OI and volume bands are lines now
-    for path in ((ROOT / "tradingview" / "options_levels_indicator.pine"),):
-        text = path.read_text()
-        for name, colour in (("oi_call_zone", "#ff9500"), ("oi_put_zone", "#ff4500"), ("volume_call_zone", "#00e0c6"), ("volume_put_zone", "#ff4fa3")):
-            assert ind_default(text, name)[1] == colour
-        assert ind_default(text, "oi_call_zone")[0] == "oi" and ind_default(text, "volume_put_zone")[0] == "vol"
 
 
 def test_gamma_flip_and_custom_levels_are_never_absorbed_by_a_band():
@@ -712,35 +537,9 @@ def test_gamma_flip_and_custom_levels_are_never_absorbed_by_a_band():
     assert len(zs) == 4 and any("Gamma flip" in x for x in labels) and any("Quant GEX 205" in x for x in labels) and "Call wall zone" in labels
 
 
-def test_expected_move_zone_colors_and_checkbox_in_both_indicators():
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    code = build_pine([{"label": "Expected move zone up 10/17", "category": "expected_move", "price": 2.0, "low": 1.5, "high": 2.5}], "s", "u")
-    assert '"Expected move (wider)"' in code and "#7a5cff" in code and '"Expected move"' in code
-    assert ind_default(ind, "expected_move_ext") == ("move", "#7a5cff") and ind_default(ind, "expected_move")[0] == "move"
-    assert "1.50" not in code and "2.00" in code                                  # expected move stays a single line: only GEX and walls get bands
 
 
 # ---- "nearest N" really limits what is exported ------------------------------------------------------------------
-def test_nearest_n_limits_the_table_the_paste_text_and_the_export_alike():
-    c, db = api_client()
-    wide = {"underlying": "_NDX", "top": 5, "mid": 3, "by_expiry": 2, "moves": 3}
-    allz = c.get("/api/analytics/levels", params={**wide, "near": 60}).json()
-    assert allz["selection"]["mode"] == "nearest" and allz["selection"]["available"] == len(allz["zones"]) and len(allz["zones"]) > 5
-    spot = allz["meta"]["spot"]
-    dist = lambda z: (0.0 if z["low"] <= spot <= z["high"] else min(abs(spot - z["low"]), abs(spot - z["high"]))) if z.get("low") is not None else abs(z["value"] - spot)
-    for n in (3, 5):
-        j = c.get("/api/analytics/levels", params={**wide, "near": n}).json()
-        assert len(j["zones"]) == n and j["selection"]["n"] == n
-        keep = sorted(allz["zones"], key=dist)[:n]
-        assert {(z["label"], z["value"]) for z in j["zones"]} == {(z["label"], z["value"]) for z in keep}          # exactly the N closest
-        assert [z["value"] for z in j["zones"]] == sorted((z["value"] for z in j["zones"]), reverse=True)
-        assert c.get("/api/export/pine", params={**wide, "near": n}).json()["levels"] == n                         # the TradingView export follows too
-    five, fourteen = (c.get("/api/analytics/levels", params={**wide, "near": n}).json() for n in (5, 14))
-    assert len(fourteen["zones"]) == min(14, fourteen["selection"]["available"]) > len(five["zones"])             # 14 gives more lines than 5, and more than key top 10
-    key10 = c.get("/api/analytics/levels", params={**wide, "key": 10}).json()
-    assert key10["selection"]["mode"] == "key" and len(key10["zones"]) <= 10
-    assert c.get("/api/analytics/levels", params={**wide, "near": 61}).status_code == 422
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX"}).json()["selection"] == {"mode": "all", "n": None, "available": 0}
 
 
 def test_page_files_are_never_served_stale():
@@ -752,78 +551,13 @@ def test_page_files_are_never_served_stale():
 
 
 # ---- per-type counts: GEX can have more levels than the other kinds ----------------------------------------------
-def test_per_type_counts_give_gex_more_lines_and_follow_into_the_export():
-    from backend.services.importance import FAMILY, parse_quota
-    c, db = api_client()
-    heavy = c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:8,oi:2,vol:1,move:2", "moves": 3}).json()
-    sel = heavy["selection"]
-    assert sel["mode"] == "custom" and sel["quota"] == {"gex": 8, "oi": 2, "vol": 1, "move": 2, "charm": 0, "vanna": 0, "dex": 0, "new": 0}
-    for f, n in sel["quota"].items():
-        assert sel["used"][f] <= n
-    assert sel["used"]["gex"] > sel["used"]["oi"] and sel["used"]["gex"] >= 4                    # GEX really gets more lines
-    slotted = [z for z in heavy["zones"] if z.get("slot")]
-    assert all(z["slot"] in {FAMILY.get(m["category"]) for m in z["inputs"]["members"]} | {FAMILY.get(z["category"])} for z in slotted)
-    assert any(z["category"] == "gamma_flip" or "Gamma flip" in z["label"] for z in heavy["zones"])   # the flip uses no slot and is always shown
-    assert [z["value"] for z in heavy["zones"]] == sorted((z["value"] for z in heavy["zones"]), reverse=True)
-    light = c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:1,oi:2,vol:1,move:2"}).json()
-    assert light["selection"]["used"]["gex"] <= 1
-    off = c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:0,oi:0,vol:0,move:0"}).json()
-    assert off["selection"]["mode"] == "custom" and all(not z.get("slot") for z in off["zones"])     # zero counts leave only flip and your own levels
-    code = c.get("/api/export/pine", params={"underlying": "_NDX", "quota": "gex:8,oi:2,vol:1,move:2", "moves": 3}).json()
-    assert code["levels"] == len(heavy["zones"])
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "gex:99"}).status_code == 422
-    assert c.get("/api/analytics/levels", params={"underlying": "_NDX", "quota": "foo:2"}).status_code == 422
-    assert parse_quota("gex:5") == {"gex": 5, "oi": 0, "vol": 0, "move": 0, "charm": 0, "vanna": 0, "dex": 0, "new": 0}
 
 
 # ---- the TradingView indicator: per-kind settings, and paste rows that carry score and family -----------------------
-def test_indicator_has_per_family_settings_and_trims_by_score():
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    for g in ("G_FLIP", "G_GEX", "G_OI", "G_VOL", "G_MOVE", "G_MINE"):
-        assert f"group = {g}" in ind
-    import re
-    for v in ("maxGex", "maxOi", "maxVol", "maxMove", "wGex", "sGex", "cGexCall", "wOi", "sMove"):
-        assert re.search(r"^%s\s*= input\.(int|string|color)\(" % v, ind, re.M), v
-    assert "array.sort_indices(keys, order.descending)" in ind and "maxFor(fam) == 0 ? cnt" in ind               # highest score first, 0 = all
-    assert "width = widthFor(fam), style = styleFor(fam)" in ind and "validFam(fam) ? fam : famOf(cat)" in ind
-    assert ind.count("(") == ind.count(")") and "\t" not in ind
-    for cat in ("gamma_flip", "custom", "gex_concentration", "oi_call_zone", "volume_put_zone", "expected_move"):
-        ind_default(ind, cat)                                                                                    # every type has a family and a color setting
-    js = (ROOT / "frontend" / "app.js").read_text()
-    assert "function famOf(l)" in js and "Math.round((l.importance || 0) * 100)" in js and "${base}, ${st || \"\"}, , , ${tail}" in js
-    assert 'tv: { gex: 16, oi: 8, vol: 6, move: 8, charm: 6, vanna: 6, dex: 4, new: 6 }' in js
 
 
-def test_static_pine_export_declares_each_input_once():
-    import re
-    code = build_pine([{"label": "x", "category": "volume", "price": 1.0}], "s", "u")
-    names = re.findall(r"^(\w+)\s*= input\.", code, re.M)
-    assert len(names) == len(set(names))
 
 
-def test_far_zones_are_drawn_as_a_line_in_both_indicators():
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    code = build_pine([{"label": "Call wall zone", "category": "gex_call_zone", "price": 2.0, "low": 1.5, "high": 2.5}], "s", "u")
-    assert "1.50" in code and "2.50" in code                                       # the wall band reaches the Key levels indicator
-    for text in (ind,):
-        assert 'bandFarPct = input.float(1.0, "Zones farther than this % from price are drawn as a line"' in text
-        assert "bandDistPct <= bandFarPct" in text and text.count("(") == text.count(")")
-        draw = text.split("bandDistPct <= bandFarPct")[1]
-        assert draw.index("box.new(") < draw.index("line.new(")                    # the box is optional; the line is always drawn
 
 
 # ---- 1.22: the paste-in Key levels indicator draws every level as a zone, and the app hands it out ----------------
-def test_key_levels_paste_in_draws_zones_and_is_served_by_the_app():
-    ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert 'indicator("Q DATA Key Levels (paste-in)"' in ind and "max_boxes_count = 500" in ind
-    assert 'drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Zones near price, lines farther", "Lines"]' in ind
-    assert ind.rindex("input.") > ind.index("lzMid") - 20                                    # the new settings are the last inputs, so old settings stay put
-    draw = ind.split('if drawAs == "Zones"')[1]
-    assert "p + half" in draw and "zHigh + offsetPts" in draw and "close * 0.0002" in draw
-    assert ind.count("(") == ind.count(")") and ind.count("[") == ind.count("]") and "\t" not in ind
-    assert all(ord(ch) < 128 for ch in ind)                                                   # plain ASCII only (box-drawing characters break Pine)
-    c, _ = api_client()
-    j = c.get("/api/export/levels-script").json()
-    assert j["code"] == ind and j["filename"].endswith(".pine")
-    js = (ROOT / "frontend" / "app.js").read_text()
-    assert 'id="indscript"' in js and "/export/levels-script" in js
