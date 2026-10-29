@@ -1,6 +1,6 @@
 "use strict";
 // TradingView tab and level-change alerts.
-// Two paste-in indicators: Q DATA GEX (gamma levels) and Q DATA Levels (everything else). Add each script to TradingView once;
+// Two paste-in indicators: Q DATA GEX (gamma levels) and Q DATA Levels (everything else), plus the classic Q DATA All Tabs (1.24.4). Add each script to TradingView once;
 // when levels change, Q DATA alerts (banner here, plus a desktop notification and sound from the desktop app), then copy and paste.
 // Per-kind show / color choices are saved in this browser (localStorage "nqes.tv2") and travel with the copied levels.
 const TV2 = (() => { try { return Object.assign({ kinds: {}, copied: {} }, JSON.parse(localStorage.getItem("nqes.tv2") || "{}")); } catch (e) { return { kinds: {}, copied: {} }; } })();
@@ -27,6 +27,23 @@ async function tvCopy(ind, btn) {
 async function tvScriptCopy(ind, btn, dl) {
   try {
     const r = await tvFetch("/tv/script", { ind });
+    if (dl) { download(r.filename, r.code); btn.textContent = "Downloaded"; return; }
+    try { await copyText(r.code); btn.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); }
+  } catch (e) { alert("Could not get the indicator: " + (e.msg || e.message)); }
+}
+
+// ---- Q DATA All Tabs (classic): every tab's levels in one paste-in indicator ----
+async function allCopy(btn) {
+  try {
+    const r = await tvFetch("/tv/alltabs/levels", { underlying: S.u }, { prefs: { kinds: TV2.kinds } });
+    try { await copyText(r.text); if (btn) btn.textContent = `Copied ${r.levels} levels`; }
+    catch (e) { showText("Levels for Q DATA All Tabs", r.text); }
+    TV2.copied[S.u + ":all"] = Date.now(); tv2Save();
+  } catch (e) { alert("Could not build the All Tabs levels: " + (e.msg || e.message)); }
+}
+async function allScript(btn, dl) {
+  try {
+    const r = await tvFetch("/tv/alltabs/script", {});
     if (dl) { download(r.filename, r.code); btn.textContent = "Downloaded"; return; }
     try { await copyText(r.code); btn.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); }
   } catch (e) { alert("Could not get the indicator: " + (e.msg || e.message)); }
@@ -94,12 +111,18 @@ R.tv = async function () {
       <p class="hint">${fmt(r.levels)} levels now${r.history ? `, ${fmt(r.history)} earlier positions (faded on the chart)` : ""}. Data as of ${esc(new Date(r.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }))} ET (about 15 min delayed). You copied: ${copiedAt(ind)}.${r.mapped ? "" : " No futures price or basis saved, so prices are index units (Key levels tab > Convert)."}${r.cut ? ` ${r.cut} far-away levels left out to fit.` : ""}${r.catching_up ? ` <b>Still replaying today's stored data so every level gets its real start time: wait a minute or two, then copy.</b>` : ""}</p>
       <details class="adv"><summary>Once: add ${TVNAME[ind]} to TradingView</summary><div class="body"><div class="actions"><button data-scr="${ind}">Copy the indicator</button><button data-scrdl="${ind}">Download .pine</button></div>
         <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Only again if a Q DATA update says this indicator changed.</p></div></details></div>`;
+  const allCard = `<div class="panel tvcard"><h2>Q DATA All Tabs (classic)</h2>
+      <p class="dim" style="margin:0 0 6px">The old all-in-one indicator: every tab's levels (Stack map, Level map, Game plan, Bias, Session, Regime, VIX, Quant, GEX, 0DTE, Flip, Charm / vanna, OI, Volume, Overnight, Expected move, Delta, HOD / LOD), the info table and the expected-move cone. Switch any tab off in its settings.</p>
+      <div class="actions"><button class="go big" data-allcopy>Copy All Tabs levels</button></div>
+      <p class="hint">You copied: ${copiedAt("all")}. Use it alongside the two above or on its own.</p>
+      <details class="adv"><summary>Once: add Q DATA All Tabs to TradingView</summary><div class="body"><div class="actions"><button data-allscr>Copy the indicator</button><button data-allscrdl>Download .pine</button></div>
+        <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Then settings &gt; Levels from Q DATA &gt; paste &gt; OK.</p></div></details></div>`;
   const tm = t => t || "";
   const rows = log.events.slice(0, 120).map(e => `<tr><td class="num">${esc(tm(e.time_et))}</td><td><span class="badge ${e.ind === "gex" ? "tvgexb" : ""}">${e.ind === "gex" ? "GEX" : "Levels"}</span></td><td>${esc(e.text)}</td></tr>`).join("");
   const kinds = [...g.kinds, ...(g.hidden_kinds || [])].map(k => ({ ...k, ind: "GEX" })).concat([...l.kinds, ...(l.hidden_kinds || [])].map(k => ({ ...k, ind: "Levels" })));
   $("view").innerHTML = `<div class="panel pagehead"><h2>TradingView</h2>
       <p style="max-width:90ch">Two indicators, both paste-in: add each once, then paste new levels when Q DATA tells you they changed. Each level starts on the candle of the <b>options data time</b> it first appeared; when a level moves, the old spot stays faded with a step to the new price. Levels near price are see-through zones, farther ones thin lines, and every label says what price should do there. Colors are made for a white chart.</p></div>
-    <div class="tvgrid">${card("gex", g)}${card("lv", l)}</div>
+    <div class="tvgrid">${card("gex", g)}${card("lv", l)}${allCard}</div>
     <div class="panel"><h2>Alerts when levels change</h2>
       <div class="row"><label><span><input type="checkbox" id="tval_on" ${al.on ? "checked" : ""}> Alerts on</span></label>
         <label><span><input type="checkbox" id="tval_snd" ${al.sound ? "checked" : ""}> Sound</span></label>
@@ -116,6 +139,9 @@ R.tv = async function () {
       <div class="actions"><button id="tvkdef">Back to Q DATA's colors</button></div></div></details></div>`;
   const v = $("view");
   v.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await tvCopy(b.dataset.copy, b); });
+  v.querySelector("[data-allcopy]").onclick = e => allCopy(e.target);
+  v.querySelector("[data-allscr]").onclick = e => allScript(e.target, false);
+  v.querySelector("[data-allscrdl]").onclick = e => allScript(e.target, true);
   v.querySelectorAll("[data-scr]").forEach(b => b.onclick = () => tvScriptCopy(b.dataset.scr, b, false));
   v.querySelectorAll("[data-scrdl]").forEach(b => b.onclick = () => tvScriptCopy(b.dataset.scrdl, b, true));
   $("tval_which").value = al.which;

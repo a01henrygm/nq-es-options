@@ -33,6 +33,9 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.24.4
+- **Q DATA All Tabs is back**: the classic all-in-one paste-in indicator, now with every tab's levels by default (each tab can be switched off in its settings), sitting next to Q DATA GEX and Q DATA Levels on the TradingView tab.
+
 ## New in 1.24.3
 - **Levels start at:** new last setting in both indicators: when the data first showed it (default), the 9:30 open, the start of chart
   data, or the last N bars.
