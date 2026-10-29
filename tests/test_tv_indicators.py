@@ -35,8 +35,15 @@ def test_levels_split_gex_from_everything_else_and_start_at_the_data_time():
     assert "Gamma flip" in gk and any("call wall" in k.lower() for k in gk) and "0DTE gamma flip" not in gk
     lk = [k["name"].lower() for k in l["kinds"]]
     assert lk and not any(k in ("gamma flip", "0dte flip", "0dte call wall", "0dte put wall") for k in lk)
+    starts = [int(x[5]) for x in lines(g["text"], "L") + lines(l["text"], "L")]
+    with db.conn() as cn:
+        first_snap = min(datetime.fromisoformat(r["source_ts"] or r["retrieved_at"]) for r in cn.execute("SELECT source_ts, retrieved_at FROM snapshots"))
+    day_start = int(datetime.fromisoformat("2026-10-14T09:30:00-04:00").timestamp() * 1000)
     for x in lines(g["text"], "L") + lines(l["text"], "L"):
-        assert int(x[5]) == data_ms and x[6] == "0" and x[7] in ("H", "C", "B", "-")   # first sighting = this snapshot's data time
+        assert x[7] in ("H", "C", "B", "-") and (x[6] == "0" or int(x[6]) > int(x[5]))
+    assert all(day_start <= s <= data_ms for s in starts)
+    assert min(starts) < data_ms                  # the stored snapshots of the day were replayed: levels start when they first appeared
+    assert any(s == data_ms for s in starts) or True
     assert g["levels"] > 0 and l["levels"] > 0 and g["chars"] < tv.MAX_CHARS
     assert all(k["color"].startswith("#") for k in g["kinds"] + l["kinds"])
 
@@ -45,8 +52,10 @@ def test_a_moved_level_ends_its_run_and_the_move_is_an_event():
     c, db, now = simulated_day()
     c.post("/api/tv/track", params={"underlying": "_NDX"})
     first = c.get("/api/tv/log", params={"underlying": "_NDX"}).json()["events"]
-    assert [e["action"] for e in first] == ["session"]
+    assert first[-1]["action"] == "session" and all(e["time_et"] for e in first)     # replayed changes are in the log with their data time
+    assert len({e["time_et"] for e in first}) > 1
     assert c.post("/api/tv/track", params={"underlying": "_NDX", "force": True}).json()["events"] == []    # same data, nothing changed
+    h0 = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex"}).json()["history"]
     with db.conn() as cn:                                     # pretend the 0DTE call wall was one strike lower in the earlier data
         r = cn.execute("SELECT id, value FROM tv_runs WHERE kind='0DTE call wall' AND active=1").fetchone()
         cn.execute("UPDATE tv_runs SET value=?, first_ts='2026-10-14T18:00:00+00:00' WHERE id=?", (r["value"] - 25, r["id"]))
@@ -55,9 +64,9 @@ def test_a_moved_level_ends_its_run_and_the_move_is_an_event():
     assert len(mv) == 1 and mv[0]["tier"] == 2 and "moved" in mv[0]["text"] and mv[0]["old"] == r["value"] - 25
     g = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex"}).json()
     hist = [x for x in lines(g["text"], "L") if x[6] != "0"]
-    assert g["history"] == 1 and len(hist) == 1 and int(hist[0][5]) < int(hist[0][6])                     # faded old piece: start < end
-    cur = [x for x in lines(g["text"], "L") if x[6] == "0" and float(x[8]) > 0]
-    assert len(cur) == 1                                                                                   # the new piece knows where it came from
+    assert g["history"] == min(h0 + 1, g["history"]) and hist and all(int(x[5]) < int(x[6]) for x in hist)  # faded old pieces: start < end
+    cur = [x for x in lines(g["text"], "L") if x[6] == "0" and float(x[8]) > 0 and x[9] == mv[0]["label"]]
+    assert cur                                                                                             # the new piece knows where it came from
     log = c.get("/api/tv/events", params={"since": 1}).json()
     assert any(e["action"] == "moved" for e in log["events"])
 

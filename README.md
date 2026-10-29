@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.24.2
+- **Levels start where the data first showed them, even from before the tracker ran.** The app replays every stored snapshot of
+  the day in order (each as of its own time), so a level that formed at 10:30 starts on the 10:30 candle and every move shows as a step.
+  The Level log is filled the same way. The first replay of a day runs in the background; the TradingView tab says when it is done.
+
 ## New in 1.24.1
 - **Fix: the indicators drew nothing.** Both scripts read the kind rows one column off, so every level looked hidden. Re-copy both
   scripts once (TradingView tab > Once: add to TradingView), then paste the levels again.

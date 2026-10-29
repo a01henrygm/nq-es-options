@@ -64,6 +64,14 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
     sources.update(extra_sources or {})
     notes = source_notes or [{"name": n, "label": n, "enabled": True, "reason": ""} for n in sources]
     current = contextvars.ContextVar("source", default=default_name)
+    # "as of" a stored snapshot: lets the level tracker replay the day's stored snapshots through the same code, so every level
+    # gets the data time it really first appeared. (snapshot, now) or None; per thread / request, so it never leaks into other requests.
+    as_of = contextvars.ContextVar("as_of", default=None)
+    base_now = now_fn
+
+    def now_fn():
+        a = as_of.get()
+        return a[1] if a else base_now()
 
     class _Proxy:
         def __init__(self, i): self._i = i
@@ -90,6 +98,9 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         return u
 
     def snapshot(u: str):
+        a = as_of.get()
+        if a and a[0].underlying == u:
+            return a[0]
         st = collector.state.get(u) if collector else None
         snap = (st or {}).get("snapshot") or db.load_snapshot(u)
         if snap is None or not snap.spot:
@@ -836,7 +847,8 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                                        oi_change=oi_change, reactions=reactions))
     from .api_quant import register as register_quant
     register_quant(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok,
-                                        futures_mapper=futures_mapper, futures_converter=futures_converter, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions))
+                                        futures_mapper=futures_mapper, futures_converter=futures_converter, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions,
+                                        as_of=as_of))
     from .api_extras import register as register_extras
     register_extras(app, SimpleNamespace(db=db, primary_db=primary_db, extras=extras, snapshot=snapshot, futures_converter=futures_converter,
                                          now_fn=now_fn, underlying_ok=underlying_ok, settings=settings))
