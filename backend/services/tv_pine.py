@@ -181,15 +181,15 @@ qdParse(string txt) =>
         if tag == "Q" and array.size(a) >= 8
             for j = 0 to 5
                 array.set(meta, j, fld(a, j + 2))
-        else if tag == "K" and array.size(a) >= 9
+        else if tag == "K" and array.size(a) >= 8
             array.push(kName, fld(a, 1))
             array.push(kCol, hexColor(fld(a, 2)))
             array.push(kSty, fld(a, 3))
             array.push(kW, int(math.max(1, math.min(4, num(a, 4)))))
-            array.push(kSec, int(num(a, 7)))
-            array.push(kKey, fld(a, 8) == "1")
+            array.push(kSec, int(num(a, 6)))
+            array.push(kKey, fld(a, 7) == "1")
             array.push(kHide, hiddenName(fld(a, 1)))
-        else if tag == "L" and array.size(a) >= 11
+        else if tag == "L" and array.size(a) >= 10
             p = num(a, 1)
             if p > 0
                 array.push(lvP, p)

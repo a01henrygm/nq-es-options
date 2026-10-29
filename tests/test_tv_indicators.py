@@ -98,3 +98,22 @@ def test_history_is_capped_and_hidden_kinds_stay_listed():
     assert j["history"] == tv.HIST_PER_KIND and j["levels"] == 1
     j = tv.build_text("gex", runs, lambda v: v, "m", "2026-10-14", "NDX", "u", 0, [], prefs={"kinds": {"0DTE call wall": {"on": False}}})
     assert j["levels"] == 0 and j["hidden_kinds"][0]["name"] == "0DTE call wall"
+
+
+def test_the_script_reads_every_field_where_the_text_puts_it():
+    """Mirror of qdParse: the column each field is read from must match where build_text writes it (1.24.0 read the kind rows one
+    column off, so every level looked hidden and nothing was drawn)."""
+    import re
+    code = build_script("gex")
+    reads = dict(re.findall(r"array\.push\((k\w+|lv\w+), (?:int\()?(?:math\.max\(1, math\.min\(4, )?(?:num|fld)\(a, (\d+)\)", code))
+    assert reads["kName"] == "1" and "array.push(kCol, hexColor(fld(a, 2)))" in code and reads["kSty"] == "3" and reads["kW"] == "4" and reads["kSec"] == "6"
+    assert 'fld(a, 7) == "1"' in code and 'tag == "K" and array.size(a) >= 8' in code
+    assert "p = num(a, 1)" in code and reads["lvG"] == "4" and reads["lvS"] == "5" and reads["lvE"] == "6" and reads["lvN"] == "9" and reads["lvTip"] == "10"
+    runs = [{"kind": "0DTE call wall", "label": "Call wall", "value": 21000.0, "low": None, "high": None, "prev": None, "active": 1, "live": 0,
+             "sec": 1, "first_ts_ms": 1000, "end_ts_ms": 0, "read": "H", "tip": "x"}]
+    text = tv.build_text("gex", runs, lambda v: v, "m", "2026-10-14", "NDX", "u", 0, [])["text"]
+    k = [x.split("|") for x in text.splitlines() if x.startswith("K|")][0]
+    l = [x.split("|") for x in text.splitlines() if x.startswith("L|")][0]
+    assert len(k) >= 8 and k[6] == "1" and k[7] == "1"                        # section 1 (Walls), key
+    assert len(l) >= 10 and l[4] == "0" and l[5] == "1000" and l[9] == "Call wall"
+    assert len("|".join(l[:10]).split("|")) >= 10                              # still readable when the hover text is dropped

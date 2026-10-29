@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.24.1
+- **Fix: the indicators drew nothing.** Both scripts read the kind rows one column off, so every level looked hidden. Re-copy both
+  scripts once (TradingView tab > Once: add to TradingView), then paste the levels again.
+
 ## New in 1.24
 - **Two TradingView indicators, both paste-in.** **Q DATA GEX** (gamma flips, call / put walls, 0DTE walls, biggest GEX strikes, GEX
   zones) and **Q DATA Levels** (open interest, volume, expected move, charm / vanna, dealer delta, new positions, HOD / LOD, stack
