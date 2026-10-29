@@ -523,8 +523,8 @@ def test_zones_in_levels_api_key_mode_export_and_indicators():
     assert bands and all(x["inputs"]["members"] and x["low"] is not None for x in bands)
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 6}).json()["code"]
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert 'input.bool(true, "GEX call wall zones"' in code and "#3fb96a" in code and "#e5534b" in code
-    assert ind_default(ind, "gex_call_zone") == ("gex", "#3fb96a") and ind_default(ind, "gex_put_zone") == ("gex", "#e5534b")
+    assert 'input.bool(true, "GEX call wall zones"' in code and "#00d65c" in code and "#ff3b30" in code
+    assert ind_default(ind, "gex_call_zone") == ("gex", "#00d65c") and ind_default(ind, "gex_put_zone") == ("gex", "#ff3b30")
     for text in (code, ind):
         assert "box.new(" in text and "max_boxes_count" in text and "array.clear(bxs)" in text
     assert "array.push(lows" in ind and "[prices, names, cats, starts, lows, highs, scores, fams]" in ind and "var float[] lvLo" in code
@@ -595,8 +595,8 @@ def test_net_zones_in_levels_exports_and_indicators():
     assert nz and all(x["low"] < x["value"] < x["high"] and "GEX zone" in x["label"] for x in nz)
     code = c.get("/api/export/pine", params={"underlying": "_NDX", "key": 8}).json()["code"]
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
-    assert '"Positive GEX zones"' in code and '"Negative GEX zones"' in code and "#a371f7" in code
-    assert ind_default(ind, "gex_pos_zone") == ("gex", "#2f8bf5") and ind_default(ind, "gex_neg_zone") == ("gex", "#a371f7")
+    assert '"Positive GEX zones"' in code and '"Negative GEX zones"' in code and "#a64dff" in code
+    assert ind_default(ind, "gex_pos_zone") == ("gex", "#1e7bff") and ind_default(ind, "gex_neg_zone") == ("gex", "#a64dff")
     assert ind.count("(") == ind.count(")")
 
 
@@ -694,7 +694,7 @@ def test_only_gex_bands_stay_zones_and_other_zone_types_have_their_own_colors():
     assert sorted(z["value"] for z in lines) == [29500.0, 30125.0] and all(z.get("low") is None for z in lines)  # OI and volume bands are lines now
     for path in ((ROOT / "tradingview" / "options_levels_indicator.pine"),):
         text = path.read_text()
-        for name, colour in (("oi_call_zone", "#ff9f43"), ("oi_put_zone", "#d9480f"), ("volume_call_zone", "#2ec4b6"), ("volume_put_zone", "#f06292")):
+        for name, colour in (("oi_call_zone", "#ff9500"), ("oi_put_zone", "#ff4500"), ("volume_call_zone", "#00e0c6"), ("volume_put_zone", "#ff4fa3")):
             assert ind_default(text, name)[1] == colour
         assert ind_default(text, "oi_call_zone")[0] == "oi" and ind_default(text, "volume_put_zone")[0] == "vol"
 
@@ -715,8 +715,8 @@ def test_gamma_flip_and_custom_levels_are_never_absorbed_by_a_band():
 def test_expected_move_zone_colors_and_checkbox_in_both_indicators():
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     code = build_pine([{"label": "Expected move zone up 10/17", "category": "expected_move", "price": 2.0, "low": 1.5, "high": 2.5}], "s", "u")
-    assert '"Expected move (wider)"' in code and "#8e9bff" in code and '"Expected move"' in code
-    assert ind_default(ind, "expected_move_ext") == ("move", "#8e9bff") and ind_default(ind, "expected_move")[0] == "move"
+    assert '"Expected move (wider)"' in code and "#7a5cff" in code and '"Expected move"' in code
+    assert ind_default(ind, "expected_move_ext") == ("move", "#7a5cff") and ind_default(ind, "expected_move")[0] == "move"
     assert "1.50" not in code and "2.00" in code                                  # expected move stays a single line: only GEX and walls get bands
 
 
@@ -816,7 +816,7 @@ def test_far_zones_are_drawn_as_a_line_in_both_indicators():
 def test_key_levels_paste_in_draws_zones_and_is_served_by_the_app():
     ind = (ROOT / "tradingview" / "options_levels_indicator.pine").read_text()
     assert 'indicator("Q DATA Key Levels (paste-in)"' in ind and "max_boxes_count = 500" in ind
-    assert 'drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Lines"]' in ind
+    assert 'drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Zones near price, lines farther", "Lines"]' in ind
     assert ind.rindex("input.") > ind.index("lzMid") - 20                                    # the new settings are the last inputs, so old settings stay put
     draw = ind.split('if drawAs == "Zones"')[1]
     assert "p + half" in draw and "zHigh + offsetPts" in draw and "close * 0.0002" in draw

@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.23
+- **All indicators tab.** Every TradingView indicator Q DATA makes, in one place (App > All indicators): the paste-in Key Levels and
+  All Tabs indicators (copy the script once, copy the levels each session), plus HOD / LOD, the Activity heatmap and one indicator per
+  tab, each with Copy and Download buttons, and one button that downloads every one.
+- **Key and GEX levels near price are zones.** The All Tabs and tab indicators draw key levels (flips, walls, high/low of day...) and
+  every GEX level close to price as see-through zones. New last settings group **Key and GEX levels as zones**: Near price (default),
+  All of them, or Off; what counts as near (auto 0.4% of price); zone height for levels with no band; fill transparency. The Key Levels
+  indicator gets a **Zones near price, lines farther** option. New settings are added last, so existing settings stay.
+- **Bright, see-through colors.** A vivid palette for every kind of level, a saturation boost, and on white charts only very light
+  colors are darkened (and less than before). Zone fills default to about 65 to 72% transparent with bright borders.
+
 ## New in 1.22
 - **Key levels are drawn as zones.** The paste-in Key levels indicator (now named **Q DATA Key Levels (paste-in)**) draws every level
   as a shaded zone. GEX and call/put wall levels use their real band edges; every other level gets a zone of a set height (auto =

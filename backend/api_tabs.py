@@ -157,15 +157,15 @@ def register(app, h, q):
             for i, cd in enumerate(gpj["cards"] + gpj["more"]):
                 top = i < len(gpj["cards"])
                 tag = f"#{i + 1} {cd['grade']} {cd['side']}"
-                col = "#3fb96a" if cd["side"] == "LONG" else "#e5534b"
+                col = "#00d65c" if cd["side"] == "LONG" else "#ff3b30"
                 why = f"{cd['side']} {cd['kind']} at {cd['label']} ({CALL_WORD.get(cd['call'], cd['call'])}). Grade {cd['grade']}: {cd['yes']} for, {cd['no']} against. Target {cd['r']:.1f}R."
                 grp = "Top setups" if top else "More setups"
                 add(cd["entry"], f"{grp}: {cd['side'].lower()} entries", f"{tag} entry", col, "solid", 2 if top else 1, why)
                 add(cd["stop"], f"{grp}: stops", f"{tag} stop", "#9aa4b8", "dotted", 1, why)
-                add(cd["target"], f"{grp}: targets", f"{tag} target {cd['r']:.1f}R", "#7db7ff", "dashed", 1, why)
+                add(cd["target"], f"{grp}: targets", f"{tag} target {cd['r']:.1f}R", "#4da6ff", "dashed", 1, why)
             for a in gpj["avoid"]:
                 p = a.get("level", a.get("price"))
-                add(p, "Stay away (no edge)", "AVOID " + str(a.get("label") or ""), "#e6b422", "dotted", 1, a.get("reason") or "No edge here.")
+                add(p, "Stay away (no edge)", "AVOID " + str(a.get("label") or ""), "#ffc400", "dotted", 1, a.get("reason") or "No edge here.")
             ai = gpj.get("already_in") or {}
             table = [("Regime", gpj["regime"]["title"]), ("Setups", str(len(gpj["cards"]))), ("High already in", pct(ai.get("high"))),
                      ("Low already in", pct(ai.get("low"))), ("No trade", gpj.get("no_trade"))]
@@ -173,21 +173,21 @@ def register(app, h, q):
         elif tab == "bias":
             b = ep("/api/analytics/bias")(underlying=u, convention=convention)["data"]
             L = b["levels"]
-            add(L.get("flip"), "Gamma flip", "Gamma flip", "#e6b422", "solid", 2, b["day_type"]["why"])
-            add(L.get("call_wall"), "Call wall", f"Call wall ({L.get('walls_basis')})", "#22d3ee", "solid", 2, "The main ceiling.")
-            add(L.get("put_wall"), "Put wall", f"Put wall ({L.get('walls_basis')})", "#ff4d8d", "solid", 2, "The main floor.")
+            add(L.get("flip"), "Gamma flip", "Gamma flip", "#ffc400", "solid", 2, b["day_type"]["why"])
+            add(L.get("call_wall"), "Call wall", f"Call wall ({L.get('walls_basis')})", "#00e5ff", "solid", 2, "The main ceiling.")
+            add(L.get("put_wall"), "Put wall", f"Put wall ({L.get('walls_basis')})", "#ff1f7a", "solid", 2, "The main floor.")
             em = L.get("expected_move") or {}
-            add(em.get("high"), "Expected move", f"EM high ({em.get('method')})", "#7db7ff", "dotted")
-            add(em.get("low"), "Expected move", f"EM low ({em.get('method')})", "#7db7ff", "dotted")
+            add(em.get("high"), "Expected move", f"EM high ({em.get('method')})", "#4da6ff", "dotted")
+            add(em.get("low"), "Expected move", f"EM low ({em.get('method')})", "#4da6ff", "dotted")
             table = [("Bias", b["verdict"]), ("Confidence", b["confidence"]["label"]), ("Day type", b["day_type"]["label"])]
             for w in (b.get("what_would_change") or [])[:2]:
                 table.append(("Would change", w[:90]))
         elif tab == "session":
             sj = ep("/api/charts/session")(underlying=u, day=None, scope="all")
             last = lambda k: (sj.get(k) or [{}])[-1].get("value")
-            add(last("flip"), "Gamma flip", "Gamma flip", "#e6b422", "solid", 2)
-            add(last("call_wall"), "Call wall", "Call wall", "#22d3ee", "solid", 2)
-            add(last("put_wall"), "Put wall", "Put wall", "#ff4d8d", "solid", 2)
+            add(last("flip"), "Gamma flip", "Gamma flip", "#ffc400", "solid", 2)
+            add(last("call_wall"), "Call wall", "Call wall", "#00e5ff", "solid", 2)
+            add(last("put_wall"), "Put wall", "Put wall", "#ff1f7a", "solid", 2)
             op = (sj.get("open") or {}).get("price")
             dmv = (sj.get("day_move") or {}).get("points")
             add(op, "9:30 open", "9:30 open", "#ffffff", "dashed", 1)
@@ -202,15 +202,15 @@ def register(app, h, q):
             r = ep("/api/analytics/regime")(underlying=u, convention=convention)["data"]
             z = c["z"]
             gf = an.gamma_flip(snap.contracts, snap.spot, c["now"], convention)
-            add(gf["flip"] if gf["found"] else None, "Gamma flip", "Gamma flip", "#e6b422", "solid", 2, r.get("meaning"))
+            add(gf["flip"] if gf["found"] else None, "Gamma flip", "Gamma flip", "#ffc400", "solid", 2, r.get("meaning"))
             if z.get("available"):
-                add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffd166", "dashed", 1)
-                add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#22d3ee", "solid", 1)
-                add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff4d8d", "solid", 1)
+                add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffdd00", "dashed", 1)
+                add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#00e5ff", "solid", 1)
+                add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff1f7a", "solid", 1)
             pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
             rg = pb.get("range") or {}
             for k, nm in (("high", "Range high"), ("mid", "Range middle"), ("low", "Range low")):
-                add(rg.get(k), "Playbook range", nm, pb.get("color") or "#3fb96a", "dashed", 1, f"{pb['title']}: {pb['tagline']}")
+                add(rg.get(k), "Playbook range", nm, pb.get("color") or "#00d65c", "dashed", 1, f"{pb['title']}: {pb['tagline']}")
             table = [("Regime", f"{r['label']} ({r['confidence']})"), ("Gamma", pb["title"]), ("Meaning", r.get("meaning", "")[:90])]
             for w in (r.get("what_would_change") or [])[:1]:
                 table.append(("Would change", w[:90]))
@@ -221,9 +221,9 @@ def register(app, h, q):
                 raise HTTPException(409, d.get("reason") or "No HOD / LOD read right now.")
             sd = d["sigma_open"]
             add(d["open"], "9:30 open", "9:30 open", "#ffffff", "dashed", 1, "Today's 9:30 open: the HOD / LOD ladder is built from it.")
-            add(d["high"], "High of day so far", "HOD so far", "#3fb96a", "solid", 2, "The session's high so far (from the app's own prices; TradingView's may differ by a tick or two).")
-            add(d["low"], "Low of day so far", "LOD so far", "#e5534b", "solid", 2, "The session's low so far (from the app's own prices; TradingView's may differ by a tick or two).")
-            for side, rows, col, sign in (("HOD", d["up"], "#7db7ff", "+"), ("LOD", d["down"], "#ffb37a", "-")):
+            add(d["high"], "High of day so far", "HOD so far", "#00d65c", "solid", 2, "The session's high so far (from the app's own prices; TradingView's may differ by a tick or two).")
+            add(d["low"], "Low of day so far", "LOD so far", "#ff3b30", "solid", 2, "The session's low so far (from the app's own prices; TradingView's may differ by a tick or two).")
+            for side, rows, col, sign in (("HOD", d["up"], "#4da6ff", "+"), ("LOD", d["down"], "#ffa04d", "-")):
                 for r in rows:
                     tip = sent(f"Open {sign}{r['k']:g} sd ({r['k'] * sd:,.0f} index points)", f"Chance at the open {pct(r['at_open']) or '-'}",
                                "Already hit today" if r["hit"] else f"Chance from here {pct(r['now']) or '-'}")
@@ -231,7 +231,7 @@ def register(app, h, q):
                     groups[names.index(f"{side} ladder (open {sign} sd)")]["on"] = False     # the full ladder is a lot of lines: off until you switch it on
             pr = d.get("projection")
             if pr:
-                for side, col in (("hod", "#22d3ee"), ("lod", "#ff4d8d")):
+                for side, col in (("hod", "#00e5ff"), ("lod", "#ff1f7a")):
                     for key, word in (("p50", "50%"), ("p80", "80%"), ("p95", "95%")):
                         v = pr[side].get(key)
                         tip = (f"Projected {'high' if side == 'hod' else 'low'} of the day: {word} of random-walk paths from here, with the move left in the day, "
@@ -254,7 +254,7 @@ def register(app, h, q):
                 raise HTTPException(409, "Needs today's 9:30 open and a VIX-family reading for this symbol.")
             for k, sty in ((1, "solid"), (2, "dashed")):
                 for sg in (1, -1):
-                    add(c["open"] + sg * k * pts, f"Typical day +/-{k}", f"VIX day {'+' if sg > 0 else '-'}{k}", "#a371f7" if k == 1 else "#c77dff", sty, 1,
+                    add(c["open"] + sg * k * pts, f"Typical day +/-{k}", f"VIX day {'+' if sg > 0 else '-'}{k}", "#a64dff" if k == 1 else "#c34dff", sty, 1,
                         f"The 9:30 open {'+' if sg > 0 else '-'} {k} x the typical day priced by {mv.get('from')}. About {'2 days in 3' if k == 1 else '19 days in 20'} stay inside.")
             add(c["open"], "9:30 open", "9:30 open", "#ffffff", "dashed")
             table = [("Volatility regime", vj["regime"]["label"]), ("Typical day", f"{(mv.get('futures_points') or pts):,.0f} pts"), ("From", mv.get("from"))]
@@ -262,34 +262,34 @@ def register(app, h, q):
             qj = q.quant(u, convention, None, "auto")["data"]
             pb = qj["playbook"]
             for t in pb.get("targets") or []:
-                add(t["price"], "Playbook targets", t["label"].split(" (")[0], pb.get("color") or "#3fb96a", "dashed", 1, f"{t['label']}. Chance today {pct(t.get('chance'))}.")
+                add(t["price"], "Playbook targets", t["label"].split(" (")[0], pb.get("color") or "#00d65c", "dashed", 1, f"{t['label']}. Chance today {pct(t.get('chance'))}.")
             mc = qj["monte_carlo"]
             if mc.get("available"):
                 for k, v in (mc.get("hod") or {}).items():
-                    add(v, "Monte Carlo high of day", f"MC HOD {k[1:]}%", "#3fb96a", "dotted", 1, f"{k[1:]}% of simulated paths make their high at or below this by the close.")
+                    add(v, "Monte Carlo high of day", f"MC HOD {k[1:]}%", "#00d65c", "dotted", 1, f"{k[1:]}% of simulated paths make their high at or below this by the close.")
                 for k, v in (mc.get("lod") or {}).items():
-                    add(v, "Monte Carlo low of day", f"MC LOD {k[1:]}%", "#e5534b", "dotted", 1, f"{k[1:]}% of simulated paths make their low at or above this by the close.")
+                    add(v, "Monte Carlo low of day", f"MC LOD {k[1:]}%", "#ff3b30", "dotted", 1, f"{k[1:]}% of simulated paths make their low at or above this by the close.")
             table = [("Gamma", pb["title"]), ("Targets", pb.get("r_range")), ("Model", qj.get("model_used")),
                      ("Mean reversion", "significant" if (qj["mean_reversion"] or {}).get("significant") else "not significant")]
         elif tab == "zerodte":
             z = c["z"]
             if not z.get("available"):
                 raise HTTPException(409, "No 0DTE expiry with data right now.")
-            add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#22d3ee", "solid", 2, "Biggest positive 0DTE gamma strike.")
-            add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff4d8d", "solid", 2, "Biggest negative 0DTE gamma strike.")
-            add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffd166", "dashed", 2, z.get("flip_note"))
+            add(z.get("call_wall"), "0DTE call wall", "0DTE call wall", "#00e5ff", "solid", 2, "Biggest positive 0DTE gamma strike.")
+            add(z.get("put_wall"), "0DTE put wall", "0DTE put wall", "#ff1f7a", "solid", 2, "Biggest negative 0DTE gamma strike.")
+            add(z.get("flip"), "0DTE flip", "0DTE flip", "#ffdd00", "dashed", 2, z.get("flip_note"))
             for k in (z.get("top_positive") or [])[:5]:
                 if k not in (z.get("call_wall"),):
-                    add(k, "Top + 0DTE GEX strikes", "0DTE +GEX", "#2f8bf5", "solid", 1)
+                    add(k, "Top + 0DTE GEX strikes", "0DTE +GEX", "#1e7bff", "solid", 1)
             for k in (z.get("top_negative") or [])[:5]:
                 if k not in (z.get("put_wall"),):
-                    add(k, "Top - 0DTE GEX strikes", "0DTE -GEX", "#a371f7", "solid", 1)
+                    add(k, "Top - 0DTE GEX strikes", "0DTE -GEX", "#a64dff", "solid", 1)
             table = [("Expiry", z.get("expiry")), ("0DTE share of gamma", pct(z.get("gross_share")))]
         elif tab == "move":
             rows = ep("/api/analytics/moves")(underlying=u, n=3)["rows"]
             for i, r in enumerate(rows[:3]):
                 tag = "today" if i == 0 else r["expiry"]
-                for key, nm, sty, col in (("straddle_levels", "Straddle", "solid", "#7db7ff"), ("sd1_levels", "1 sd", "dashed", "#8e9bff"), ("sd2_levels", "2 sd", "dotted", "#c77dff")):
+                for key, nm, sty, col in (("straddle_levels", "Straddle", "solid", "#4da6ff"), ("sd1_levels", "1 sd", "dashed", "#7a5cff"), ("sd2_levels", "2 sd", "dotted", "#c34dff")):
                     lv_ = r.get(key) or {}
                     for side, sg in (("up", "+"), ("down", "-")):
                         add(lv_.get(side), f"{nm} ({'nearest expiry' if i == 0 else 'later expiries'})", f"{nm} {sg} {tag}", col, sty, 2 if i == 0 else 1,

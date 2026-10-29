@@ -25,17 +25,18 @@ from __future__ import annotations
 import re
 
 STYLES = {"solid": "Solid", "dashed": "Dashed", "dotted": "Dotted"}
-CALL_COLOR = {"RESPECT": "#3fb96a", "CHOP": "#e6b422", "DISRESPECT": "#e5534b"}
+CALL_COLOR = {"RESPECT": "#00d65c", "CHOP": "#ffc400", "DISRESPECT": "#ff3b30"}
 CALL_WORD = {"RESPECT": "HOLD", "CHOP": "CHOP", "DISRESPECT": "BREAK"}
 POSITIONS = ["Top right", "Top left", "Top center", "Bottom right", "Bottom left", "Bottom center", "Middle right", "Middle left"]
 POS_EXPR = ('{v} == "Top left" ? position.top_left : {v} == "Top center" ? position.top_center : {v} == "Bottom right" ? position.bottom_right : '
             '{v} == "Bottom left" ? position.bottom_left : {v} == "Bottom center" ? position.bottom_center : {v} == "Middle right" ? position.middle_right : '
             '{v} == "Middle left" ? position.middle_left : position.top_right')
 # Default tab colors (used when "Color levels by" is set to Tab)
-TAB_COLORS = ["#2f8bf5", "#ff7a2e", "#3fb96a", "#e6b422", "#7db7ff", "#a371f7", "#22d3ee", "#ff4d8d", "#c77dff", "#2ec4b6", "#e76f51",
-              "#4cc9f0", "#f72585", "#b5e48c", "#ffb703", "#8e9bff", "#f06292", "#9aa4b8"]
+TAB_COLORS = ["#1e7bff", "#ff6a00", "#00d65c", "#ffc400", "#4da6ff", "#a64dff", "#00e5ff", "#ff1f7a", "#c34dff", "#00e0c6", "#ff5a36",
+              "#29d3ff", "#ff0a78", "#9dff4d", "#ffb300", "#7a5cff", "#ff4fa3", "#9aa4b8"]
 
 GQ, GZ, GL, GT = "Quick setup", "Stack zones (estimated)", "Labels and lines", "Tables"
+GK = "Key and GEX levels as zones"
 COLOR_MODES = ["Kind of level", "Tab", "Above / below price"]
 # What is drawn. Clean / Minimal declutter: levels inside a stack zone fold into the zone (hover its label for what is inside),
 # and only KEY kinds (the "Key" box on each kind's row: flips, walls, your levels...) always keep their line.
@@ -61,8 +62,8 @@ SETTINGS = [
     {"var": "colorMode", "type": "string", "default": "Kind of level", "title": "Color levels by", "group": GQ, "options": COLOR_MODES,
      "tip": "Kind of level: each kind has its own color (set under each tab). Tab: every level from a tab gets that tab's color. "
             "Above / below price: one color above price, one below (the two colors on the next row)."},
-    {"var": "colUp", "type": "color", "default": "#e5534b", "title": "Above price", "group": GQ, "inline": "qc"},
-    {"var": "colDn", "type": "color", "default": "#3fb96a", "title": "Below price", "group": GQ, "inline": "qc"},
+    {"var": "colUp", "type": "color", "default": "#ff3b30", "title": "Above price", "group": GQ, "inline": "qc"},
+    {"var": "colDn", "type": "color", "default": "#00d65c", "title": "Below price", "group": GQ, "inline": "qc"},
     {"var": "nearestN", "type": "int", "default": 0, "title": "Only the nearest N levels on each side (0 = all)", "group": GQ, "min": 0, "max": 100},
     {"var": "maxDistPct", "type": "float", "default": None, "title": "Hide levels farther than this % from price", "group": GQ, "min": 0.1, "step": 0.5},
     {"var": "emphNear", "type": "bool", "default": True, "title": "Thicker line for the nearest level above and below price", "group": GQ},
@@ -81,11 +82,11 @@ SETTINGS = [
      "tip": "Stops a chain of close levels from turning into one huge zone."},
     {"var": "zPad", "type": "float", "default": 2.0, "title": "Pad each side (points)", "group": GZ, "min": 0.0, "step": 0.25},
     {"var": "zColorMode", "type": "string", "default": "Strength", "title": "Color zones by", "group": GZ, "options": ["Strength", "Above / below price"]},
-    {"var": "zCol", "type": "color", "default": "#2f8bf5", "title": "Stacked", "group": GZ, "inline": "zc1"},
-    {"var": "zColH", "type": "color", "default": "#ff7a2e", "title": "Heavy", "group": GZ, "inline": "zc1"},
-    {"var": "zColUp", "type": "color", "default": "#e5534b", "title": "Above price", "group": GZ, "inline": "zc2"},
-    {"var": "zColDn", "type": "color", "default": "#3fb96a", "title": "Below price", "group": GZ, "inline": "zc2"},
-    {"var": "zTransp", "type": "int", "default": 80, "title": "Zone transparency", "group": GZ, "min": 0, "max": 100},
+    {"var": "zCol", "type": "color", "default": "#1e7bff", "title": "Stacked", "group": GZ, "inline": "zc1"},
+    {"var": "zColH", "type": "color", "default": "#ff6a00", "title": "Heavy", "group": GZ, "inline": "zc1"},
+    {"var": "zColUp", "type": "color", "default": "#ff3b30", "title": "Above price", "group": GZ, "inline": "zc2"},
+    {"var": "zColDn", "type": "color", "default": "#00d65c", "title": "Below price", "group": GZ, "inline": "zc2"},
+    {"var": "zTransp", "type": "int", "default": 72, "title": "Zone transparency", "group": GZ, "min": 0, "max": 100},
     {"var": "zBorder", "type": "bool", "default": True, "title": "Zone border", "group": GZ},
     {"var": "zLabel", "type": "bool", "default": True, "title": "Zone label", "group": GZ, "inline": "zl"},
     {"var": "zLabelSide", "type": "string", "default": "Right", "title": "", "group": GZ, "inline": "zl", "options": ["Right", "Left"]},
@@ -106,13 +107,22 @@ SETTINGS = [
      "options": ["Session open 9:30 ET", "Start of chart data", "Last N bars"]},
     {"var": "startBars", "type": "int", "default": 50, "title": "", "group": GL, "inline": "st", "min": 1, "max": 4000},
     {"var": "extBars", "type": "int", "default": 8, "title": "Lines run this many bars past the last candle", "group": GL, "min": 0, "max": 500},
-    {"var": "zoneTransp", "type": "int", "default": 82, "title": "Level zone transparency (GEX and walls)", "group": GL, "min": 0, "max": 100},
+    {"var": "zoneTransp", "type": "int", "default": 70, "title": "Level zone transparency (GEX and walls)", "group": GL, "min": 0, "max": 100},
     # ---- tables ----
     {"var": "tablePos", "type": "string", "default": "Top right", "title": "Info table at", "group": GT, "options": POSITIONS},
     {"var": "legendPos", "type": "string", "default": "Bottom right", "title": "Legend at", "group": GT, "options": POSITIONS},
     {"var": "tableSize", "type": "string", "default": "Small", "title": "Table text size", "group": GT, "options": ["Tiny", "Small", "Normal"]},
     {"var": "tableBg", "type": "color", "default": "#0f1626", "title": "Table background", "group": GT, "inline": "tbc"},
     {"var": "tableTxt", "type": "color", "default": "#ffffff", "title": "Text", "group": GT, "inline": "tbc"},
+    # ---- key and GEX levels as zones (added in 1.23, last so the other settings keep their place) ----
+    {"var": "kzMode", "type": "string", "default": "Near price", "title": "Draw as zones", "group": GK, "options": ["Near price", "All of them", "Off"],
+     "tip": "Near price (default): key levels (flips, walls, high/low of day...) and every GEX level close to price are drawn as see-through zones, so the ones that matter right now stand out. All of them: every key and GEX level is a zone. Off: lines only (GEX bands still shaded)."},
+    {"var": "kzNear", "type": "float", "default": 0.0, "title": "Near = within (points, 0 = auto)", "group": GK, "min": 0.0, "step": 1.0,
+     "tip": "Auto: 0.4% of price, about 80 to 90 NQ points or 25 ES points."},
+    {"var": "kzH", "type": "float", "default": 0.0, "title": "Zone height when a level has no band (points, 0 = auto)", "group": GK, "min": 0.0, "step": 0.25,
+     "tip": "Auto: 0.03% of price, about 6 NQ points or 2 ES points. GEX and wall levels with a real band use it."},
+    {"var": "kzTransp", "type": "int", "default": 65, "title": "Zone fill transparency", "group": GK, "min": 0, "max": 100,
+     "tip": "Lower = brighter, higher = more see-through. The border stays bright."},
 ]
 SET_BY_VAR = {x["var"]: x for x in SETTINGS}
 
@@ -204,18 +214,24 @@ def _input(spec: dict, value, group_var: str) -> str:
 INK_FUNCS = [
     'onLight() =>',
     '    bgMode == "Light (white)" ? true : bgMode == "Dark" ? false : 0.299 * color.r(chart.bg_color) + 0.587 * color.g(chart.bg_color) + 0.114 * color.b(chart.bg_color) > 140', '',
+    '// vivid colors: a colorful color gets a saturation boost; on a light (white) chart, only very light colors are darkened (same hue)',
     'ink(color c) =>',
-    '    color out = c',
+    '    cr = color.r(c)', '    cg = color.g(c)', '    cb = color.b(c)',
+    '    mx = math.max(cr, math.max(cg, cb))', '    mn = math.min(cr, math.min(cg, cb))',
+    '    if mx - mn >= 40',
+    '        m = (cr + cg + cb) / 3',
+    '        cr := math.max(0.0, math.min(255.0, m + (cr - m) * 1.3))',
+    '        cg := math.max(0.0, math.min(255.0, m + (cg - m) * 1.3))',
+    '        cb := math.max(0.0, math.min(255.0, m + (cb - m) * 1.3))',
     '    if onLight()',
-    '        cr = color.r(c)', '        cg = color.g(c)', '        cb = color.b(c)',
     '        lum = 0.299 * cr + 0.587 * cg + 0.114 * cb',
-    '        if lum > 115',
-    '            if math.max(cr, math.max(cg, cb)) - math.min(cr, math.min(cg, cb)) < 40',
-    '                out := color.rgb(38, 42, 52, color.t(c))',
+    '        if lum > 165',
+    '            if mx - mn < 40',
+    '                cr := 38', '                cg := 42', '                cb := 52',
     '            else',
-    '                k = 115 / lum',
-    '                out := color.rgb(cr * k, cg * k, cb * k, color.t(c))',
-    '    out', '']
+    '                k = 165 / lum',
+    '                cr := cr * k', '                cg := cg * k', '                cb := cb * k',
+    '    color.rgb(cr, cg, cb, color.t(c))', '']
 
 CHUNK = 60          # items per array.from(): keeps every function small
 
@@ -379,11 +395,12 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
         if cone and si == sess:
             o.append(f'showCone = input.bool(true, "Expected-move cone from the 9:30 open", group = grp{si}, inline = "cone", '
                      f'tooltip = "+/-1 and +/-2 times the day expected move from the 9:30 open, widening through the session. About 2 days in 3 stay inside +/-1.")')
-            o.append(f'coneC1 = input.color(#7db7ff, "", group = grp{si}, inline = "cone")')
-            o.append(f'coneC2 = input.color(#8e9bff, "", group = grp{si}, inline = "cone")')
+            o.append(f'coneC1 = input.color(#4da6ff, "", group = grp{si}, inline = "cone")')
+            o.append(f'coneC2 = input.color(#7a5cff, "", group = grp{si}, inline = "cone")')
     o += ['', '// ---- 3) stack zones ----'] + block(GZ, "grpZ")
     o += ['', '// ---- 4) labels and lines ----'] + block(GL, "grpL")
     o += ['', '// ---- 5) tables ----'] + block(GT, "grpT")
+    o += ['', '// ---- 6) key and GEX levels as zones ----'] + block(GK, "grpKZ")
 
     nt, ng = len(sections), len(G)
     o += ['', '// ---- the per-tab and per-kind settings gathered into arrays, so the drawing functions read a few arrays, not hundreds of settings ----']
@@ -398,6 +415,13 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           'tabOn(int t) =>', '    t == -1 ? true : t < 0 or t >= array.size(tOn) ? false : array.get(tOn, t)', '',
           'groupOn(int g) =>', '    g >= 0 and g < array.size(kOn) ? array.get(kOn, g) : false', '',
           'isKey(int g) =>', '    g >= 0 and g < array.size(kKey) ? array.get(kKey, g) : false', '',
+          'gexKind(int g) =>',
+          '    lw = g >= 0 and g < array.size(gName) ? str.lower(array.get(gName, g)) : ""',
+          '    str.contains(lw, "gex") or str.contains(lw, "gamma") or str.contains(lw, "wall") or str.contains(lw, "0dte")', '',
+          '// a key or GEX level that should be drawn as a zone (near price, unless "All of them")',
+          'kzWant(int g, float p) =>',
+          '    near = kzNear > 0 ? kzNear : close * 0.004',
+          '    kzMode != "Off" and (isKey(g) or gexKind(g)) and (kzMode == "All of them" or math.abs(p - close) <= near)', '',
           ] + INK_FUNCS + [
           'kindColor(int g) =>', '    ink(g >= 0 and g < array.size(kCol) ? array.get(kCol, g) : color.gray)', '',
           'tabColor(int t) =>', '    ink(t >= 0 and t < array.size(tCol) ? array.get(tCol, t) : color.gray)', '',
@@ -508,15 +532,20 @@ def build_pine(title, short, sections, head_rows, source, units, made_at, cone=N
           '                    nearDn := i',
           '    for i = 0 to n - 1',
           '        kindI = array.get(lvG, i)',
-          '        folded = (zOnly or viewMode == "Clean: zones + key lines + lone levels") and array.get(inZone, i) and not isKey(kindI)',
-          '        if array.get(vis, i) and not folded and not (viewMode == "Minimal: zones + key lines only" and not isKey(kindI))',
+          '        kzI = kzWant(kindI, array.get(lvP, i) + offsetPts)',
+          '        folded = (zOnly or viewMode == "Clean: zones + key lines + lone levels") and array.get(inZone, i) and not isKey(kindI) and not kzI',
+          '        if array.get(vis, i) and not folded and not (viewMode == "Minimal: zones + key lines only" and not isKey(kindI) and not kzI)',
           '            g = array.get(lvG, i)',
           '            p = array.get(lvP, i) + offsetPts',
           '            c = levelColor(g, array.get(lvT, i), p)',
           '            lo = array.get(lvLo, i)', '            hi = array.get(lvHi, i)',
           '            if showLines',
-          '                if hi > lo and lo > 0',
-          '                    array.push(bxs, box.new(startX, hi + offsetPts, endX, lo + offsetPts, xloc = xloc.bar_time, border_color = color.new(c, 40), border_width = 1, bgcolor = color.new(c, zoneTransp)))',
+          '                band = hi > lo and lo > 0',
+          '                if kzI or band',
+          '                    half = (kzH > 0 ? kzH : close * 0.0003) / 2',
+          '                    zt = band ? hi + offsetPts : p + half',
+          '                    zb = band ? lo + offsetPts : p - half',
+          '                    array.push(bxs, box.new(startX, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, kzI ? 10 : 40), border_width = 1, bgcolor = color.new(c, kzI ? kzTransp : zoneTransp)))',
           '                extra = (i == nearUp or i == nearDn) ? 1 : 0',
           '                array.push(lns, line.new(startX, p, endX, p, xloc = xloc.bar_time, color = c, width = widthOf(g) + array.get(lvB, i) + extra, style = lineStyle(styleName(g))))',
           '            if showLabels',

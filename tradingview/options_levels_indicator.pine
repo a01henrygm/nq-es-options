@@ -43,11 +43,11 @@ maxDistPct = input.float(5.0, "Hide levels farther than this % from price", minv
 showBlocks = input.bool(true, "Show the small block with the label", group = G_GEN)
 blockSize  = input.string("small", "Block text size", options = ["tiny", "small", "normal"], group = G_GEN)
 showBands  = input.bool(true, "Shade zone bands", group = G_GEN, inline = "band")
-bandTransp = input.int(82, "Transparency", minval = 0, maxval = 100, group = G_GEN, inline = "band")
+bandTransp = input.int(72, "Transparency", minval = 0, maxval = 100, group = G_GEN, inline = "band")
 bandFarPct = input.float(1.0, "Zones farther than this % from price are drawn as a line", minval = 0.0, step = 0.1, tooltip = "Expected-move, call, put and GEX zones far from price lose their shaded band and show as one line at their main price. Distance is measured to the nearest edge of the zone. 0 = always a line.", group = G_GEN)
 
 showFlip = input.bool(true, "Show", group = G_FLIP, inline = "flip")
-cFlip    = input.color(#e6b422, "", group = G_FLIP, inline = "flip")
+cFlip    = input.color(#ffc400, "", group = G_FLIP, inline = "flip")
 wFlip    = input.int(2, "Width", minval = 1, maxval = 6, group = G_FLIP, inline = "flip")
 sFlip    = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_FLIP, inline = "flip")
 
@@ -55,65 +55,65 @@ showGex  = input.bool(true, "Show", group = G_GEX, inline = "gex")
 maxGex   = input.int(8, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_GEX, inline = "gex")
 wGex     = input.int(2, "Width", minval = 1, maxval = 6, group = G_GEX, inline = "gex2")
 sGex     = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_GEX, inline = "gex2")
-cGexCall = input.color(#3fb96a, "Call wall", group = G_GEX, inline = "gexc")
-cGexPut  = input.color(#e5534b, "Put wall", group = G_GEX, inline = "gexc")
-cGexPos  = input.color(#2f8bf5, "+GEX", group = G_GEX, inline = "gexn")
-cGexNeg  = input.color(#a371f7, "-GEX", group = G_GEX, inline = "gexn")
-cGexConc = input.color(#2f8bf5, "GEX strike", group = G_GEX, inline = "gexn")
-cGex0Call = input.color(#22d3ee, "0DTE call wall", group = G_GEX, inline = "gex0")
-cGex0Put  = input.color(#ff4d8d, "0DTE put wall", group = G_GEX, inline = "gex0")
-cGex0Flip = input.color(#ffd166, "0DTE flip", group = G_GEX, inline = "gex0")
+cGexCall = input.color(#00d65c, "Call wall", group = G_GEX, inline = "gexc")
+cGexPut  = input.color(#ff3b30, "Put wall", group = G_GEX, inline = "gexc")
+cGexPos  = input.color(#1e7bff, "+GEX", group = G_GEX, inline = "gexn")
+cGexNeg  = input.color(#a64dff, "-GEX", group = G_GEX, inline = "gexn")
+cGexConc = input.color(#1e7bff, "GEX strike", group = G_GEX, inline = "gexn")
+cGex0Call = input.color(#00e5ff, "0DTE call wall", group = G_GEX, inline = "gex0")
+cGex0Put  = input.color(#ff1f7a, "0DTE put wall", group = G_GEX, inline = "gex0")
+cGex0Flip = input.color(#ffdd00, "0DTE flip", group = G_GEX, inline = "gex0")
 
 showOi  = input.bool(true, "Show", group = G_OI, inline = "oi")
 maxOi   = input.int(3, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_OI, inline = "oi")
 wOi     = input.int(1, "Width", minval = 1, maxval = 6, group = G_OI, inline = "oi2")
 sOi     = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_OI, inline = "oi2")
-cOiCall = input.color(#ff9f43, "Call OI", group = G_OI, inline = "oic")
-cOiPut  = input.color(#d9480f, "Put OI", group = G_OI, inline = "oic")
-cOi     = input.color(#ff7a2e, "Other OI", group = G_OI, inline = "oic")
+cOiCall = input.color(#ff9500, "Call OI", group = G_OI, inline = "oic")
+cOiPut  = input.color(#ff4500, "Put OI", group = G_OI, inline = "oic")
+cOi     = input.color(#ff6a00, "Other OI", group = G_OI, inline = "oic")
 
 showVol  = input.bool(true, "Show", group = G_VOL, inline = "vol")
 maxVol   = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_VOL, inline = "vol")
 wVol     = input.int(1, "Width", minval = 1, maxval = 6, group = G_VOL, inline = "vol2")
 sVol     = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_VOL, inline = "vol2")
-cVolCall = input.color(#2ec4b6, "Call volume", group = G_VOL, inline = "volc")
-cVolPut  = input.color(#f06292, "Put volume", group = G_VOL, inline = "volc")
-cVol     = input.color(#3fb96a, "Other volume", group = G_VOL, inline = "volc")
+cVolCall = input.color(#00e0c6, "Call volume", group = G_VOL, inline = "volc")
+cVolPut  = input.color(#ff4fa3, "Put volume", group = G_VOL, inline = "volc")
+cVol     = input.color(#00d65c, "Other volume", group = G_VOL, inline = "volc")
 
 showMove = input.bool(true, "Show", group = G_MOVE, inline = "mv")
 maxMove  = input.int(4, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_MOVE, inline = "mv")
 wMove    = input.int(1, "Width", minval = 1, maxval = 6, group = G_MOVE, inline = "mv2")
 sMove    = input.string("Dotted", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_MOVE, inline = "mv2")
-cMove    = input.color(#7db7ff, "Expected", group = G_MOVE, inline = "mvc")
-cMoveExt = input.color(#8e9bff, "Extended", group = G_MOVE, inline = "mvc")
+cMove    = input.color(#4da6ff, "Expected", group = G_MOVE, inline = "mvc")
+cMoveExt = input.color(#7a5cff, "Extended", group = G_MOVE, inline = "mvc")
 
 showCharm  = input.bool(true, "Show", group = G_CHARM, inline = "ch")
 maxCharm   = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_CHARM, inline = "ch")
 wCharm     = input.int(1, "Width", minval = 1, maxval = 6, group = G_CHARM, inline = "ch2")
 sCharm     = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_CHARM, inline = "ch2")
-cCharmSell = input.color(#e76f51, "Dealers sell into close", group = G_CHARM, inline = "chc")
-cCharmBuy  = input.color(#2a9d8f, "Dealers buy into close", group = G_CHARM, inline = "chc")
+cCharmSell = input.color(#ff5a36, "Dealers sell into close", group = G_CHARM, inline = "chc")
+cCharmBuy  = input.color(#00c9a7, "Dealers buy into close", group = G_CHARM, inline = "chc")
 
 showVanna  = input.bool(true, "Show", group = G_VANNA, inline = "va")
 maxVanna   = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_VANNA, inline = "va")
 wVanna     = input.int(1, "Width", minval = 1, maxval = 6, group = G_VANNA, inline = "va2")
 sVanna     = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_VANNA, inline = "va2")
-cVannaPos  = input.color(#c77dff, "Vanna +", group = G_VANNA, inline = "vac")
-cVannaNeg  = input.color(#ffb703, "Vanna -", group = G_VANNA, inline = "vac")
+cVannaPos  = input.color(#c34dff, "Vanna +", group = G_VANNA, inline = "vac")
+cVannaNeg  = input.color(#ffb300, "Vanna -", group = G_VANNA, inline = "vac")
 
 showDex    = input.bool(true, "Show", group = G_DEX, inline = "dx")
 maxDex     = input.int(2, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_DEX, inline = "dx")
 wDex       = input.int(1, "Width", minval = 1, maxval = 6, group = G_DEX, inline = "dx2")
 sDex       = input.string("Dotted", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_DEX, inline = "dx2")
-cDexPos    = input.color(#4cc9f0, "Dealers long delta", group = G_DEX, inline = "dxc")
-cDexNeg    = input.color(#f72585, "Dealers short delta", group = G_DEX, inline = "dxc")
+cDexPos    = input.color(#29d3ff, "Dealers long delta", group = G_DEX, inline = "dxc")
+cDexNeg    = input.color(#ff0a78, "Dealers short delta", group = G_DEX, inline = "dxc")
 
 showNew    = input.bool(true, "Show", group = G_NEW, inline = "nw")
 maxNew     = input.int(3, "Max levels", minval = 0, maxval = 60, tooltip = MAXTIP, group = G_NEW, inline = "nw")
 wNew       = input.int(2, "Width", minval = 1, maxval = 6, group = G_NEW, inline = "nw2")
 sNew       = input.string("Solid", "Style", options = ["Solid", "Dashed", "Dotted"], group = G_NEW, inline = "nw2")
-cNewCall   = input.color(#b5e48c, "New calls", group = G_NEW, inline = "nwc")
-cNewPut    = input.color(#ff6b6b, "New puts", group = G_NEW, inline = "nwc")
+cNewCall   = input.color(#9dff4d, "New calls", group = G_NEW, inline = "nwc")
+cNewPut    = input.color(#ff4d4d, "New puts", group = G_NEW, inline = "nwc")
 
 showCustom = input.bool(true, "Show", group = G_MINE, inline = "mine")
 cCustom    = input.color(#ffffff, "", group = G_MINE, inline = "mine")
@@ -129,38 +129,49 @@ zHeavy   = input.int(5, "Heavy at", minval = 2, maxval = 10, group = G_ZONE, inl
 zDist    = input.float(0.0, "Join levels within (points, 0 = auto)", minval = 0.0, step = 0.25, tooltip = "Levels this close join one zone. Auto = 0.04% of price: about 10 NQ points, 2.5 ES points.", group = G_ZONE)
 zMaxW    = input.float(0.0, "Widest zone (points, 0 = 4x the join distance)", minval = 0.0, step = 1.0, group = G_ZONE)
 zPad     = input.float(2.0, "Pad each side (points)", minval = 0.0, step = 0.25, group = G_ZONE)
-zCol     = input.color(#2f8bf5, "Stacked", group = G_ZONE, inline = "zc")
-zColH    = input.color(#ff7a2e, "Heavy", group = G_ZONE, inline = "zc")
-zTransp  = input.int(80, "Zone transparency", minval = 0, maxval = 100, group = G_ZONE)
+zCol     = input.color(#1e7bff, "Stacked", group = G_ZONE, inline = "zc")
+zColH    = input.color(#ff6a00, "Heavy", group = G_ZONE, inline = "zc")
+zTransp  = input.int(72, "Zone transparency", minval = 0, maxval = 100, group = G_ZONE)
 zLabel   = input.bool(true, "Zone label", group = G_ZONE)
 bgMode   = input.string("Auto", "Chart background", options = ["Auto", "Light (white)", "Dark"], tooltip = "Auto reads your chart background. On a light (white) chart, light colors (yellow, light blue, white...) are drawn darker in the same hue.", group = G_COLS)
 
 const string G_LZ = "Zones (each level)"
-drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Lines"], tooltip = "Zones: every level is a shaded band. GEX and wall levels use their real band edges; the rest get the height below. Lines: one line per level (the old look).", group = G_LZ)
+drawAs    = input.string("Zones", "Draw each level as", options = ["Zones", "Zones near price, lines farther", "Lines"], tooltip = "Zones: every level is a see-through band. GEX and wall levels use their real band edges; the rest get the height below. Zones near price: only levels within the near distance (last setting in this group) are zones, the rest are lines. Lines: one line per level (the old look).", group = G_LZ)
 lzHalf    = input.float(0.0, "Zone height each side (points, 0 = auto)", minval = 0.0, step = 0.25, tooltip = "How far the zone reaches above and below the level. Auto = 0.02% of price: about 5 NQ points, 1.25 ES points.", group = G_LZ)
 lzOwnBand = input.bool(true, "Use the level's own band when it has one", tooltip = "GEX and call / put wall levels come with real band edges from Q DATA. Off = every zone gets the same height.", group = G_LZ)
-lzTransp  = input.int(78, "Zone transparency", minval = 0, maxval = 100, group = G_LZ, inline = "lz")
+lzTransp  = input.int(68, "Zone transparency", minval = 0, maxval = 100, group = G_LZ, inline = "lz")
 lzBorder  = input.bool(true, "Border", group = G_LZ, inline = "lz")
 lzMid     = input.bool(true, "Thin line at the exact level", tooltip = "Keeps the exact price visible inside the zone.", group = G_LZ)
+lzNear    = input.float(0.0, "Near price = within (points, 0 = auto)", minval = 0.0, step = 1.0, tooltip = "Used by Zones near price. Auto: 0.4% of price, about 80 to 90 NQ points or 25 ES points.", group = G_LZ)
 
 onLight() =>
     bgMode == "Light (white)" ? true : bgMode == "Dark" ? false : 0.299 * color.r(chart.bg_color) + 0.587 * color.g(chart.bg_color) + 0.114 * color.b(chart.bg_color) > 140
 
-// on a light chart, light colors are drawn darker in the same hue (greys become near black)
+// vivid colors: a colorful color gets a saturation boost; on a light (white) chart only very light colors are darkened (same hue)
 ink(color c) =>
-    color out = c
+    cr = color.r(c)
+    cg = color.g(c)
+    cb = color.b(c)
+    mx = math.max(cr, math.max(cg, cb))
+    mn = math.min(cr, math.min(cg, cb))
+    if mx - mn >= 40
+        m = (cr + cg + cb) / 3
+        cr := math.max(0.0, math.min(255.0, m + (cr - m) * 1.3))
+        cg := math.max(0.0, math.min(255.0, m + (cg - m) * 1.3))
+        cb := math.max(0.0, math.min(255.0, m + (cb - m) * 1.3))
     if onLight()
-        cr = color.r(c)
-        cg = color.g(c)
-        cb = color.b(c)
         lum = 0.299 * cr + 0.587 * cg + 0.114 * cb
-        if lum > 115
-            if math.max(cr, math.max(cg, cb)) - math.min(cr, math.min(cg, cb)) < 40
-                out := color.rgb(38, 42, 52, color.t(c))
+        if lum > 165
+            if mx - mn < 40
+                cr := 38
+                cg := 42
+                cb := 52
             else
-                k = 115 / lum
-                out := color.rgb(cr * k, cg * k, cb * k, color.t(c))
-    out
+                k = 165 / lum
+                cr := cr * k
+                cg := cg * k
+                cb := cb * k
+    color.rgb(cr, cg, cb, color.t(c))
 
 isKeyCat(string cat) =>
     str.contains("," + str.replace_all(keyCats, " ", "") + ",", "," + cat + ",")
@@ -467,7 +478,8 @@ if barstate.islast
                 zHigh = array.get(highs, i)
                 isBand = not na(zLow) and not na(zHigh) and zHigh > zLow
                 bandDistPct = isBand ? (close >= zLow + offsetPts and close <= zHigh + offsetPts ? 0.0 : math.min(math.abs(close - zLow - offsetPts), math.abs(close - zHigh - offsetPts)) / close * 100) : 0.0
-                if drawAs == "Zones"
+                nearPx = math.abs(p - close) <= (lzNear > 0 ? lzNear : close * 0.004)
+                if drawAs == "Zones" or (drawAs == "Zones near price, lines farther" and nearPx)
                     half = lzHalf > 0 ? lzHalf : close * 0.0002
                     useOwn = lzOwnBand and isBand
                     zTop = useOwn ? zHigh + offsetPts : p + half

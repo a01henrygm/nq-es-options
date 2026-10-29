@@ -56,16 +56,16 @@ i_sig_src   = input.string("Auto", "Expected move from", options = ["Auto", "Q D
 i_scale     = input.float(1.0, "Range scale", minval = 0.2, maxval = 3.0, step = 0.05, group = G_LAD, tooltip = "Widen or narrow the ladder. The Q DATA scorecard shows how your stored days compared with the expected move.")
 i_lab_on    = input.bool(true, "Labels with chances", group = G_LAD)
 i_proj_on   = input.bool(true, "Projected HOD / LOD lines (50% and 80%)", group = G_LAD)
-i_col_up    = input.color(#3fb96a, "Upper ladder", group = G_LAD)
-i_col_dn    = input.color(#e5534b, "Lower ladder", group = G_LAD)
+i_col_up    = input.color(#00d65c, "Upper ladder", group = G_LAD)
+i_col_dn    = input.color(#ff3b30, "Lower ladder", group = G_LAD)
 i_col_open  = input.color(#c7a96b, "Open", group = G_LAD)
 
 i_walls_on  = input.bool(true, "0DTE walls and flip", group = G_REG)
 i_walls_any = input.bool(false, "Show walls on other days too", group = G_REG)
 i_offset    = input.float(0.0, "Add to walls and flip (points)", group = G_REG)
-i_col_call  = input.color(#22d3ee, "Call wall", group = G_REG)
-i_col_putw  = input.color(#ff4d8d, "Put wall", group = G_REG)
-i_col_flip  = input.color(#ffd166, "Flip", group = G_REG)
+i_col_call  = input.color(#00e5ff, "Call wall", group = G_REG)
+i_col_putw  = input.color(#ff1f7a, "Put wall", group = G_REG)
+i_col_flip  = input.color(#ffdd00, "Flip", group = G_REG)
 
 i_mr_on     = input.bool(true, "Run the test", group = G_MR)
 i_mr_n      = input.int(120, "Window (bars)", minval = 30, maxval = 500, group = G_MR)
@@ -414,7 +414,7 @@ if barstate.islast and _intra
                          4, 26, bgcolor = color.new(#14181d, 8), border_color = color.new(#2a2f37, 0), border_width = 1)
         color _tx = #e7ecf5
         color _dim = #8a8f98
-        color _rc = _state == "short" ? #e5534b : _state == "long" ? #3fb96a : _state == "transition" ? #e6b422 : _dim
+        color _rc = _state == "short" ? #ff3b30 : _state == "long" ? #00d65c : _state == "transition" ? #ffc400 : _dim
         string _rt = _state == "short" ? "SHORT GAMMA: trend day" : _state == "long" ? "LONG GAMMA: range day" : _state == "transition" ? "TRANSITION: at the 0DTE flip" : "Regime: no Q DATA reading today"
         string _plan = _state == "short" ? "Dealers amplify. One trade, aim 1 to 2 sd from the open, 3 R+" : _state == "long" ? "Dealers suppress. Fade failed auctions at the edges, 1 to 3 R" : _state == "transition" ? "Wait for price to leave the flip" : "Re-copy the indicator from Q DATA"
         int _r = 0
@@ -425,11 +425,11 @@ if barstate.islast and _intra
         table.merge_cells(_tb, 0, _r, 3, _r)
         if _state == "long" and not na(_moveSd) and math.abs(_moveSd) > 1
             _r += 1
-            table.cell(_tb, 0, _r, "Moved " + str.tostring(math.abs(_moveSd), "#.#") + " sd and now long gamma: expansion likely done, stop hunting high R", text_color = #e6b422, text_size = size.tiny)
+            table.cell(_tb, 0, _r, "Moved " + str.tostring(math.abs(_moveSd), "#.#") + " sd and now long gamma: expansion likely done, stop hunting high R", text_color = #ffc400, text_size = size.tiny)
             table.merge_cells(_tb, 0, _r, 3, _r)
         if _lastFlip != ""
             _r += 1
-            table.cell(_tb, 0, _r, "Last regime flip " + _lastFlip + " gamma", text_color = #e6b422, text_size = size.tiny)
+            table.cell(_tb, 0, _r, "Last regime flip " + _lastFlip + " gamma", text_color = #ffc400, text_size = size.tiny)
             table.merge_cells(_tb, 0, _r, 3, _r)
         _r += 1
         table.cell(_tb, 0, _r, "Open", text_color = _dim, text_size = size.tiny)
@@ -457,7 +457,7 @@ if barstate.islast and _intra
             _r += 1
             string _mrV = na(_mrT) ? "not enough bars" : _mrSig ? "PULL to the average" : _mrT <= -2 ? "weak pull (do not trust)" : "no pull: wandering or trending"
             table.cell(_tb, 0, _r, "Mean rev.", text_color = _dim, text_size = size.tiny)
-            table.cell(_tb, 1, _r, _mrV, text_color = _mrSig ? #3fb96a : _tx, text_size = size.tiny)
+            table.cell(_tb, 1, _r, _mrV, text_color = _mrSig ? #00d65c : _tx, text_size = size.tiny)
             table.merge_cells(_tb, 1, _r, 3, _r)
             _r += 1
             table.cell(_tb, 0, _r, "t / half life / z", text_color = _dim, text_size = size.tiny)
@@ -467,7 +467,7 @@ if barstate.islast and _intra
             _r += 1
             string _pcR = na(_resZ) ? "waiting for the session" : nz(_corr) < 0.5 ? "not moving together (corr < 0.5)" : _resZ >= 2 ? "NQ running ahead of ES" : _resZ <= -2 ? "NQ lagging ES" : "NQ and ES in line"
             table.cell(_tb, 0, _r, "ES/NQ", text_color = _dim, text_size = size.tiny)
-            table.cell(_tb, 1, _r, _pcR, text_color = math.abs(nz(_resZ)) >= 2 and nz(_corr) >= 0.5 ? #e6b422 : _tx, text_size = size.tiny)
+            table.cell(_tb, 1, _r, _pcR, text_color = math.abs(nz(_resZ)) >= 2 and nz(_corr) >= 0.5 ? #ffc400 : _tx, text_size = size.tiny)
             table.merge_cells(_tb, 1, _r, 3, _r)
             _r += 1
             table.cell(_tb, 0, _r, "PC1 / corr / z", text_color = _dim, text_size = size.tiny)
@@ -483,8 +483,8 @@ if barstate.islast and _intra
                 if _r < 24
                     _r += 1
                     table.cell(_tb, 0, _r, str.tostring(_rv) + " R (" + str.tostring(_rv * i_mc_stop, "#.##") + ")", text_color = _tx, text_size = size.tiny)
-                    table.cell(_tb, 1, _r, _mcModel == "-" ? "-" : f_pct(array.get(_wL, _j) / i_mc_paths), text_color = #3fb96a, text_size = size.tiny)
-                    table.cell(_tb, 2, _r, _mcModel == "-" ? "-" : f_pct(array.get(_wS, _j) / i_mc_paths), text_color = #e5534b, text_size = size.tiny)
+                    table.cell(_tb, 1, _r, _mcModel == "-" ? "-" : f_pct(array.get(_wL, _j) / i_mc_paths), text_color = #00d65c, text_size = size.tiny)
+                    table.cell(_tb, 2, _r, _mcModel == "-" ? "-" : f_pct(array.get(_wS, _j) / i_mc_paths), text_color = #ff3b30, text_size = size.tiny)
                     table.cell(_tb, 3, _r, f_pct(1.0 / (1.0 + _rv)), text_color = _dim, text_size = size.tiny)
             _r += 1
             table.cell(_tb, 0, _r, "Paths: " + _mcModel + ", " + str.tostring(i_mc_paths) + " to the close, stop " + str.tostring(i_mc_stop) + " pts", text_color = _dim, text_size = size.tiny)
