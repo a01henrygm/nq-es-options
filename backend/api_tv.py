@@ -25,11 +25,12 @@ from .services import behavior as bh
 from .services import flows as fl
 from .services import quant as qt
 from .services import tv_levels as tv
-from .services.tv_pine import build_script
+from .services.tv_pine import ALL_LV_OFFSET, build_script
 from .timeutil import iso, to_et
 
 log = logging.getLogger("tv")
-NAMES = {"gex": "Q DATA GEX", "lv": "Q DATA Levels"}
+NAMES = {"gex": "Q DATA GEX", "lv": "Q DATA Levels", "all": "Q DATA All Tabs"}
+FILES = {"gex": "qdata_gex_paste_in.pine", "lv": "qdata_levels_paste_in.pine", "all": "qdata_all_tabs_paste_in.pine"}
 HEAVY_TABS = ("gameplan", "quant")   # Monte Carlo based and recomputed every snapshot anyway: skipped when replaying older snapshots
 REPLAY_VERSION = 1           # bump to rebuild today's levels from the stored snapshots (for example after a change to the matching)
 SCHEMA = """
@@ -305,7 +306,7 @@ def register(app, h, q, tab_parts):
 
     def levels(u, ind, prefs=None, history=True):
         if ind not in NAMES:
-            raise HTTPException(422, "ind must be gex or lv")
+            raise HTTPException(422, "ind must be gex, lv or all")
         u = h.underlying_ok(u)
         sync(u)
         snap = h.snapshot(u)
@@ -315,7 +316,10 @@ def register(app, h, q, tab_parts):
         to_f, finfo = h.futures_converter(u, snap, now)
         mapped = bool(to_f and to_f(snap.spot) is not None)
         conv = (lambda v: None if v is None else to_f(v)) if mapped else (lambda v: v)
-        runs = runs_today(u, ind, day)
+        if ind == "all":                                      # All Tabs: the GEX runs, then the Levels runs with their sections moved past GEX's
+            runs = runs_today(u, "gex", day) + [dict(r, sec=int(r["sec"]) + ALL_LV_OFFSET) for r in runs_today(u, "lv", day)]
+        else:
+            runs = runs_today(u, ind, day)
         if not history:
             runs = [r for r in runs if r["active"]]
         root = finfo.get("root")
@@ -324,7 +328,7 @@ def register(app, h, q, tab_parts):
         rows = [("Data as of", to_et(data_t).strftime("%H:%M ET") + " (about 15 min delayed)"), ("Copied", to_et(now).strftime("%H:%M ET")),
                 ("Prices", f"{root} (estimated)" if mapped else m["underlying"])]
         heat = []
-        if ind == "lv":
+        if ind in ("lv", "all"):
             c = q.context(u, "standard")
             heat = [{**x, "price": conv(x["price"]), "low": conv(x["low"]), "high": conv(x["high"])} for x in heat_rows(c)]
             heat = [x for x in heat if x["price"] is not None]
@@ -346,8 +350,18 @@ def register(app, h, q, tab_parts):
     @app.get("/api/tv/script")
     def tv_script(ind: str = "gex"):
         if ind not in NAMES:
-            raise HTTPException(422, "ind must be gex or lv")
-        return {"code": build_script(ind), "title": NAMES[ind], "filename": f"qdata_{'gex' if ind == 'gex' else 'levels'}_paste_in.pine"}
+            raise HTTPException(422, "ind must be gex, lv or all")
+        return {"code": build_script(ind), "title": NAMES[ind], "filename": FILES[ind]}
+
+    # Q DATA All Tabs (1.25.0): built on the same script as GEX and Levels, with every section of both in one indicator
+    @app.get("/api/tv/alltabs/script")
+    def alltabs_script():
+        return {"code": build_script("all"), "title": NAMES["all"], "filename": FILES["all"],
+                "note": "Add this to TradingView once (Pine Editor > new script > select all > paste > Save > Add to chart). Then paste the levels from Q DATA into its first setting."}
+
+    @app.post("/api/tv/alltabs/levels")
+    def alltabs_levels(underlying: str, history: bool = True, body: dict = Body(default={})):
+        return levels(underlying, "all", (body or {}).get("prefs"), history)
 
     @app.post("/api/tv/track")
     def tv_track(underlying: str, force: bool = False):

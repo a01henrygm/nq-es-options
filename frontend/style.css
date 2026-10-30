@@ -225,3 +225,19 @@ button.big { font-size: calc(15px * var(--z)); padding: 9px 18px; }
 .tvgex, .badge.tvgexb { color: #f59e0b; }
 .toastmsg.tvalert { border-left: 4px solid #f59e0b; max-width: 520px; }
 .toastmsg.tvalert ul li { margin: 2px 0; }
+
+/* Playbook tab (1.25.0) */
+.pbbanner { border: 2px solid var(--pb); border-left-width: 8px; border-radius: 8px; padding: 12px 16px; margin: 10px 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pb) 22%, #0f1318), #0f1318 70%); }
+.pbbig { font-size: 1.55em; font-weight: 800; color: var(--pb); letter-spacing: .01em; }
+.pbsub { margin-top: 6px; line-height: 1.5; }
+.pbconf { display: inline-block; padding: 1px 10px; border-radius: 999px; background: var(--pb); color: #fff; font-weight: 700; font-size: .85em; margin-right: 6px; }
+.pbwhy { margin: 6px 0 0; padding-left: 1.2em; line-height: 1.6; }
+.pbgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; margin-top: 12px; }
+.pbgrid .panel { margin: 0; border-top: 4px solid var(--pb); }
+.pbcard.picked { box-shadow: 0 0 0 2px var(--pb); }
+.pbhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pbhead h2 { margin: 0; }
+.pbhead button { margin-left: auto; }
+.pbtoday { background: var(--pb); color: #fff; font-weight: 800; font-size: .78em; padding: 2px 10px; border-radius: 4px; letter-spacing: .05em; }
+.pbpill { padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: .82em; white-space: nowrap; }
+.pbinvalid { color: #f7a1a1; }

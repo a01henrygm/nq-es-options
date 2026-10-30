@@ -16,6 +16,7 @@ from .services import analytics as an
 from .services import intraday as idy
 from .config import DATA
 from .services import behavior as bh
+from .services import playbook as pbk
 from .services import chart_read as cr
 from .services import flows as fl
 from .services import gameplan as gp
@@ -255,6 +256,59 @@ def register(app, h):
                 "regime": {k: pb[k] for k in ("state", "title", "tagline", "color", "flips", "r_range")}, "rule": bh.RULE,
                 "note": "Calls come from the 0DTE gamma regime and the dealer gamma at each level. Chance = how often price reaches that far before the "
                         "close, from the remaining expected move. Track record = how often that level type held in this app's own touch log. Not backtested."}
+
+    # ---- playbook (1.25.0): the biggest levels on a candle chart, three scenarios, and the one that fits today -------------
+    @app.get("/api/analytics/playbook")
+    def playbook(underlying: str, convention: str = "standard", tf: int = Query(5, ge=1, le=30)):
+        if convention not in an.SIGNS:
+            raise HTTPException(422, "invalid convention")
+        u = h.underlying_ok(underlying)
+        lm = level_map(u, convention, 40)
+        c = context(u, convention)
+        snap, now = c["snap"], c["now"]
+        spot = snap.spot
+        mapped = c["spot_f"] is not None
+        U = (lambda v: None if v is None else round(c["conv"](v), 2)) if mapped else (lambda v: None if v is None else round(v, 2))
+        sig = c["sig_rem"] or c["sig_open"]
+        z = c["z"]
+        flip = z.get("flip") if z.get("available") else None
+        moved = (spot - c["open"]) / c["sig_open"] if c["open"] and c["sig_open"] else None
+        try:
+            drift = fl.greek_exposure(snap.contracts, spot, now, convention).get("drift_to_close")
+        except Exception:
+            drift = None
+        big = pbk.biggest(lm["levels"], spot, sig)
+        best, conf, scores, reasons = pbk.pick(lm["regime"]["state"], spot, flip, moved, drift, U)
+        sc = pbk.scenarios(big, spot, sig, U, {"call_wall": z.get("call_wall"), "put_wall": z.get("put_wall"), "flip": flip})
+        rows = c["rth"] if len(c["rth"]) >= 2 else c["rows"]
+        candles = []
+        if rows:
+            first = rows[0][0]
+            t0 = first.replace(minute=first.minute - first.minute % tf, second=0, microsecond=0)
+            for k in bh.candles(rows, t0, tf):
+                candles.append({"t": iso(k["t"]), "o": U(k["o"]), "h": U(k["h"]), "l": U(k["l"]), "c": U(k["c"])})
+        n_proj = int(max(24, min(48, (c["mins_left"] or 0) / tf))) if c["mins_left"] else 30
+        start = parse_ts(candles[-1]["t"]) if candles else now
+        proj_t = [iso(start + timedelta(minutes=tf * (i + 1))) for i in range(n_proj)]
+        for i, k in enumerate(pbk.SCEN):
+            p = pbk.path(sc["_path"][k], n_proj, U, seed=11 + i)
+            sc[k]["path"] = [dict(x, t=proj_t[j]) for j, x in enumerate(p[:n_proj])]
+            sc[k].update({"title": pbk.TITLE[k], "color": pbk.COLOR[k], "score": scores[k], "picked": k == best})
+        sc.pop("_path")
+        lv = [{"price": U(l["value"]), "low": U(l["low"]) if l.get("low") else None, "high": U(l["high"]) if l.get("high") else None,
+               "label": l["label"], "call": pbk.CALLW.get(l["call"], "CHOP"), "headline": l.get("headline"), "why": l.get("why"),
+               "chance": l.get("chance"), "side": l["side"], "key": pbk._is_key(l)} for l in big]
+        rg = lm["regime"]
+        head = {"bullish": "BULLISH DAY: buy the dips that hold, sell into the targets above",
+                "bearish": "BEARISH DAY: sell the rallies that fail, cover into the targets below",
+                "choppy": "CHOPPY DAY: fade the edges of the range, nothing in the middle"}[best]
+        return {"meta": c["m"], "spot": U(spot), "units": (c["root"] or "futures") if mapped else u.lstrip("_"), "mapped": mapped, "tf": tf,
+                "candles": candles, "levels": lv, "scenarios": {k: sc[k] for k in pbk.SCEN}, "today": best, "confidence": conf,
+                "banner": head, "reasons": reasons, "scores": scores,
+                "regime": {k_: rg[k_] for k_ in ("state", "title", "tagline", "color")}, "minutes_left": c["mins_left"],
+                "sigma_remaining": (sig * (c["ratio"] or 1)) if sig else None, "rule": pbk.RULE,
+                "note": "Scenarios to picture how each level should react, not forecasts. The pick uses my own scoring of the app's readings and is not backtested. "
+                        "Projected candles are drawn from the plan, not predicted."}
 
     # ---- chart read: a screenshot of your chart, marked up --------------------------------------------------------------
     def calls_for(u, convention, c=None):

@@ -132,6 +132,9 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        if ind == "gex":                                       # 1.25.0 added "GEX levels are drawn as" after it, the only later setting
+            assert inputs[-1].startswith("gexZones = input.string(")
+            inputs = inputs[:-1]
         assert inputs[-2].startswith("startMode = input.string(\"When the data first showed it\"") and inputs[-1].startswith("startBars")
         for opt in ("9:30 open", "Start of chart data", "Last N bars"):
             assert f'"{opt}"' in code

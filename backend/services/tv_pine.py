@@ -1,10 +1,11 @@
-"""The scripts of the two paste-in TradingView indicators: Q DATA GEX and Q DATA Levels.
+"""The scripts of the paste-in TradingView indicators: Q DATA GEX, Q DATA Levels and Q DATA All Tabs (both in one, 1.25.0).
 
 Each is added to TradingView once and never changes; each session the levels text from Q DATA is pasted into its first setting.
 Settings are remembered by TradingView by their position, so NEW SETTINGS MUST ONLY EVER BE ADDED AT THE END.
 
 What it draws (made for a pure white chart, with a Dark chart option):
-  - levels near price as see-through zones (their own band when they have one), farther ones as thin lines;
+  - levels near price as see-through zones (their own band when they have one), farther ones as thin lines; every GEX level
+    (flips, walls, GEX strikes, GEX zones) is a zone wherever it is, unless "GEX levels are drawn as" says only near price (1.25.0);
   - each level starts on the candle of the options data time it first appeared (from the pasted epoch-ms times), and when a level
     moved today the old piece stays as a faded dotted line with a dotted step to the new price;
   - a short read on each label: HOLD (rejects down / bounces up), BREAK (pushes through), CHOP, worked out live against price;
@@ -14,7 +15,7 @@ Written as conservative Pine v6 (ASCII only); it has not been compiled by Tradin
 """
 from __future__ import annotations
 
-from .tv_levels import GEX_SECTIONS, LV_SECTIONS, OFF_BY_DEFAULT, HEAT_SECTION
+from .tv_levels import GEX_SECTIONS, LV_SECTIONS, HEAT_SECTION
 
 POSITIONS = ["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"]
 POS = ('tablePos == "Top left" ? position.top_left : tablePos == "Bottom right" ? position.bottom_right : '
@@ -62,6 +63,7 @@ warnOld   = input.bool(true, "Warn when the pasted levels are from an earlier da
 grpT = "Where levels start"
 startMode = input.string("When the data first showed it", "Levels start at", options = ["When the data first showed it", "9:30 open", "Start of chart data", "Last N bars"], group = grpT, inline = "st", tooltip = "When the data first showed it: each level starts on the candle of the options data time it first appeared, and moves show as faded steps. 9:30 open: every level starts at today's open (the last session's open before 9:30). Start of chart data: from the left edge. Last N bars: the number on the right.")
 startBars = input.int(100, "", minval = 1, maxval = 5000, group = grpT, inline = "st")
+__GEXZ_INPUT__
 
 __SECTION_ARRAY__
 
@@ -302,8 +304,9 @@ qdDraw(int n, bool[] pick, int endX) =>
             lo = array.get(lvLo, i)
             hi = array.get(lvHi, i)
             band = hi > lo and lo > 0
-            near = math.abs(p - close) <= nd
-            if near
+            gexZ = gexZones == "Every GEX level" and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
+            near = math.abs(p - close) <= nd or gexZ
+            if near and array.size(bxs) < 480
                 zt = band ? hi + offsetPts : p + hh
                 zb = band ? lo + offsetPts : p - hh
                 array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, bgcolor = color.new(c, zoneT)))
@@ -424,22 +427,35 @@ qdHeat(int endX) =>
 '''
 
 
+# Q DATA All Tabs = the GEX sections first, then the Levels sections (Levels section i is All Tabs section ALL_LV_OFFSET + i)
+ALL_LV_OFFSET = len(GEX_SECTIONS)
+ALL_SECTIONS = GEX_SECTIONS + LV_SECTIONS
+INFO = {"gex": ("Q DATA GEX", "QD GEX", "Copy GEX levels", "gamma flips and call / put walls"),
+        "lv": ("Q DATA Levels", "QD Levels", "Copy Levels", "high and low of day, projected HOD / LOD, stacked areas and top setup entries"),
+        "all": ("Q DATA All Tabs", "QD All", "Copy All Tabs levels", "gamma flips, call / put walls, high and low of day, projected HOD / LOD, stacked areas and top setup entries")}
+GEXZ_INPUT = ('grpZ = "GEX levels as zones"\n'
+              'gexZones = input.string("Every GEX level", "GEX levels are drawn as", options = ["Every GEX level", "Only near price"], group = grpZ, '
+              'tooltip = "Every GEX level (default): gamma flips, call / put walls, GEX strikes and GEX zones are see-through zones wherever they are. '
+              'Only near price: like the other levels, zones only close to price and thin lines farther away.")')
+
+
 def build_script(ind: str) -> str:
-    gex = ind == "gex"
-    secs = GEX_SECTIONS if gex else LV_SECTIONS
-    off = set(OFF_BY_DEFAULT.get(ind, []))
+    gex, has_heat = ind == "gex", ind in ("lv", "all")
+    secs = GEX_SECTIONS if gex else LV_SECTIONS if ind == "lv" else ALL_SECTIONS
+    heat_sec = HEAT_SECTION + (ALL_LV_OFFSET if ind == "all" else 0)
+    off = {heat_sec} if has_heat else set()
     si = []
     for i, nm in enumerate(secs):
-        tip = ', tooltip = "Off until you switch it on: shaded strike bands where the most options activity sits (volume, open interest, GEX)."' if (not gex and i == HEAT_SECTION) else ""
+        tip = ', tooltip = "Off until you switch it on: shaded strike bands where the most options activity sits (volume, open interest, GEX)."' if (has_heat and i == heat_sec) else ""
         si.append(f'sec{i} = input.bool({"false" if i in off else "true"}, {_q(nm)}, group = grpS{tip})')
     sa = f'secs = array.from({", ".join(f"sec{i}" for i in range(len(secs)))})'
-    name = "Q DATA GEX" if gex else "Q DATA Levels"
+    name, short, btn, keys = INFO[ind]
     code = TEMPLATE
-    code = code.replace("__HEAT_FUNC__", "" if gex else HEAT_FUNC.replace("__HEATSEC__", str(HEAT_SECTION)))
-    code = code.replace("__HEAT_CALL__\n", "" if gex else "        qdHeat(endX)\n")
-    rep = {"__TITLE__": _q(name), "__SHORT__": _q("QD GEX" if gex else "QD Levels"), "__NAME__": _q(name) if False else name,
-           "__COPYBTN__": "Copy GEX levels" if gex else "Copy Levels",
-           "__KEYS__": "gamma flips and call / put walls" if gex else "high and low of day, projected HOD / LOD, stacked areas and top setup entries",
+    code = code.replace("__HEAT_FUNC__", HEAT_FUNC.replace("__HEATSEC__", str(heat_sec)) if has_heat else "")
+    code = code.replace("__HEAT_CALL__\n", "        qdHeat(endX)\n" if has_heat else "")
+    code = code.replace("__GEXZ_INPUT__", GEXZ_INPUT if ind != "lv" else 'gexZones = "Only near price"')
+    code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
+    rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first
     code = code.replace("table.cell(out, 0, 0, __NAME__", f"table.cell(out, 0, 0, {_q(name)}")

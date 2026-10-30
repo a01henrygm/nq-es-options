@@ -1,6 +1,6 @@
 "use strict";
 // TradingView tab and level-change alerts.
-// Two paste-in indicators: Q DATA GEX (gamma levels) and Q DATA Levels (everything else), plus the classic Q DATA All Tabs (1.24.4). Add each script to TradingView once;
+// Paste-in indicators: Q DATA GEX (gamma levels), Q DATA Levels (everything else) and Q DATA All Tabs (both in one, rebuilt in 1.25.0). Add each script to TradingView once;
 // when levels change, Q DATA alerts (banner here, plus a desktop notification and sound from the desktop app), then copy and paste.
 // Per-kind show / color choices are saved in this browser (localStorage "nqes.tv2") and travel with the copied levels.
 const TV2 = (() => { try { return Object.assign({ kinds: {}, copied: {} }, JSON.parse(localStorage.getItem("nqes.tv2") || "{}")); } catch (e) { return { kinds: {}, copied: {} }; } })();
@@ -111,17 +111,17 @@ R.tv = async function () {
       <p class="hint">${fmt(r.levels)} levels now${r.history ? `, ${fmt(r.history)} earlier positions (faded on the chart)` : ""}. Data as of ${esc(new Date(r.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }))} ET (about 15 min delayed). You copied: ${copiedAt(ind)}.${r.mapped ? "" : " No futures price or basis saved, so prices are index units (Key levels tab > Convert)."}${r.cut ? ` ${r.cut} far-away levels left out to fit.` : ""}${r.catching_up ? ` <b>Still replaying today's stored data so every level gets its real start time: wait a minute or two, then copy.</b>` : ""}</p>
       <details class="adv"><summary>Once: add ${TVNAME[ind]} to TradingView</summary><div class="body"><div class="actions"><button data-scr="${ind}">Copy the indicator</button><button data-scrdl="${ind}">Download .pine</button></div>
         <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Only again if a Q DATA update says this indicator changed.</p></div></details></div>`;
-  const allCard = `<div class="panel tvcard"><h2>Q DATA All Tabs (classic)</h2>
-      <p class="dim" style="margin:0 0 6px">The old all-in-one indicator: every tab's levels (Stack map, Level map, Game plan, Bias, Session, Regime, VIX, Quant, GEX, 0DTE, Flip, Charm / vanna, OI, Volume, Overnight, Expected move, Delta, HOD / LOD), the info table and the expected-move cone. Switch any tab off in its settings.</p>
-      <div class="actions"><button class="go big" data-allcopy>Copy All Tabs levels</button></div>
-      <p class="hint">You copied: ${copiedAt("all")}. Use it alongside the two above or on its own.</p>
+  const allCard = `<div class="panel tvcard"><h2>Q DATA All Tabs</h2>
+      <p class="dim" style="margin:0 0 6px">Everything in one indicator: every GEX section (flips, walls, GEX strikes, GEX zones) and every Levels section (OI, volume, expected move, charm / vanna, dealer delta, new positions, HOD / LOD, stack zones, Game plan, VIX day, Quant targets, heatmap off by default). Each section has its own switch in the indicator's "What to show" settings. Rebuilt in 1.25.0 on the same script as the two above.</p>
+      <div class="actions"><button class="go big" data-allcopy>Copy All Tabs levels</button>${stale("gex") || stale("lv") ? `<span class="badge stale">levels changed</span>` : ""}</div>
+      <p class="hint">You copied: ${copiedAt("all")}. Use it instead of the two above, or alongside them.</p>
       <details class="adv"><summary>Once: add Q DATA All Tabs to TradingView</summary><div class="body"><div class="actions"><button data-allscr>Copy the indicator</button><button data-allscrdl>Download .pine</button></div>
-        <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Then settings &gt; Levels from Q DATA &gt; paste &gt; OK.</p></div></details></div>`;
+        <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Then its settings &gt; Levels &gt; paste &gt; OK. If you added the old All Tabs before 1.25.0, remove it and add this one: the old script is gone.</p></div></details></div>`;
   const tm = t => t || "";
   const rows = log.events.slice(0, 120).map(e => `<tr><td class="num">${esc(tm(e.time_et))}</td><td><span class="badge ${e.ind === "gex" ? "tvgexb" : ""}">${e.ind === "gex" ? "GEX" : "Levels"}</span></td><td>${esc(e.text)}</td></tr>`).join("");
   const kinds = [...g.kinds, ...(g.hidden_kinds || [])].map(k => ({ ...k, ind: "GEX" })).concat([...l.kinds, ...(l.hidden_kinds || [])].map(k => ({ ...k, ind: "Levels" })));
   $("view").innerHTML = `<div class="panel pagehead"><h2>TradingView</h2>
-      <p style="max-width:90ch">Two indicators, both paste-in: add each once, then paste new levels when Q DATA tells you they changed. Each level starts on the candle of the <b>options data time</b> it first appeared; when a level moves, the old spot stays faded with a step to the new price. Levels near price are see-through zones, farther ones thin lines, and every label says what price should do there. Colors are made for a white chart.</p></div>
+      <p style="max-width:90ch">Paste-in indicators: Q DATA GEX and Q DATA Levels, or both in one with Q DATA All Tabs. Add each once, then paste new levels when Q DATA tells you they changed. Each level starts on the candle of the <b>options data time</b> it first appeared; when a level moves, the old spot stays faded with a step to the new price. Levels near price are see-through zones, farther ones thin lines, and every label says what price should do there. Colors are made for a white chart.</p></div>
     <div class="tvgrid">${card("gex", g)}${card("lv", l)}${allCard}</div>
     <div class="panel"><h2>Alerts when levels change</h2>
       <div class="row"><label><span><input type="checkbox" id="tval_on" ${al.on ? "checked" : ""}> Alerts on</span></label>

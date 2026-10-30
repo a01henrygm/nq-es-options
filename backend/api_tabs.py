@@ -311,8 +311,6 @@ def register(app, h, q):
     # the two paste-in TradingView indicators (Q DATA GEX and Q DATA Levels) and the level tracker behind them
     from .api_tv import register as register_tv
     register_tv(app, h, q, tab_parts)
-    # the classic Q DATA All Tabs paste-in indicator (every tab's levels in one), back next to the two above
-    from .api_alltabs import register as register_alltabs
-    register_alltabs(app, h, q, tab_parts, TABS)
+    # Q DATA All Tabs is served by api_tv since 1.25.0 (the same script as GEX and Levels, with both sets of sections)
 
 

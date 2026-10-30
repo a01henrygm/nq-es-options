@@ -33,6 +33,16 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.25.0
+- **Q DATA All Tabs rebuilt.** The old All Tabs script would not load in TradingView. It is now built on the same script as Q DATA GEX
+  and Q DATA Levels, holding every section of both (each with its own switch, heatmap off by default), with level start times, moves
+  and HOLD / BREAK / CHOP reads. Remove the old All Tabs from your chart and add the new one once; then paste as usual.
+- **Every GEX level is a zone.** In Q DATA GEX and All Tabs, gamma flips, call / put walls, GEX strikes and GEX zones are drawn as
+  see-through zones wherever they are (new last setting "GEX levels are drawn as" switches back to near-price only).
+- **New Playbook tab.** A TradingView-style candle chart with the biggest levels as zones and three plans for reacting to them,
+  Bullish, Bearish and Choppy, each with its levels, what to do at each, targets and what proves it wrong, plus projected candles
+  acting it out. A banner picks the plan that fits today and says why.
+
 ## New in 1.24.4
 - **Q DATA All Tabs is back**: the classic all-in-one paste-in indicator, now with every tab's levels by default (each tab can be switched off in its settings), sitting next to Q DATA GEX and Q DATA Levels on the TradingView tab.
 
