@@ -33,6 +33,19 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.26.0
+
+- **Playbook shows every level.** All Level map levels are on the chart and in the tables (GEX strikes and zones, walls,
+  flips, OI, volume, charm / vanna, dealer delta, expected-move edges...). GEX levels are always kept and marked GEX, also when
+  they share a price with another level. Filter: All levels, GEX only, or Major + GEX.
+- **What we expect at each level.** Every level says what price should do there (BOUNCE, REJECT, CHOP, BREAK UP, BREAK DOWN),
+  why, and where price heads next if it holds or breaks.
+- **Every level, every plan.** A new table gives each level's role in the Bullish, Bearish and Choppy plans (line in the sand,
+  buy the dip, work through, TP1 / TP2, fade the top, range broke...) with entry, stop and target where the plan trades it.
+- **Chart.** Twice as tall, starts at the earliest stored price (earlier days too, gaps collapsed, a line at each new day),
+  price tags on the right, expected reaction on the left, the selected plan's tags (BUY, SELL, TP1, FADE...) past the dashed
+  line, and hovering a level shows what to do there in all three plans.
+
 ## New in 1.25.0
 - **Q DATA All Tabs rebuilt.** The old All Tabs script would not load in TradingView. It is now built on the same script as Q DATA GEX
   and Q DATA Levels, holding every section of both (each with its own switch, heatmap off by default), with level start times, moves

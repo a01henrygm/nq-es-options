@@ -40,3 +40,27 @@ def test_plans_use_the_level_calls():
     assert sc["choppy"]["range"] == {"high": 105, "low": 97, "mid": 101}
     p = pbk.path(sc["_path"]["bullish"], 30, lambda v: v)
     assert len(p) >= 20 and p[-1]["c"] > 100
+
+
+def test_every_level_gets_an_expectation_and_a_reaction_in_all_three_plans():
+    c, db, now = simulated_day()
+    j = c.get("/api/analytics/playbook", params={"underlying": "_NDX"}).json()
+    lm = c.get("/api/charts/level-map", params={"underlying": "_NDX", "count": 80}).json()["levels"]
+    assert j["counts"]["all"] == len(lm)                                     # every Level map level, not just the top few
+    assert j["counts"]["gex"] >= 1 and all(l["gex"] for l in j["levels"] if "GEX" in l["label"])
+    for l in j["levels"]:
+        assert l["expect"]["tag"] in ("BOUNCE", "REJECT", "CHOP", "BREAK UP", "BREAK DOWN") and l["expect"]["text"]
+        assert all(l["react"][k] and l["react"][k]["action"] for k in pbk.SCEN)
+    # the chart starts at the earliest stored price, before today's session
+    assert j["candles"][0]["t"][:10] < j["candles"][-1]["t"][:10]
+
+
+def test_gex_levels_are_never_squeezed_out_and_merged_rows_still_count_as_gex():
+    lv = [{"value": 100 + i, "call": "RESPECT", "strength": 0.9, "label": f"OI {i}", "category": "oi"} for i in range(1, 30)]
+    lv += [{"value": 160, "call": "CHOP", "strength": 0.1, "label": "Call OI zone / GEX+", "category": "oi_call_zone"}]
+    big = pbk.biggest(lv, 100, 4, per_side=5)
+    assert any(l["value"] == 160 and l["gex"] for l in big)
+    assert pbk._nm(big[0]) == "Call OI zone (GEX+)"
+    sc = pbk.scenarios(big, 100, 4, lambda v: v)
+    tags = [r["tag"] for r in sc["bullish"]["levels"]]
+    assert "TP1" in tags and all(r["role_title"] for r in sc["bullish"]["levels"])

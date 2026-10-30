@@ -241,3 +241,30 @@ button.big { font-size: calc(15px * var(--z)); padding: 9px 18px; }
 .pbtoday { background: var(--pb); color: #fff; font-weight: 800; font-size: .78em; padding: 2px 10px; border-radius: 4px; letter-spacing: .05em; }
 .pbpill { padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: .82em; white-space: nowrap; }
 .pbinvalid { color: #f7a1a1; }
+/* Playbook 1.26.0: every level, every plan */
+.pbtag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-weight: 800; font-size: .74em; letter-spacing: .03em; white-space: nowrap; vertical-align: 1px; }
+.pbtable td, .pbtable th { vertical-align: top; }
+.pbtable .pbc { min-width: 230px; max-width: 320px; font-size: .92em; line-height: 1.35; }
+.pbtable th.pbc.hl { border-bottom: 3px solid currentColor; }
+.pbtable td.pbc.hl { background: color-mix(in srgb, var(--pb, #888) 10%, transparent); }
+.pbtable tr.major td:first-child { border-left: 3px solid #e6b422; }
+.pbtable tr:not(.major) td { opacity: .88; }
+.pbact { margin-top: 3px; }
+.pbtr { margin-top: 4px; font-variant-numeric: tabular-nums; font-size: .92em; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+.pbtr.long { background: rgba(22,163,74,.14); }
+.pbtr.short { background: rgba(220,38,38,.14); }
+.pbtr.flat { background: rgba(150,150,160,.14); }
+.pbnow td { background: rgba(41,98,255,.18); color: #cdd9ff; text-align: center; letter-spacing: .06em; padding: 5px; }
+.pbtrades { margin: 6px 0; display: grid; gap: 4px; }
+.pbtrades .pbtr { margin-left: 6px; }
+.chart.pbchart { height: calc(760px*var(--z)); }
+@media (max-width: 760px) { .chart.pbchart { height: 520px !important; } }
+.pbgex { display: inline-block; padding: 0 6px; border-radius: 4px; background: #1e4f8a; color: #cfe6ff; font-weight: 800; font-size: .72em; letter-spacing: .04em; vertical-align: 1px; }
+.pbtable tr.gex td:nth-child(2) { color: #e7f1ff; }
+.pbexp { min-width: 240px; max-width: 330px; font-size: .92em; line-height: 1.35; }
+.pbexptag { margin-left: 4px; letter-spacing: .03em; }
+.pbexptag.pb-HOLD { color: #5fe0b8; } .pbexptag.pb-CHOP { color: #fac775; } .pbexptag.pb-BREAK { color: #ff8a8a; }
+.pbnext { margin-top: 3px; } .pbwhy1 { margin-top: 3px; font-style: italic; }
+.pbscroll { overflow-x: auto; }
+.pbtable td:nth-child(2) { min-width: 150px; }
+.pbtable .pbc { min-width: 210px; }

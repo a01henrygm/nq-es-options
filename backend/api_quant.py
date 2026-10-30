@@ -263,7 +263,7 @@ def register(app, h):
         if convention not in an.SIGNS:
             raise HTTPException(422, "invalid convention")
         u = h.underlying_ok(underlying)
-        lm = level_map(u, convention, 40)
+        lm = level_map(u, convention, 80)                                 # 1.26.0: the full Level map
         c = context(u, convention)
         snap, now = c["snap"], c["now"]
         spot = snap.spot
@@ -277,15 +277,21 @@ def register(app, h):
             drift = fl.greek_exposure(snap.contracts, spot, now, convention).get("drift_to_close")
         except Exception:
             drift = None
-        big = pbk.biggest(lm["levels"], spot, sig)
+        big = pbk.biggest(lm["levels"], spot, sig)                      # 1.26.0: every level within ~3 expected moves
         best, conf, scores, reasons = pbk.pick(lm["regime"]["state"], spot, flip, moved, drift, U)
         sc = pbk.scenarios(big, spot, sig, U, {"call_wall": z.get("call_wall"), "put_wall": z.get("put_wall"), "flip": flip})
-        rows = c["rth"] if len(c["rth"]) >= 2 else c["rows"]
+        # 1.26.0: the chart starts at the earliest price the app has stored (earlier days too), not at today's 9:30 open
+        rows = []
+        for r in db.price_history(u, 20000):
+            t_ = parse_ts(r["source_ts"] or r["retrieved_at"])
+            if t_ and t_ <= now:
+                rows.append((t_, r["price"]))
+        rows = sorted(rows) or (c["rth"] if len(c["rth"]) >= 2 else c["rows"])
         candles = []
         if rows:
             first = rows[0][0]
             t0 = first.replace(minute=first.minute - first.minute % tf, second=0, microsecond=0)
-            for k in bh.candles(rows, t0, tf):
+            for k in bh.candles(rows, t0, tf)[-4000:]:
                 candles.append({"t": iso(k["t"]), "o": U(k["o"]), "h": U(k["h"]), "l": U(k["l"]), "c": U(k["c"])})
         n_proj = int(max(24, min(48, (c["mins_left"] or 0) / tf))) if c["mins_left"] else 30
         start = parse_ts(candles[-1]["t"]) if candles else now
@@ -295,15 +301,19 @@ def register(app, h):
             sc[k]["path"] = [dict(x, t=proj_t[j]) for j, x in enumerate(p[:n_proj])]
             sc[k].update({"title": pbk.TITLE[k], "color": pbk.COLOR[k], "score": scores[k], "picked": k == best})
         sc.pop("_path")
+        every = {r["price"]: r for r in pbk.every_level({k: sc[k] for k in pbk.SCEN})}
+        exp = pbk.expectations(big, spot, U)
         lv = [{"price": U(l["value"]), "low": U(l["low"]) if l.get("low") else None, "high": U(l["high"]) if l.get("high") else None,
                "label": l["label"], "call": pbk.CALLW.get(l["call"], "CHOP"), "headline": l.get("headline"), "why": l.get("why"),
-               "chance": l.get("chance"), "side": l["side"], "key": pbk._is_key(l)} for l in big]
+               "chance": l.get("chance"), "side": l["side"], "key": pbk._is_key(l), "major": l["major"], "gex": l["gex"], "name": pbk._nm(l),
+               "dist": U(l["value"]) - U(spot) if U(l["value"]) is not None and U(spot) is not None else None,
+               "react": {k: (every.get(U(l["value"])) or {}).get(k) for k in pbk.SCEN}, "expect": exp.get(id(l))} for l in big]
         rg = lm["regime"]
         head = {"bullish": "BULLISH DAY: buy the dips that hold, sell into the targets above",
                 "bearish": "BEARISH DAY: sell the rallies that fail, cover into the targets below",
                 "choppy": "CHOPPY DAY: fade the edges of the range, nothing in the middle"}[best]
         return {"meta": c["m"], "spot": U(spot), "units": (c["root"] or "futures") if mapped else u.lstrip("_"), "mapped": mapped, "tf": tf,
-                "candles": candles, "levels": lv, "scenarios": {k: sc[k] for k in pbk.SCEN}, "today": best, "confidence": conf,
+                "candles": candles, "levels": lv, "counts": {"all": len(lv), "major": sum(1 for l in lv if l["major"]), "gex": sum(1 for l in lv if l["gex"])}, "scenarios": {k: sc[k] for k in pbk.SCEN}, "today": best, "confidence": conf,
                 "banner": head, "reasons": reasons, "scores": scores,
                 "regime": {k_: rg[k_] for k_ in ("state", "title", "tagline", "color")}, "minutes_left": c["mins_left"],
                 "sigma_remaining": (sig * (c["ratio"] or 1)) if sig else None, "rule": pbk.RULE,
