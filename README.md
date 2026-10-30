@@ -33,6 +33,18 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.27.0
+
+- **Playbook chart is a real trading chart** (TradingView Lightweight Charts, bundled with the app so it works offline):
+  drag to move, scroll to zoom, drag the price scale, crosshair with price and time. Candles sit next to each other with no
+  empty gaps, and the chart updates in place every refresh without jumping back.
+- Every level is a zone with its price tag on the right, its name and what we expect there (BOUNCE, REJECT, CHOP, BREAK) on the
+  left, GEX levels marked GEX. Past the last candle the selected plan's projected candles and tags (BUY, SELL, TP1, FADE...).
+- Hover a level: what we expect there, where price goes next if it holds or breaks, and what to do in all three plans with
+  entry, stop and target.
+- Toolbar: plan, timeframe, All levels / GEX / Major + GEX, Now / All data, White chart (for a white TradingView look) and
+  Full screen. Tap the chart to unlock it, so page scrolling is never hijacked.
+
 ## New in 1.26.0
 
 - **Playbook shows every level.** All Level map levels are on the chart and in the tables (GEX strikes and zones, walls,
