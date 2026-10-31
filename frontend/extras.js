@@ -107,7 +107,8 @@ Object.assign(R, {
       <label>Interval${sel("im_int", [["0", "Every snapshot"], ["1", "1 min"], ["5", "5 min"], ["10", "10 min"], ["15", "15 min"], ["30", "30 min"]], iv)}</label>
       <label>Strikes${sel("im_n", [["20", "20 strikes"], ["30", "30 strikes"], ["50", "50 strikes"], ["0", "All"]], S.imN || "30")}</label>
       <label>Style${sel("im_style", [["dots", "Dots"], ["heat", "Heatmap"]], S.imStyle || "dots")}</label>
-      <label><span><input type="checkbox" id="im_lines" ${S.imL === false ? "" : "checked"}> Gamma flip</span></label></div>`;
+      <label><span><input type="checkbox" id="im_lines" ${S.imL ? "checked" : ""}> Gamma flip</span></label>
+      <label><span><input type="checkbox" id="im_tags" ${S.imTags ? "checked" : ""}> Wall tags</span></label></div>`;
     const hook = () => {
       document.querySelectorAll("[data-imm]").forEach(b => b.onclick = () => { S.imM = b.dataset.imm; render(); });
       if ($("im_day")) $("im_day").onchange = () => { S.imD = $("im_day").value; render(); };
@@ -115,6 +116,7 @@ Object.assign(R, {
       $("im_int").onchange = () => { S.imI = $("im_int").value; render(); };
       $("im_lines").onchange = () => { S.imL = $("im_lines").checked; render(); };
       $("im_n").onchange = () => { S.imN = $("im_n").value; render(); };
+      $("im_tags").onchange = () => { S.imTags = $("im_tags").checked; render(); };
       $("im_style").onchange = () => { S.imStyle = $("im_style").value; render(); };
     };
     if (!j.available) { $("view").innerHTML = `<div class="panel"><h2>Interval map, ${esc(uName(S.u))}</h2>${head}${note(j.reason, true)}</div>`; hook(); return; }
@@ -128,7 +130,7 @@ Object.assign(R, {
     const peak = i => j.z[i].reduce((m, v) => (v != null && Math.abs(v) > Math.abs(m) ? v : m), 0);
     const pos = idx.filter(i => peak(i) > 0).sort((a, b) => peak(b) - peak(a)).slice(0, j.signed ? 3 : 4), neg = j.signed ? idx.filter(i => peak(i) < 0).sort((a, b) => peak(a) - peak(b)).slice(0, 3) : [];
     const heavy = new Set([...pos, ...neg]);
-    const GREEN = "#22e36b", RED = "#ff3d5a", GOLD = "#ffc94d";
+    const GREEN = "#5cff3a", RED = "#ff4b2b", GOLD = "#ffc94d", TAGS = !!S.imTags;
     const tr = [];
     if (S.imStyle === "heat") {
       const sh = idx.map(i => j.z[i].map(v => v == null ? null : Math.max(-cap, Math.min(cap, v))));
@@ -137,22 +139,23 @@ Object.assign(R, {
     } else {
       // the dot grid: every strike at every moment; faint specks where nothing sits, dots growing and brightening with size
       const xs = [], ys = [], sz = [], col = [], cd = [], hx = [], hy = [], hs = [], hc = [];
+      const box = $("im1") ? $("im1").getBoundingClientRect() : { width: 1100, height: 680 }, dmax = Math.max(6, Math.min(26, (box.height - 130) / Math.max(1, idx.length) * 0.95, (box.width - 140) / Math.max(1, X.length) * 0.95));
       for (const i of idx) for (let c = 0; c < X.length; c++) {
         const v = j.z[i][c], r = v ? Math.sqrt(Math.abs(v) / cap) : 0, y = px(j.strikes[i]);
-        xs.push(X[c]); ys.push(y); sz.push(r < 0.04 ? 3 : 5 + r * 19);
-        const base = !j.signed ? GOLD : v >= 0 ? GREEN : RED, op = r < 0.04 ? 0.22 : Math.min(1, 0.35 + r * 0.9);
+        xs.push(X[c]); ys.push(y); sz.push(Math.max(2.5, dmax * Math.pow(r * r, 0.8)));
+        const base = !j.signed ? GOLD : v >= 0 ? GREEN : RED, op = r * r < 0.06 ? 0.75 : 1;
         col.push(hexA(base, op));
         cd.push([money(v), j.zc ? money(j.zc[i][c]) : "", j.zp ? money(j.zp[i][c]) : "", fmt(y, 0), j.times[c]]);
-        if (heavy.has(i) && r >= 0.04) { hx.push(X[c]); hy.push(y); hs.push(12 + r * 30); hc.push(hexA(base, 0.16)); }
+        if (TAGS && heavy.has(i) && r >= 0.04) { hx.push(X[c]); hy.push(y); hs.push(8 + 22 * Math.pow(r, 1.5)); hc.push(hexA(base, 0.12)); }
       }
-      const tip = j.zc ? `<b>%{x|%I:%M %p on %b %d, %Y}</b><br>${esc(unit)}  <b>%{customdata[3]}</b><br>Call GEX  %{customdata[1]}<br>Put GEX  %{customdata[2]}<br><b>Net GEX  %{customdata[0]}</b><extra></extra>`
+      const tip = j.zc ? `<b>%{x|%I:%M %p on %b %d, %Y}</b><br>${esc(unit)}  <b>%{customdata[3]}</b><br>Call GEX  <span style="color:#22e36b">%{customdata[1]}</span><br>Put GEX  <span style="color:#ff3d5a">%{customdata[2]}</span><br><b>Net GEX  %{customdata[0]}</b><extra></extra>`
         : `<b>%{x|%I:%M %p on %b %d, %Y}</b><br>${esc(unit)}  <b>%{customdata[3]}</b><br><b>${esc(j.title)}  %{customdata[0]}</b><extra></extra>`;
       tr.push({ type: "scatter", mode: "markers", x: hx, y: hy, hoverinfo: "skip", showlegend: false, marker: { size: hs, color: hc, line: { width: 0 } } });   // glow under the heavy rows
       tr.push({ type: "scatter", mode: "markers", x: xs, y: ys, customdata: cd, showlegend: false, hovertemplate: tip,
         marker: { size: sz, color: col, line: { width: 0 } } });
     }
-    if (P.length) tr.push({ type: "scatter", mode: "lines", x: P.map(p => p[0]), y: P.map(p => px(p[1])), name: uName(S.u), line: { color: "#3d8bff", width: 2.6, shape: "spline", smoothing: 0.6 }, hovertemplate: `${esc(uName(S.u))} %{y:,.2f}<extra></extra>` });
-    if (S.imL !== false) [["gamma_flip", "Gamma flip", GOLD]].forEach(([key, nm, cl]) => {
+    if (P.length) tr.push({ type: "scatter", mode: "lines", x: P.map(p => p[0]), y: P.map(p => px(p[1])), name: uName(S.u), line: { color: "#3b6cff", width: 2 }, hovertemplate: `${esc(uName(S.u))} %{y:,.2f}<extra></extra>` });
+    if (S.imL) [["gamma_flip", "Gamma flip", GOLD]].forEach(([key, nm, cl]) => {
       const L = (j.lines[key] || []).filter(r => r.value != null);
       if (L.length) tr.push({ type: "scatter", mode: "lines", line: { shape: "hv", color: hexA(cl, 0.8), width: 1.4, dash: "dash" }, name: nm, x: L.map(r => etx(r.t)), y: L.map(r => px(r.value)), hovertemplate: `${nm} %{y:,.0f}<extra></extra>` });
     });
@@ -162,7 +165,7 @@ Object.assign(R, {
     const ysAll = idx.map(i => px(j.strikes[i])), gap = (Math.max(...ysAll) - Math.min(...ysAll)) * 0.045;
     const lastP = P.length ? px(P[P.length - 1][1]) : null, placed = [];
     const free = y => placed.every(q => Math.abs(q - y) >= gap);
-    [...pos, ...neg].sort((a, b) => Math.abs(peak(b)) - Math.abs(peak(a))).forEach((i, n) => {
+    if (TAGS) [...pos, ...neg].sort((a, b) => Math.abs(peak(b)) - Math.abs(peak(a))).forEach((i, n) => {
       const v = peak(i), y = px(j.strikes[i]), cl = !j.signed ? GOLD : v > 0 ? GREEN : RED, top = n < 2;
       shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: y, y1: y, line: { color: hexA(cl, top ? 0.4 : 0.2), width: top ? 2 : 1 }, layer: "below" });
       if (!free(y)) return;
@@ -178,7 +181,7 @@ Object.assign(R, {
       margin: { l: 92, r: 150, t: 70, b: 50 }, showlegend: false, hovermode: "closest", annotations: ann, shapes,
       hoverlabel: { bgcolor: "#163a8a", bordercolor: "#3d8bff", font: { color: "#ffffff", family: "Manrope, Segoe UI, sans-serif", size: 13 }, align: "left" },
       xaxis: { showgrid: false, zeroline: false, tickformat: "%I:%M %p", color: "#c9d6ee", showspikes: true, spikemode: "across", spikedash: "dot", spikecolor: "#8fb4ff", spikethickness: 1 },
-      yaxis: { showgrid: false, zeroline: false, tickformat: ",d", color: "#c9d6ee", range: yr } };
+      yaxis: { showgrid: false, zeroline: false, tickformat: ",d", color: "#c9d6ee", range: yr, showspikes: true, spikemode: "across", spikedash: "dot", spikecolor: "#8fb4ff", spikethickness: 1 } };
     const meaning = { gex: "Green: positive gamma (dealers dampen moves, price tends to pin or reject). Red: negative gamma (dealers chase, moves speed up).",
       dex: "Modeled dealer delta by strike (the same sign scenario as the Delta exposure tab). Bigger, brighter blocks are strikes carrying more of the delta dealers hedge; where the blocks shift as price moves is where hedging flows are concentrated.",
       charm: "How much dealer delta changes each day from time decay alone. Big blocks near price drive the drift into the close, strongest on 0DTE.",

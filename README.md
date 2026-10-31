@@ -33,6 +33,12 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.30.2
+
+- **Interval map, cleaner dot matrix**: small strikes stay as specks and only the heavy strikes grow into big solid dots, sized to
+  the row and column spacing so the biggest just touch. Brighter green and red, a thin blue price line, no glow. Wall tags and the
+  gamma flip are now switches (off by default).
+
 ## New in 1.30.1
 
 - **Interval map redesigned**: a dark navy dot grid, one dot per strike per moment, sized and brightened by the exposure (green
