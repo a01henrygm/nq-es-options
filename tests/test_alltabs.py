@@ -42,7 +42,7 @@ def test_every_gex_level_is_a_zone_by_default():
     for ind in ("gex", "all"):
         code = build_script(ind)
         assert 'gexZones = input.string("Every GEX level"' in code
-        assert f"kindOf(g, 0) <= {len(tv.GEX_SECTIONS) - 1}" in code and "near = math.abs(p - close) <= nd or gexZ" in code
+        assert f"kindOf(g, 0) <= {len(tv.GEX_SECTIONS) - 1}" in code and "near = math.abs(p - refClose()) <= nd or gexZ" in code
     lv = build_script("lv")
     assert 'gexZones = "Only near price"' in lv and "input.string(\"Every GEX level\"" not in lv
 

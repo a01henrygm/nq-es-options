@@ -15,6 +15,17 @@ async function tvFetch(path, params, body) {
   return j;
 }
 const tvLevels = ind => tvFetch("/tv/levels", { underlying: S.u, ind }, { prefs: { kinds: TV2.kinds } });
+// GEX levels of an earlier day, for backtesting on TradingView (1.29.0)
+async function tvCopyDay(day, btn) {
+  if (!day) return;
+  try {
+    const r = await tvFetch("/tv/levels", { underlying: S.u, ind: "gex", day }, { prefs: { kinds: TV2.kinds } });
+    try { await copyText(r.text); btn.textContent = `Copied ${day} (${r.levels + r.history} levels)`; }
+    catch (e) { showText(`GEX levels for ${day}`, r.text); }
+    const h = document.getElementById("tvdayhint");
+    if (h) h.textContent = `${day}: ${r.exact ? "exactly what Q DATA showed that day" : "an older day, so no zones or HOLD / BREAK reads were saved"}. Prices: ${r.prices}.`;
+  } catch (e) { alert(`Could not build the GEX levels for ${day}: ` + (e.msg || e.message)); }
+}
 async function tvCopy(ind, btn) {
   try {
     const r = await tvLevels(ind);
@@ -100,7 +111,7 @@ setTimeout(tvWatch, 1500);
 // ---- the TradingView tab ----
 R.tv = async function () {
   if (!S.u) { $("view").innerHTML = note("Pick a symbol first."); return; }
-  const [g, l, log, al] = await Promise.all([tvLevels("gex"), tvLevels("lv"), tvFetch("/tv/log", { underlying: S.u }), tvFetch("/tv/alerts", {})]);
+  const [g, l, log, al, dd] = await Promise.all([tvLevels("gex"), tvLevels("lv"), tvFetch("/tv/log", { underlying: S.u }), tvFetch("/tv/alerts", {}), tvFetch("/tv/days", { underlying: S.u, ind: "gex" }).catch(() => ({ days: [] }))]);
   TVW.alerts = al;
   const lastChange = ind => log.events.find(e => e.ind === ind && e.action !== "session");
   const stale = ind => { const c = TV2.copied[S.u + ":" + ind], e = lastChange(ind); return c && e && new Date(e.ts).getTime() > c; };
@@ -109,6 +120,11 @@ R.tv = async function () {
       <p class="dim" style="margin:0 0 6px">${ind === "gex" ? "Gamma flips, call / put walls, 0DTE walls, the biggest GEX strikes and GEX zones." : "Open interest, volume, expected move, charm / vanna, dealer delta, new positions, HOD / LOD, stack zones, Game plan setups, VIX day and Quant targets. Heatmap included, off until you switch it on in the indicator."}</p>
       <div class="actions"><button class="go big" data-copy="${ind}">${TVBTN[ind]}</button>${stale(ind) ? `<span class="badge stale">changed since your last copy</span>` : ""}</div>
       <p class="hint">${fmt(r.levels)} levels now${r.history ? `, ${fmt(r.history)} earlier positions (faded on the chart)` : ""}. Data as of ${esc(new Date(r.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }))} ET (about 15 min delayed). You copied: ${copiedAt(ind)}.${r.mapped ? "" : " No futures price or basis saved, so prices are index units (Key levels tab > Convert)."}${r.cut ? ` ${r.cut} far-away levels left out to fit.` : ""}${r.catching_up ? ` <b>Still replaying today's stored data so every level gets its real start time: wait a minute or two, then copy.</b>` : ""}</p>
+      ${ind === "gex" ? `<div class="tvback"><h3 style="margin:10px 0 4px">Backtest: an earlier day's GEX</h3>
+        ${dd.days.length ? `<div class="actions"><select id="tvday">${dd.days.map(x => `<option value="${esc(x.day)}">${esc(x.weekday)} ${esc(x.day)} (${fmt(x.levels)}${x.exact ? "" : ", older"})</option>`).join("")}</select>
+          <button id="tvdaycopy">Copy GEX levels for this day</button></div>
+        <p class="hint" id="tvdayhint">Paste into the same Q DATA GEX indicator. The levels start when they appeared that day and stop at that day's 5 pm ET close, with zones and reads worked out from that day's price. Scroll back to the day, or use TradingView's Bar Replay from that morning. Copy today's again when you're done.</p>`
+        : `<p class="hint">No earlier days stored yet. Q DATA saves each day's levels while it runs.</p>`}</div>` : ""}
       <details class="adv"><summary>Once: add ${TVNAME[ind]} to TradingView</summary><div class="body"><div class="actions"><button data-scr="${ind}">Copy the indicator</button><button data-scrdl="${ind}">Download .pine</button></div>
         <p class="hint">Pine Editor &gt; new script &gt; select all &gt; paste &gt; Save &gt; Add to chart. Only again if a Q DATA update says this indicator changed.</p></div></details></div>`;
   const allCard = `<div class="panel tvcard"><h2>Q DATA All Tabs</h2>
@@ -139,6 +155,8 @@ R.tv = async function () {
       <div class="actions"><button id="tvkdef">Back to Q DATA's colors</button></div></div></details></div>`;
   const v = $("view");
   v.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await tvCopy(b.dataset.copy, b); });
+  const dc = $("tvdaycopy"); if (dc) dc.onclick = () => tvCopyDay($("tvday").value, dc);
+  const ds = $("tvday"); if (ds) ds.onchange = () => { dc.textContent = "Copy GEX levels for this day"; };
   v.querySelector("[data-allcopy]").onclick = e => allCopy(e.target);
   v.querySelector("[data-allscr]").onclick = e => allScript(e.target, false);
   v.querySelector("[data-allscrdl]").onclick = e => allScript(e.target, true);

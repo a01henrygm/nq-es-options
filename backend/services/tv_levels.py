@@ -186,7 +186,7 @@ def f(text, n=None) -> str:
 
 
 def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, units: str, data_ms: int, rows: list,
-               heat: list | None = None, prefs: dict | None = None) -> dict:
+               heat: list | None = None, prefs: dict | None = None, bt_end_ms: int = 0) -> dict:
     """runs: today's tracked runs of one indicator (current and ended). conv: index price -> chart price."""
     kp = (prefs or {}).get("kinds") or {}
     kinds, kidx, out_lv, hidden = [], {}, [], {}
@@ -220,7 +220,7 @@ def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, uni
     out_lv.sort(key=lambda x: (not x["cur"], -x["price"]))
 
     def render(levels, tips=True):
-        o = [f"Q|2|{ind}|{f(made, 40)}|{f(day, 10)}|{f(symbol, 30)}|{f(units, 110)}|{int(data_ms)}"]
+        o = [f"Q|2|{ind}|{f(made, 40)}|{f(day, 10)}|{f(symbol, 30)}|{f(units, 110)}|{int(data_ms)}" + (f"|{int(bt_end_ms)}" if bt_end_ms else "")]
         o += [f"K|{f(k['name'], 48)}|{k['color']}|{k['style']}|{k['width']}|{f(k['short'], 28)}|{k['sec']}|{1 if k['key'] else 0}" for k in kinds]
         o += [f"L|{x['price']:.2f}|{x['low']:.2f}|{x['high']:.2f}|{x['kind']}|{x['start']}|{x['end']}|{x['read']}|{x['prev']:.2f}|{f(x['label'], 36)}|"
               + (f(x["tip"], TIP_CHARS) if tips else "") for x in levels]

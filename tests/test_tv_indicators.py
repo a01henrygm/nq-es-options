@@ -149,3 +149,28 @@ def test_clean_view_keeps_every_section_and_the_expected_move():
     l = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "lv"}).json()
     secs = {k["sec"] for k in l["kinds"]}
     assert {2, 3} <= secs                                                       # expected move and charm / vanna are in the pasted levels
+
+
+def test_an_earlier_days_gex_levels_can_be_copied_for_a_backtest():
+    c, db, now = simulated_day()
+    c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex"})            # today's runs exist (2026-10-14)
+    with db.conn() as cn:                                                           # move them to an earlier day, as if copied a week ago
+        cn.execute("UPDATE tv_runs SET day='2026-10-07'")
+        cn.execute("INSERT INTO level_runs(underlying,session_date,category,label,value,first_seen,last_seen,active) VALUES"
+                   "('_NDX','2026-10-01','call_wall','Call wall',25100,'2026-10-01T14:00:00+00:00','2026-10-01T19:00:00+00:00',1),"
+                   "('_NDX','2026-10-01','oi_call_zone','OI zone',25000,'2026-10-01T14:00:00+00:00','2026-10-01T19:00:00+00:00',1)")
+    days = c.get("/api/tv/days", params={"underlying": "_NDX"}).json()["days"]
+    by = {d["day"]: d for d in days}
+    assert by["2026-10-07"]["exact"] and not by["2026-10-01"]["exact"] and "2026-10-14" not in by      # the current day is the normal copy
+    r = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex", "day": "2026-10-07"}).json()
+    q = lines(r["text"], "Q")[0]
+    assert r["backtest"] and r["exact"] and q[4] == "2026-10-07" and len(q) == 9
+    assert int(q[8]) == int(datetime.fromisoformat("2026-10-07T17:00:00-04:00").timestamp() * 1000)    # drawn to that day's close
+    assert lines(r["text"], "L") and not lines(r["text"], "H")
+    o = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex", "day": "2026-10-01"}).json()
+    assert not o["exact"] and [x[9] for x in lines(o["text"], "L")] == ["Call wall"]   # only the GEX kinds from the older log
+    assert c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex", "day": "2026-09-01"}).status_code == 404
+    t = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "gex"}).json()  # today's copy keeps the old 8-field header
+    assert len(lines(t["text"], "Q")[0]) == 8
+    code = build_script("gex")
+    assert "qdBtEnd(dataTxt)" in code and "refClose()" in code and "btEnd > 0 ? int(math.min(btEnd" in code

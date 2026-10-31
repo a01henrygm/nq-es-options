@@ -66,6 +66,24 @@ startMode = input.string("When the data first showed it", "Levels start at", opt
 startBars = input.int(100, "", minval = 1, maxval = 5000, group = grpT, inline = "st")
 __GEXZ_INPUT__
 
+// ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
+qdBtEnd(string txt) =>
+    float out = 0.0
+    for row in str.split(txt, "\n")
+        a = str.split(str.trim(row), "|")
+        if array.size(a) >= 9
+            if array.get(a, 0) == "Q"
+                v = str.tonumber(array.get(a, 8))
+                out := na(v) ? 0.0 : v
+    out
+var float btEnd = qdBtEnd(dataTxt)
+var float btPx = na
+if btEnd > 0 and time <= btEnd
+    btPx := close
+// the price levels are measured against: the close at the end of that day when backtesting, else the current close
+refClose() =>
+    btEnd > 0 and not na(btPx) ? btPx : close
+
 __SECTION_ARRAY__
 
 // ---- what was pasted ----
@@ -148,14 +166,14 @@ fmtP(float p) =>
 
 // what price should do at a level, worked out against the current price
 readText(string r, float p) =>
-    above = p > close
+    above = p > refClose()
     r == "H" ? (above ? "HOLD: rejects down" : "HOLD: bounces up") : r == "B" ? (above ? "BREAK: pushes up through" : "BREAK: pushes down through") : r == "C" ? "CHOP: two-way" : ""
 
 nearDist() =>
-    zoneNear > 0 ? zoneNear : close * 0.0035
+    zoneNear > 0 ? zoneNear : refClose() * 0.0035
 
 halfH() =>
-    (zoneH > 0 ? zoneH : close * 0.0003) / 2
+    (zoneH > 0 ? zoneH : refClose() * 0.0003) / 2
 
 // ---- reading the pasted text ----
 qdParse(string txt) =>
@@ -252,7 +270,7 @@ startX(float levelStart) =>
 visibleAt(int i) =>
     g = array.get(lvG, i)
     p = array.get(lvP, i) + offsetPts
-    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - close) / close * 100 <= maxPct
+    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct
 
 // which current levels get drawn: Clean = key levels + the nearest perSide on each side
 qdPick(int n) =>
@@ -273,7 +291,7 @@ qdPick(int n) =>
                 for j = 0 to n - 1
                     if j != i and array.get(vis, j) and not kindKey(array.get(lvG, j)) and kindOf(array.get(lvG, j), 0) == si
                         pj = array.get(lvP, j) + offsetPts
-                        if (pj > close) == (pi > close) and math.abs(pj - close) < math.abs(pi - close)
+                        if (pj > refClose()) == (pi > refClose()) and math.abs(pj - refClose()) < math.abs(pi - refClose())
                             closer += 1
                 array.set(pick, i, closer < perSide)
     pick
@@ -293,7 +311,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             e = array.get(lvE, i)
             g = array.get(lvG, i)
             p = array.get(lvP, i) + offsetPts
-            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - close) / close * 100 <= maxPct and array.size(lns) < 480
+            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct and array.size(lns) < 480
                 c = kindColor(g)
                 array.push(lns, line.new(clampT(array.get(lvS, i)), p, clampT(e), p, xloc = xloc.bar_time, color = color.new(c, histT), width = 1, style = line.style_dotted))
     for i = 0 to n - 1
@@ -306,7 +324,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             hi = array.get(lvHi, i)
             band = hi > lo and lo > 0
             gexZ = gexZones == "Every GEX level" and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
-            near = math.abs(p - close) <= nd or gexZ
+            near = math.abs(p - refClose()) <= nd or gexZ
             if near and array.size(bxs) < 480
                 zt = band ? hi + offsetPts : p + hh
                 zb = band ? lo + offsetPts : p - hh
@@ -375,18 +393,18 @@ qdTable(int n, bool[] pick) =>
             for i = 0 to n - 1
                 if array.get(pick, i)
                     p = array.get(lvP, i) + offsetPts
-                    if p > close and (up < 0 or p < array.get(lvP, math.max(up, 0)) + offsetPts)
+                    if p > refClose() and (up < 0 or p < array.get(lvP, math.max(up, 0)) + offsetPts)
                         up := i
-                    if p <= close and (dn < 0 or p > array.get(lvP, math.max(dn, 0)) + offsetPts)
+                    if p <= refClose() and (dn < 0 or p > array.get(lvP, math.max(dn, 0)) + offsetPts)
                         dn := i
         table.cell(out, 0, rows + 1, "Next above", text_color = dim, text_size = size.tiny, text_halign = text.align_left)
         table.cell(out, 1, rows + 1, nextText(up), text_color = up < 0 ? tx : kindColor(gAt(up)), text_size = size.tiny, text_halign = text.align_left)
         table.cell(out, 0, rows + 2, "Next below", text_color = dim, text_size = size.tiny, text_halign = text.align_left)
         table.cell(out, 1, rows + 2, nextText(dn), text_color = dn < 0 ? tx : kindColor(gAt(dn)), text_size = size.tiny, text_halign = text.align_left)
         today = str.format_time(time, "yyyy-MM-dd", "America/New_York")
-        old = warnOld and n > 0 and array.get(meta, 2) != "" and array.get(meta, 2) != today
-        table.cell(out, 0, rows + 3, old ? "Old levels" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
-        table.cell(out, 1, rows + 3, old ? "These are from " + array.get(meta, 2) + ": copy today's from Q DATA" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
+        old = warnOld and btEnd == 0 and n > 0 and array.get(meta, 2) != "" and array.get(meta, 2) != today
+        table.cell(out, 0, rows + 3, old ? "Old levels" : btEnd > 0 ? "Backtest" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
+        table.cell(out, 1, rows + 3, old ? "These are from " + array.get(meta, 2) + ": copy today's from Q DATA" : btEnd > 0 ? "Levels of " + array.get(meta, 2) + ", drawn to that day's 5 pm ET close" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
     out
 
 // ---- draw everything on the last bar ----
@@ -401,7 +419,7 @@ if barstate.islast
     array.clear(lbs)
     array.clear(bxs)
     n = qdParse(dataTxt)
-    endX = time + extBars * timeframe.in_seconds() * 1000
+    endX = btEnd > 0 ? int(math.min(btEnd, float(time))) : time + extBars * timeframe.in_seconds() * 1000
     pick = array.new<bool>()
     if n == 0
         array.push(lbs, label.new(time, close, __NAME__ + ": open the settings and paste the levels from Q DATA (TradingView tab > __COPYBTN__)", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(#64748b, 70), textcolor = color.new(#0f172a, 0), size = size.small))

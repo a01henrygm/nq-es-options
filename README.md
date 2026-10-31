@@ -33,6 +33,16 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.29.0
+
+- **Backtest an earlier day's GEX** on the TradingView tab (Q DATA GEX card): pick a stored day and copy its GEX levels into the
+  same Q DATA GEX indicator. Levels start when they appeared that day and stop at that day's 5 pm ET close; zones, Clean and the
+  HOLD / BREAK reads are worked out from that day's price, so it also works with TradingView's Bar Replay. Days since 1.24.0 are
+  exactly what the indicator showed; older days come from the collector's level log (no zone bands or reads).
+- Prices for a past day use the NQ / ES ratio Q DATA now saves with every snapshot, else that day's stored option chain, else
+  today's basis with the carry put back (estimated: check one level and use Shift if needed).
+- Q DATA GEX, Levels, All Tabs and Key Levels scripts changed (backtest mode): copy the indicator once more.
+
 ## New in 1.28.0
 
 - **Copy Key levels** on the Key levels tab: copies exactly what the tab shows (top N key zones, nearest N, per-type counts, or

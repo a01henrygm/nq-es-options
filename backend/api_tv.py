@@ -12,9 +12,11 @@ events (so nothing is missed when the thread is not running, as in tests).
 from __future__ import annotations
 import json
 import logging
+import math
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 
 from fastapi import Body, HTTPException, Query
 
@@ -27,13 +29,15 @@ from .services import quant as qt
 from .services import tv_levels as tv
 from .services.level_kinds import CAT, help_for
 from .services.tv_pine import ALL_LV_OFFSET, build_script
-from .timeutil import iso, to_et
+from .services.mapping import SAME_SCALE, contract_expiry, implied_forward_ratio
+from .timeutil import ET, iso, parse_ts, to_et
 
 log = logging.getLogger("tv")
 NAMES = {"gex": "Q DATA GEX", "lv": "Q DATA Levels", "all": "Q DATA All Tabs"}
 FILES = {"gex": "qdata_gex_paste_in.pine", "lv": "qdata_levels_paste_in.pine", "all": "qdata_all_tabs_paste_in.pine"}
 KL_NAME, KL_FILE = "Q DATA Key Levels", "qdata_key_levels_paste_in.pine"
 HEAVY_TABS = ("gameplan", "quant")   # Monte Carlo based and recomputed every snapshot anyway: skipped when replaying older snapshots
+CARRY = 0.037                # NQ / ES carry over the index (rates minus dividends, a year), only for days with no saved ratio
 REPLAY_VERSION = 1           # bump to rebuild today's levels from the stored snapshots (for example after a change to the matching)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tv_runs(id INTEGER PRIMARY KEY, underlying TEXT, day TEXT, ind TEXT, sec INTEGER, kind TEXT, label TEXT, value REAL,
@@ -155,7 +159,14 @@ def register(app, h, q, tab_parts):
         if True:
             c = q.context(u, "standard")
             levels = gather(u, c, light)
-            to_f, _ = h.futures_converter(u, snap, c["now"])
+            to_f, _finfo = h.futures_converter(u, snap, c["now"])
+            if not light and to_f and snap.spot:
+                try:
+                    fv = to_f(snap.spot)
+                    if fv:
+                        h.db.save_metric(sid, u, "fut_ratio", fv / snap.spot, {"root": _finfo.get("root"), "method": _finfo.get("method")}, data_t)
+                except Exception:
+                    log.exception("tv: could not save the futures ratio")
             px = (lambda v: f"{to_f(v):,.2f}" if to_f and to_f(v) is not None else f"{v:,.2f}")
             day = to_et(data_t).date().isoformat()
             ts = iso(data_t)
@@ -298,6 +309,113 @@ def register(app, h, q, tab_parts):
 
     app.state.start_tv_tracker = start_thread              # started by main.py and the desktop app next to the collectors
 
+    # ---- levels of an earlier day, for backtesting on TradingView (1.29.0) ---------------------------------------------
+    GEX_CATS = {"gamma_flip": "Gamma flip", "gex0_flip": "0DTE flip", "call_wall": "Call wall", "put_wall": "Put wall",
+                "gex0_call_wall": "0DTE call wall", "gex0_put_wall": "0DTE put wall", "gex_concentration": "Large modeled GEX",
+                "gex_call_zone": "Call wall zones", "gex_put_zone": "Put wall zones", "gex_pos_zone": "GEX zones", "gex_neg_zone": "GEX zones"}
+
+    def day_bounds(day):
+        d = date.fromisoformat(day)
+        a = datetime.combine(d, dtime(0, 0), tzinfo=ET)
+        return iso(a), iso(a + timedelta(days=1)), a
+
+    def runs_from_history(u, day):
+        """Days from before the tracker existed (before 1.24.0): the GEX levels the collector logged every snapshot, with the time each
+        one first and last showed. No zone bands or HOLD / BREAK reads were saved back then."""
+        with h.db.conn() as cn:
+            rows = [dict(r) for r in cn.execute("SELECT * FROM level_runs WHERE underlying=? AND session_date=? ORDER BY first_seen", (u, day))]
+        out = []
+        for r in rows:
+            cat = r["category"] or ""
+            if cat not in GEX_CATS and not cat.startswith("gex"):
+                continue
+            kind = GEX_CATS.get(cat) or r["label"]
+            out.append({"ind": "gex", "sec": tv.gex_section(kind), "kind": kind, "label": r["label"], "value": r["value"], "low": None, "high": None,
+                        "first_ts": r["first_seen"], "last_ts": r["last_seen"], "end_ts": None if r["active"] else r["last_seen"], "prev": None,
+                        "active": 1 if r["active"] else 0, "live": 0, "read": "-", "tip": r["label"], "short": "", "style": "solid"})
+        return out
+
+    def day_runs(u, ind, day):
+        """(runs, exact). exact = the very runs the indicator got that day."""
+        db_init()
+        if ind == "all":
+            runs = runs_today(u, "gex", day) + [dict(r, sec=int(r["sec"]) + ALL_LV_OFFSET) for r in runs_today(u, "lv", day)]
+        else:
+            runs = runs_today(u, ind, day)
+        if runs:
+            return runs, True
+        if ind in ("gex", "all"):
+            runs = runs_from_history(u, day)
+            for r in runs:
+                r["first_ts_ms"], r["end_ts_ms"] = ms(r["first_ts"]), ms(r["end_ts"])
+            return runs, False
+        return [], False
+
+    def day_converter(u, day):
+        """(convert, method, mapped, root): index price -> that day's futures price."""
+        snap = h.snapshot(u)
+        _m, _, now = h.meta(snap, {"convention": "standard"})
+        to_f, finfo = h.futures_converter(u, snap, now)
+        root = finfo.get("root")
+        a, b, _ = day_bounds(day)
+        saved = [r for r in h.db.metric_series(u, "fut_ratio", since=a) if r["t"] < b]
+        if saved:
+            k = saved[-1]["value"]
+            return (lambda v: v * k), f"{root} ratio Q DATA saved that day", True, root
+        if u in SAME_SCALE and root:                               # an option chain of that day is still stored: the implied fair value
+            for r in sorted(h.db.list_snapshots(u, 500), key=lambda r: -r["id"]):
+                t_ = r["source_ts"] or r["retrieved_at"]
+                if t_ and a <= iso(parse_ts(t_)) < b:
+                    s = h.db.load_snapshot(u, r["id"])
+                    if s and s.spot:
+                        st = parse_ts(t_)
+                        iv = implied_forward_ratio(s.contracts, s.spot, st, contract_expiry(h.settings.futures_contracts.get(root, ""), st.date()))
+                        if iv:
+                            k = iv["ratio"]
+                            return (lambda v: v * k), f"{root} fair value from that day's options (estimated)", True, root
+                    break
+        if not (to_f and snap.spot and to_f(snap.spot)):
+            return (lambda v: v), f"{u.lstrip('_')} units: no {root or 'futures'} price saved, use Shift", False, root
+        k_now = to_f(snap.spot) / snap.spot                       # today's ratio, with the carry that has run off since that day put back
+        days = (to_et(snap.source_ts or snap.retrieved_at).date() - date.fromisoformat(day)).days
+        k = k_now * math.exp(CARRY * days / 365.0)
+        return (lambda v: v * k), f"{root} estimated from today's basis (check one level, use Shift if off)", True, root
+
+    def past_levels(u, ind, prefs, day):
+        runs, exact = day_runs(u, ind, day)
+        if not runs:
+            raise HTTPException(404, {"reason": f"Q DATA has no stored levels for {day}. It only has days it was running for."})
+        conv, method, mapped, root = day_converter(u, day)
+        _a, _b, start = day_bounds(day)
+        last = max((ms(r.get("last_ts")) or r["first_ts_ms"] for r in runs), default=0)
+        bt_end = int((start + timedelta(hours=17)).timestamp() * 1000)    # the end of that day's CME session (5 pm ET)
+        rows = [("Backtest", f"levels from {day}"), ("Prices", method),
+                ("Saved", "exact, as Q DATA showed them that day" if exact else "older day: no zones or reads saved")]
+        made = "backtest " + day
+        sym = f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_")
+        j = tv.build_text(ind, runs, conv, made, day, sym, method, last, rows, [], prefs, bt_end_ms=bt_end)
+        j.update({"ind": ind, "title": NAMES[ind], "mapped": mapped, "data_as_of": datetime.fromtimestamp(last / 1000, timezone.utc).isoformat() if last else None,
+                  "made": made, "heat": 0, "day": day, "exact": exact, "backtest": True, "prices": method, "catching_up": False})
+        return j
+
+    @app.get("/api/tv/days")
+    def tv_days(underlying: str, ind: str = "gex"):
+        """Days with stored levels, newest first: exact (tracker runs, 1.24.0+) or from the collector's level log (older)."""
+        u = h.underlying_ok(underlying)
+        db_init()
+        with h.db.conn() as cn:
+            exact = {r[0]: r[1] for r in cn.execute("SELECT day, COUNT(*) FROM tv_runs WHERE underlying=? AND ind=? GROUP BY day", (u, ind if ind != "all" else "gex"))}
+            older = {}
+            if ind in ("gex", "all"):
+                for r in cn.execute("SELECT session_date, category FROM level_runs WHERE underlying=?", (u,)):
+                    if (r[1] or "").startswith("gex") or r[1] in GEX_CATS:
+                        older[r[0]] = older.get(r[0], 0) + 1
+        snap = h.snapshot(u)
+        cur = to_et(snap.source_ts or snap.retrieved_at).date().isoformat() if snap else None
+        days = sorted((set(exact) | set(older)) - {cur}, reverse=True)       # the current day is the normal copy button
+        return {"current": cur, "days": [{"day": d, "exact": d in exact, "levels": exact.get(d) or older.get(d, 0),
+                                          "weekday": date.fromisoformat(d).strftime("%a")} for d in days]}
+
     # ---- endpoints ---------------------------------------------------------------------------------------------------
     def runs_today(u, ind, day):
         with h.db.conn() as cn:
@@ -306,10 +424,18 @@ def register(app, h, q, tab_parts):
             r["first_ts_ms"], r["end_ts_ms"] = ms(r["first_ts"]), ms(r["end_ts"])
         return rows
 
-    def levels(u, ind, prefs=None, history=True):
+    def levels(u, ind, prefs=None, history=True, day=None):
         if ind not in NAMES:
             raise HTTPException(422, "ind must be gex, lv or all")
         u = h.underlying_ok(u)
+        if day:
+            try:
+                day = date.fromisoformat(day).isoformat()
+            except ValueError:
+                raise HTTPException(422, "day must be YYYY-MM-DD")
+            snap0 = h.snapshot(u)
+            if day != to_et(snap0.source_ts or snap0.retrieved_at).date().isoformat():
+                return past_levels(u, ind, prefs, day)
         sync(u)
         snap = h.snapshot(u)
         m, _, now = h.meta(snap, {"convention": "standard"})
@@ -342,12 +468,12 @@ def register(app, h, q, tab_parts):
         return j
 
     @app.get("/api/tv/levels")
-    def tv_levels_get(underlying: str, ind: str = "gex", history: bool = True):
-        return levels(underlying, ind, None, history)
+    def tv_levels_get(underlying: str, ind: str = "gex", history: bool = True, day: str | None = None):
+        return levels(underlying, ind, None, history, day)
 
     @app.post("/api/tv/levels")
-    def tv_levels_post(underlying: str, ind: str = "gex", history: bool = True, body: dict = Body(default={})):
-        return levels(underlying, ind, (body or {}).get("prefs"), history)
+    def tv_levels_post(underlying: str, ind: str = "gex", history: bool = True, day: str | None = None, body: dict = Body(default={})):
+        return levels(underlying, ind, (body or {}).get("prefs"), history, day)
 
     @app.get("/api/tv/script")
     def tv_script(ind: str = "gex"):
