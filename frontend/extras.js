@@ -11,6 +11,7 @@ const feedStatus = st => !st ? "" : `<details class="adv" data-k="feed-status"><
   ${Object.entries(st.jobs).map(([k, v]) => `<tr><td>${esc({ vol: "VIX family quotes", history: "Daily VIX history", members: "Nasdaq-100 members", reports: "Earnings dates", chains: "Option chains of reporting companies" }[k] || k)}</td>
   <td>${esc(ago(v.last_ok))}</td><td class="dim">${v.last_error ? esc(v.last_error.message) : ""}</td></tr>`).join("")}</table></div></details>`;
 
+const hexA = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
 Object.assign(R, {
   // ---- Volatility -----------------------------------------------------------------------------------------------------------
   async vix() {
@@ -97,37 +98,87 @@ Object.assign(R, {
 
   // ---- Interval map (1.30.0): time x strike heatmap of GEX, dealer delta, charm, vanna, volume or open interest ----------------
   async imap() {
-    const ms = S.imM || "gex", sc = S.imS || "all", iv = S.imI || "5";
+    const ms = S.imM || "gex", sc = S.imS || "all", iv = S.imI || "1";
     const j = await api("/charts/intervalmap", { underlying: S.u, day: S.imD || "", measure: ms, scope: sc, interval: iv });
     const M = [["gex", "GEX"], ["dex", "Delta exposure (DEX)"], ["charm", "Charm"], ["vanna", "Vanna"], ["volume", "Volume"], ["oi", "Open interest"]];
     const head = `<div class="row">${M.map(([k, n]) => `<button class="${k === ms ? "go" : ""}" data-imm="${k}">${n}</button>`).join("")}</div>
       <div class="row"><label>Day${sel("im_day", (j.days || []).map(d => [d, d]), j.day || (j.days || [])[0])}</label>
       <label>Expiries${sel("im_scope", [["all", "All expiries"], ["0dte", "0DTE only"]], sc)}</label>
       <label>Interval${sel("im_int", [["0", "Every snapshot"], ["1", "1 min"], ["5", "5 min"], ["10", "10 min"], ["15", "15 min"], ["30", "30 min"]], iv)}</label>
-      <label><span><input type="checkbox" id="im_lines" ${S.imL === false ? "" : "checked"}> Flip and walls</span></label></div>`;
+      <label>Strikes${sel("im_n", [["20", "20 strikes"], ["30", "30 strikes"], ["50", "50 strikes"], ["0", "All"]], S.imN || "30")}</label>
+      <label>Style${sel("im_style", [["dots", "Dots"], ["heat", "Heatmap"]], S.imStyle || "dots")}</label>
+      <label><span><input type="checkbox" id="im_lines" ${S.imL === false ? "" : "checked"}> Gamma flip</span></label></div>`;
     const hook = () => {
       document.querySelectorAll("[data-imm]").forEach(b => b.onclick = () => { S.imM = b.dataset.imm; render(); });
       if ($("im_day")) $("im_day").onchange = () => { S.imD = $("im_day").value; render(); };
       $("im_scope").onchange = () => { S.imS = $("im_scope").value; render(); };
       $("im_int").onchange = () => { S.imI = $("im_int").value; render(); };
       $("im_lines").onchange = () => { S.imL = $("im_lines").checked; render(); };
+      $("im_n").onchange = () => { S.imN = $("im_n").value; render(); };
+      $("im_style").onchange = () => { S.imStyle = $("im_style").value; render(); };
     };
     if (!j.available) { $("view").innerHTML = `<div class="panel"><h2>Interval map, ${esc(uName(S.u))}</h2>${head}${note(j.reason, true)}</div>`; hook(); return; }
     const k = j.futures_ratio, root = j.futures_root || "", px = v => k ? v * k : v, unit = k ? root : uName(S.u);
-    const X = j.times.map(etx), Y = j.strikes.map(px), cap = j.cap || 1;
-    const shown = j.z.map(r => r.map(v => v == null ? null : Math.max(-cap, Math.min(cap, v))));
-    const cs = j.signed ? [[0, "#ff2d55"], [0.25, "#ff7a8f"], [0.5, "rgba(0,0,0,0)"], [0.75, "#5ce0a0"], [1, "#00c96b"]] : RCS;
-    const tr = [{ type: "heatmap", x: X, y: Y, z: shown, customdata: j.z, colorscale: cs, zmid: j.signed ? 0 : undefined, zmin: j.signed ? -cap : 0, zmax: cap,
-      hoverongaps: false, ygap: 1, colorbar: { thickness: 12, title: { text: j.units, side: "right" } },
-      hovertemplate: `%{x}<br>${esc(unit)} %{y:,.0f}<br>${esc(j.title)}: %{customdata:,.0f}<extra></extra>` }];
-    const P = j.price.map(p => [etx(p.t), px(p.price)]);
-    if (P.length) tr.push({ type: "scatter", mode: "lines", x: P.map(p => p[0]), y: P.map(p => p[1]), name: "Price", line: { color: "#ffffff", width: 2 }, hovertemplate: `Price %{y:,.2f}<extra></extra>` });
-    if (S.imL !== false) [["gamma_flip", "Gamma flip", "#ffd34d", "dash"], ["call_wall", "Call wall", "#2f8bf5", "dot"], ["put_wall", "Put wall", "#ff7a2e", "dot"]].forEach(([key, nm, col, dash]) => {
+    const money = v => { if (v == null) return "-"; const a = Math.abs(v), s = v < 0 ? "-" : ""; return ms === "volume" || ms === "oi" ? fmt(v) : s + (a >= 1e9 ? (a / 1e9).toFixed(2) + " B" : a >= 1e6 ? (a / 1e6).toFixed(2) + " M" : a >= 1e3 ? (a / 1e3).toFixed(1) + " K" : fmt(a)); };
+    // which strikes: the N nearest the day's price
+    const P = j.price.map(p => [etx(p.t), p.price]), mid = P.length ? P.map(p => p[1]).sort((a, b) => a - b)[Math.floor(P.length / 2)] : j.strikes[Math.floor(j.strikes.length / 2)];
+    const nK = +(S.imN || 30), idx = j.strikes.map((s, i) => i).sort((a, b) => Math.abs(j.strikes[a] - mid) - Math.abs(j.strikes[b] - mid)).slice(0, nK || j.strikes.length).sort((a, b) => a - b);
+    const X = j.times.map(etx), cap = Math.max(...idx.flatMap(i => j.z[i].map(v => Math.abs(v || 0)))) || 1;
+    // the heavy strikes: biggest at any moment of the day, top 3 on each side (top 4 for unsigned measures)
+    const peak = i => j.z[i].reduce((m, v) => (v != null && Math.abs(v) > Math.abs(m) ? v : m), 0);
+    const pos = idx.filter(i => peak(i) > 0).sort((a, b) => peak(b) - peak(a)).slice(0, j.signed ? 3 : 4), neg = j.signed ? idx.filter(i => peak(i) < 0).sort((a, b) => peak(a) - peak(b)).slice(0, 3) : [];
+    const heavy = new Set([...pos, ...neg]);
+    const GREEN = "#22e36b", RED = "#ff3d5a", GOLD = "#ffc94d";
+    const tr = [];
+    if (S.imStyle === "heat") {
+      const sh = idx.map(i => j.z[i].map(v => v == null ? null : Math.max(-cap, Math.min(cap, v))));
+      tr.push({ type: "heatmap", x: X, y: idx.map(i => px(j.strikes[i])), z: sh, customdata: idx.map(i => j.z[i]), colorscale: j.signed ? [[0, RED], [0.5, "rgba(0,0,0,0)"], [1, GREEN]] : RCS,
+        zmid: j.signed ? 0 : undefined, zmin: j.signed ? -cap : 0, zmax: cap, hoverongaps: false, ygap: 1, showscale: false, hovertemplate: `%{x}<br>${esc(unit)} %{y:,.0f}<br>${esc(j.title)}: %{customdata:,.0f}<extra></extra>` });
+    } else {
+      // the dot grid: every strike at every moment; faint specks where nothing sits, dots growing and brightening with size
+      const xs = [], ys = [], sz = [], col = [], cd = [], hx = [], hy = [], hs = [], hc = [];
+      for (const i of idx) for (let c = 0; c < X.length; c++) {
+        const v = j.z[i][c], r = v ? Math.sqrt(Math.abs(v) / cap) : 0, y = px(j.strikes[i]);
+        xs.push(X[c]); ys.push(y); sz.push(r < 0.04 ? 3 : 5 + r * 19);
+        const base = !j.signed ? GOLD : v >= 0 ? GREEN : RED, op = r < 0.04 ? 0.22 : Math.min(1, 0.35 + r * 0.9);
+        col.push(hexA(base, op));
+        cd.push([money(v), j.zc ? money(j.zc[i][c]) : "", j.zp ? money(j.zp[i][c]) : "", fmt(y, 0), j.times[c]]);
+        if (heavy.has(i) && r >= 0.04) { hx.push(X[c]); hy.push(y); hs.push(12 + r * 30); hc.push(hexA(base, 0.16)); }
+      }
+      const tip = j.zc ? `<b>%{x|%I:%M %p on %b %d, %Y}</b><br>${esc(unit)}  <b>%{customdata[3]}</b><br>Call GEX  %{customdata[1]}<br>Put GEX  %{customdata[2]}<br><b>Net GEX  %{customdata[0]}</b><extra></extra>`
+        : `<b>%{x|%I:%M %p on %b %d, %Y}</b><br>${esc(unit)}  <b>%{customdata[3]}</b><br><b>${esc(j.title)}  %{customdata[0]}</b><extra></extra>`;
+      tr.push({ type: "scatter", mode: "markers", x: hx, y: hy, hoverinfo: "skip", showlegend: false, marker: { size: hs, color: hc, line: { width: 0 } } });   // glow under the heavy rows
+      tr.push({ type: "scatter", mode: "markers", x: xs, y: ys, customdata: cd, showlegend: false, hovertemplate: tip,
+        marker: { size: sz, color: col, line: { width: 0 } } });
+    }
+    if (P.length) tr.push({ type: "scatter", mode: "lines", x: P.map(p => p[0]), y: P.map(p => px(p[1])), name: uName(S.u), line: { color: "#3d8bff", width: 2.6, shape: "spline", smoothing: 0.6 }, hovertemplate: `${esc(uName(S.u))} %{y:,.2f}<extra></extra>` });
+    if (S.imL !== false) [["gamma_flip", "Gamma flip", GOLD]].forEach(([key, nm, cl]) => {
       const L = (j.lines[key] || []).filter(r => r.value != null);
-      if (L.length) tr.push({ type: "scatter", mode: "lines", line: { shape: "hv", color: col, width: 1.5, dash }, name: nm, x: L.map(r => etx(r.t)), y: L.map(r => px(r.value)), hovertemplate: `${nm} %{y:,.0f}<extra></extra>` });
+      if (L.length) tr.push({ type: "scatter", mode: "lines", line: { shape: "hv", color: hexA(cl, 0.8), width: 1.4, dash: "dash" }, name: nm, x: L.map(r => etx(r.t)), y: L.map(r => px(r.value)), hovertemplate: `${nm} %{y:,.0f}<extra></extra>` });
     });
-    const lo = Math.min(...P.map(p => p[1])), hi = Math.max(...P.map(p => p[1])), pad = Math.max((hi - lo) * 0.6, lo * 0.006);
-    const yr = P.length ? [lo - pad, hi + pad] : undefined;
+    // price tags on the left for the heavy strikes, and what they are on the right; biggest first, none overlapping
+    const ann = [], shapes = [];
+    const name = (i, v) => ms === "gex" ? (v > 0 ? "Call wall" : "Put wall") : ms === "dex" ? (v > 0 ? "+DEX" : "-DEX") : ms === "charm" ? (v > 0 ? "+Charm" : "-Charm") : ms === "vanna" ? (v > 0 ? "+Vanna" : "-Vanna") : ms === "volume" ? "Hot strike" : "Big OI";
+    const ysAll = idx.map(i => px(j.strikes[i])), gap = (Math.max(...ysAll) - Math.min(...ysAll)) * 0.045;
+    const lastP = P.length ? px(P[P.length - 1][1]) : null, placed = [];
+    const free = y => placed.every(q => Math.abs(q - y) >= gap);
+    [...pos, ...neg].sort((a, b) => Math.abs(peak(b)) - Math.abs(peak(a))).forEach((i, n) => {
+      const v = peak(i), y = px(j.strikes[i]), cl = !j.signed ? GOLD : v > 0 ? GREEN : RED, top = n < 2;
+      shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: y, y1: y, line: { color: hexA(cl, top ? 0.4 : 0.2), width: top ? 2 : 1 }, layer: "below" });
+      if (!free(y)) return;
+      placed.push(y);
+      ann.push({ xref: "paper", x: 0, xanchor: "right", y, yanchor: "middle", text: `<b>${fmt(y, 0)}</b>`, showarrow: false, font: { color: "#06121f", size: 12 }, bgcolor: cl, borderpad: 4 });
+      ann.push({ xref: "paper", x: 1, xanchor: "left", y, yanchor: "middle", text: `${top ? "<b>" : ""}${name(i, v)} ${money(v)}${top ? "</b>" : ""}`, showarrow: false, font: { color: cl, size: 11 }, bgcolor: "rgba(8,18,40,0.9)", bordercolor: hexA(cl, 0.7), borderpad: 3 });
+    });
+    const near = placed.find(q => Math.abs(q - lastP) < gap);        // price tag steps aside for a wall tag at the same height
+    if (lastP) ann.push({ xref: "paper", x: 1, xanchor: "left", y: lastP, yanchor: "middle", yshift: near == null ? 0 : lastP >= near ? 18 : -18, text: `<b>${fmt(lastP, 2)}</b>`, showarrow: false, font: { color: "#ffffff", size: 11 }, bgcolor: "#3d8bff", borderpad: 3 });
+    const ys = idx.map(i => px(j.strikes[i])), yr = [Math.min(...ys) - (ys[1] - ys[0] || 5), Math.max(...ys) + (ys[1] - ys[0] || 5)];
+    const L0 = { paper_bgcolor: "#081228", plot_bgcolor: "#081228", font: { color: "#c9d6ee", family: "Manrope, Segoe UI, sans-serif", size: 12 },
+      title: { text: `<b>${esc(uName(S.u))} · ${esc(j.title)} by strike through the session</b>${lastP ? `<br><span style="font-size:12px;color:#8fb4ff">● ${esc(unit)} ${fmt(lastP, 2)}</span>` : ""}`, x: 0.5, xanchor: "center", font: { size: 16, color: "#ffffff" } },
+      margin: { l: 92, r: 150, t: 70, b: 50 }, showlegend: false, hovermode: "closest", annotations: ann, shapes,
+      hoverlabel: { bgcolor: "#163a8a", bordercolor: "#3d8bff", font: { color: "#ffffff", family: "Manrope, Segoe UI, sans-serif", size: 13 }, align: "left" },
+      xaxis: { showgrid: false, zeroline: false, tickformat: "%I:%M %p", color: "#c9d6ee", showspikes: true, spikemode: "across", spikedash: "dot", spikecolor: "#8fb4ff", spikethickness: 1 },
+      yaxis: { showgrid: false, zeroline: false, tickformat: ",d", color: "#c9d6ee", range: yr } };
     const meaning = { gex: "Green: positive gamma (dealers dampen moves, price tends to pin or reject). Red: negative gamma (dealers chase, moves speed up).",
       dex: "Modeled dealer delta by strike (the same sign scenario as the Delta exposure tab). Bigger, brighter blocks are strikes carrying more of the delta dealers hedge; where the blocks shift as price moves is where hedging flows are concentrated.",
       charm: "How much dealer delta changes each day from time decay alone. Big blocks near price drive the drift into the close, strongest on 0DTE.",
@@ -136,10 +187,10 @@ Object.assign(R, {
       oi: "Open interest by strike (updates once a day, so it mostly shows the starting map; changes appear when the data refreshes)." }[ms];
     $("view").innerHTML = `<div class="panel"><h2>Interval map, ${esc(uName(S.u))} ${esc(j.day)}: ${esc(j.title)}${sc === "0dte" ? " (0DTE)" : ""}</h2>${head}
       <p class="dim" style="margin:4px 0 8px">${esc(meaning)}</p>
-      <div id="im1" class="chart" style="height:640px"></div>
-      <p class="dim">${esc(j.note)}Prices are ${k ? esc(root) + " (" + esc(j.ratio_from) + ")" : esc(uName(S.u)) + " units (save a basis on Key levels for futures prices)"}. Colors are capped at the 98th percentile so one huge strike doesn't wash out the rest; hover shows the real value.</p></div>`;
+      <div id="im1" class="chart imchart" style="height:680px"></div>
+      <p class="dim">${esc(j.note)}Prices are ${k ? esc(root) + " (" + esc(j.ratio_from) + ")" : esc(uName(S.u)) + " units (save a basis on Key levels for futures prices)"}. Dot size and brightness follow the size at that strike and moment; the heaviest strikes of the day are tagged on the left and named on the right.</p></div>`;
     hook();
-    plot("im1", tr, LAY("", { margin: { l: 70, r: 20, t: 16, b: 60 }, yaxis: { title: unit, tickformat: ",d", gridcolor: "#1E2840", range: yr }, xaxis: { gridcolor: "#1E2840" }, legend: { orientation: "h", y: -0.12, x: 0 } }), { gate: true });
+    plot("im1", tr, L0, { gate: true });
   },
 
   // ---- Replay -----------------------------------------------------------------------------------------------------------------

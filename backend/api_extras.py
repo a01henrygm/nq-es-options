@@ -115,7 +115,7 @@ def register(app, h):
         """[(t, {strike: value})] for one day, oldest first, and where they came from."""
         if measure == "gex":
             rows = series(u, "gex0_profile" if z else "gex_profile", d)
-            return [(r["t"], {s[0]: s[1] for s in (r["detail"] or [])}) for r in rows], "saved"
+            return [(r["t"], {s[0]: (s[1], s[2], s[3]) for s in (r["detail"] or [])}) for r in rows], "saved"
         col = 1 + idy.IMAP_MEASURES.index(measure) + (5 if z else 0)
         rows = series(u, "imap_profile", d)
         if rows:
@@ -163,7 +163,11 @@ def register(app, h):
         price = [{"t": iso(parse_ts(r["source_ts"] or r["retrieved_at"])), "price": r["price"]} for r in h.db.price_history(u, 20000)
                  if parse_ts(r["source_ts"] or r["retrieved_at"]) and a <= iso(parse_ts(r["source_ts"] or r["retrieved_at"])) < b]
         ks = sorted({k for _, v in frames for k in v})
-        zz = [[(v.get(k) or None) for _, v in frames] for k in ks]
+        val = lambda x: (x[0] if isinstance(x, tuple) else x) if x is not None else None
+        zz = [[(val(v.get(k)) or None) for _, v in frames] for k in ks]
+        split = measure == "gex"                       # GEX keeps the call and put sides for the hover card
+        zc = [[(v[k][1] if k in v else None) for _, v in frames] for k in ks] if split else None
+        zp = [[(v[k][2] if k in v else None) for _, v in frames] for k in ks] if split else None
         z0 = scope == "0dte"
         lines = {k: [{"t": r["t"], "value": r["value"]} for r in series(u, n, d)]
                  for k, n in (("gamma_flip", "gex0_flip" if z0 else "gamma_flip"), ("call_wall", "gex0_call_wall" if z0 else "call_wall"),
@@ -182,7 +186,7 @@ def register(app, h):
             pass
         mags = sorted(abs(x) for row in zz for x in row if x)
         cap = mags[int(len(mags) * 0.98)] if mags else 1
-        return {"available": True, **base, "source": source, "times": [t_ for t_, _ in frames], "strikes": ks, "z": zz, "cap": cap,
+        return {"available": True, **base, "source": source, "times": [t_ for t_, _ in frames], "strikes": ks, "z": zz, "zc": zc, "zp": zp, "cap": cap,
                 "price": price, "lines": lines, "futures_ratio": ratio, "futures_root": root, "ratio_from": how,
                 "note": ("Each column is the last stored snapshot of its interval (options data about 15 minutes delayed). "
                          + ("Rebuilt from the full option chains still stored for this day. " if source == "rebuilt" else ""))}

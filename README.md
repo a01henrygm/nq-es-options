@@ -33,6 +33,13 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.30.1
+
+- **Interval map redesigned**: a dark navy dot grid, one dot per strike per moment, sized and brightened by the exposure (green
+  positive, red negative). The heaviest strikes of the day glow, get a price tag on the left and a name and size on the right
+  (Call wall 153 B, Put wall -150 B...), and hovering shows a card with the time, the futures price and call / put / net GEX.
+  New Strikes (20 / 30 / 50 / all) and Style (Dots / Heatmap) settings; the interval now starts at 1 minute.
+
 ## New in 1.30.0
 
 - **Interval map** tab (Options group): a time x strike heatmap of one exposure through the day: **GEX, dealer delta exposure (DEX),
