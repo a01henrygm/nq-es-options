@@ -95,6 +95,53 @@ Object.assign(R, {
     };
   },
 
+  // ---- Interval map (1.30.0): time x strike heatmap of GEX, dealer delta, charm, vanna, volume or open interest ----------------
+  async imap() {
+    const ms = S.imM || "gex", sc = S.imS || "all", iv = S.imI || "5";
+    const j = await api("/charts/intervalmap", { underlying: S.u, day: S.imD || "", measure: ms, scope: sc, interval: iv });
+    const M = [["gex", "GEX"], ["dex", "Delta exposure (DEX)"], ["charm", "Charm"], ["vanna", "Vanna"], ["volume", "Volume"], ["oi", "Open interest"]];
+    const head = `<div class="row">${M.map(([k, n]) => `<button class="${k === ms ? "go" : ""}" data-imm="${k}">${n}</button>`).join("")}</div>
+      <div class="row"><label>Day${sel("im_day", (j.days || []).map(d => [d, d]), j.day || (j.days || [])[0])}</label>
+      <label>Expiries${sel("im_scope", [["all", "All expiries"], ["0dte", "0DTE only"]], sc)}</label>
+      <label>Interval${sel("im_int", [["0", "Every snapshot"], ["1", "1 min"], ["5", "5 min"], ["10", "10 min"], ["15", "15 min"], ["30", "30 min"]], iv)}</label>
+      <label><span><input type="checkbox" id="im_lines" ${S.imL === false ? "" : "checked"}> Flip and walls</span></label></div>`;
+    const hook = () => {
+      document.querySelectorAll("[data-imm]").forEach(b => b.onclick = () => { S.imM = b.dataset.imm; render(); });
+      if ($("im_day")) $("im_day").onchange = () => { S.imD = $("im_day").value; render(); };
+      $("im_scope").onchange = () => { S.imS = $("im_scope").value; render(); };
+      $("im_int").onchange = () => { S.imI = $("im_int").value; render(); };
+      $("im_lines").onchange = () => { S.imL = $("im_lines").checked; render(); };
+    };
+    if (!j.available) { $("view").innerHTML = `<div class="panel"><h2>Interval map, ${esc(uName(S.u))}</h2>${head}${note(j.reason, true)}</div>`; hook(); return; }
+    const k = j.futures_ratio, root = j.futures_root || "", px = v => k ? v * k : v, unit = k ? root : uName(S.u);
+    const X = j.times.map(etx), Y = j.strikes.map(px), cap = j.cap || 1;
+    const shown = j.z.map(r => r.map(v => v == null ? null : Math.max(-cap, Math.min(cap, v))));
+    const cs = j.signed ? [[0, "#ff2d55"], [0.25, "#ff7a8f"], [0.5, "rgba(0,0,0,0)"], [0.75, "#5ce0a0"], [1, "#00c96b"]] : RCS;
+    const tr = [{ type: "heatmap", x: X, y: Y, z: shown, customdata: j.z, colorscale: cs, zmid: j.signed ? 0 : undefined, zmin: j.signed ? -cap : 0, zmax: cap,
+      hoverongaps: false, ygap: 1, colorbar: { thickness: 12, title: { text: j.units, side: "right" } },
+      hovertemplate: `%{x}<br>${esc(unit)} %{y:,.0f}<br>${esc(j.title)}: %{customdata:,.0f}<extra></extra>` }];
+    const P = j.price.map(p => [etx(p.t), px(p.price)]);
+    if (P.length) tr.push({ type: "scatter", mode: "lines", x: P.map(p => p[0]), y: P.map(p => p[1]), name: "Price", line: { color: "#ffffff", width: 2 }, hovertemplate: `Price %{y:,.2f}<extra></extra>` });
+    if (S.imL !== false) [["gamma_flip", "Gamma flip", "#ffd34d", "dash"], ["call_wall", "Call wall", "#2f8bf5", "dot"], ["put_wall", "Put wall", "#ff7a2e", "dot"]].forEach(([key, nm, col, dash]) => {
+      const L = (j.lines[key] || []).filter(r => r.value != null);
+      if (L.length) tr.push({ type: "scatter", mode: "lines", line: { shape: "hv", color: col, width: 1.5, dash }, name: nm, x: L.map(r => etx(r.t)), y: L.map(r => px(r.value)), hovertemplate: `${nm} %{y:,.0f}<extra></extra>` });
+    });
+    const lo = Math.min(...P.map(p => p[1])), hi = Math.max(...P.map(p => p[1])), pad = Math.max((hi - lo) * 0.6, lo * 0.006);
+    const yr = P.length ? [lo - pad, hi + pad] : undefined;
+    const meaning = { gex: "Green: positive gamma (dealers dampen moves, price tends to pin or reject). Red: negative gamma (dealers chase, moves speed up).",
+      dex: "Modeled dealer delta by strike (the same sign scenario as the Delta exposure tab). Bigger, brighter blocks are strikes carrying more of the delta dealers hedge; where the blocks shift as price moves is where hedging flows are concentrated.",
+      charm: "How much dealer delta changes each day from time decay alone. Big blocks near price drive the drift into the close, strongest on 0DTE.",
+      vanna: "How much dealer delta changes when implied volatility moves. A vol crush with big vanna near price usually pushes price up through it, a vol spike down.",
+      volume: "Where contracts traded today, building through the session. Hot strikes are where the day's action is.",
+      oi: "Open interest by strike (updates once a day, so it mostly shows the starting map; changes appear when the data refreshes)." }[ms];
+    $("view").innerHTML = `<div class="panel"><h2>Interval map, ${esc(uName(S.u))} ${esc(j.day)}: ${esc(j.title)}${sc === "0dte" ? " (0DTE)" : ""}</h2>${head}
+      <p class="dim" style="margin:4px 0 8px">${esc(meaning)}</p>
+      <div id="im1" class="chart" style="height:640px"></div>
+      <p class="dim">${esc(j.note)}Prices are ${k ? esc(root) + " (" + esc(j.ratio_from) + ")" : esc(uName(S.u)) + " units (save a basis on Key levels for futures prices)"}. Colors are capped at the 98th percentile so one huge strike doesn't wash out the rest; hover shows the real value.</p></div>`;
+    hook();
+    plot("im1", tr, LAY("", { margin: { l: 70, r: 20, t: 16, b: 60 }, yaxis: { title: unit, tickformat: ",d", gridcolor: "#1E2840", range: yr }, xaxis: { gridcolor: "#1E2840" }, legend: { orientation: "h", y: -0.12, x: 0 } }), { gate: true });
+  },
+
   // ---- Replay -----------------------------------------------------------------------------------------------------------------
   async replay() {
     const j = await api("/charts/replay", { underlying: S.u, day: S.rpDay || "", scope: S.rpScope || "all" });

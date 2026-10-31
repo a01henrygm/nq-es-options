@@ -22,7 +22,7 @@ def test_load_sources_without_key_disables_massive_but_keeps_cboe():
 def test_load_sources_with_key_enables_both_with_separate_symbols_and_databases():
     default, src, notes = load_sources({"MASSIVE_API_KEY": "abc"})
     assert set(src) == {"cboe", "massive"} and all(n["enabled"] for n in notes)
-    assert src["cboe"].underlyings == ("_NDX", "_SPX") and src["massive"].underlyings == ("QQQ", "SPY")
+    assert src["cboe"].underlyings == ("_NDX", "_SPX", "QQQ") and src["massive"].underlyings == ("QQQ", "SPY")
     assert src["cboe"].db_path != src["massive"].db_path and "massive" in src["massive"].db_path.name
     assert src["cboe"].options_plan == "delayed" and src["massive"].requires_key
 

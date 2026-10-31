@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from .api_more import _day_bounds, _in_day
 from .services import earnings as ea
+from .services import intraday as idy
 from .services import replay as rp
 from .services import volatility as vol
 from .timeutil import iso, parse_ts, to_et
@@ -104,6 +105,87 @@ def register(app, h):
             cur[k] = p / 100
         h.primary_db.set_meta(WEIGHT_KEY, json.dumps(cur))
         return {"ok": True, "overrides": cur}
+
+    # ---- interval map (1.30.0): time x strike heatmap of any exposure ------------------------------------------------------------
+    IMAP = {"gex": ("Modeled GEX", "$ per 1% move", True), "dex": ("Dealer delta exposure (DEX)", "$ of delta", True),
+            "charm": ("Charm exposure", "$ delta per day", True), "vanna": ("Vanna exposure", "$ delta per IV point", True),
+            "volume": ("Volume (calls + puts)", "contracts", False), "oi": ("Open interest (calls + puts)", "contracts", False)}
+
+    def imap_frames(u, d, measure, z):
+        """[(t, {strike: value})] for one day, oldest first, and where they came from."""
+        if measure == "gex":
+            rows = series(u, "gex0_profile" if z else "gex_profile", d)
+            return [(r["t"], {s[0]: s[1] for s in (r["detail"] or [])}) for r in rows], "saved"
+        col = 1 + idy.IMAP_MEASURES.index(measure) + (5 if z else 0)
+        rows = series(u, "imap_profile", d)
+        if rows:
+            return [(r["t"], {s[0]: s[col] for s in (r["detail"] or [])}) for r in rows], "saved"
+        out = []                                       # days before 1.30.0: rebuilt from the full option chains still stored for that day
+        a, b = _day_bounds(d)
+        for r in sorted(h.db.list_snapshots(u, 500), key=lambda r: r["id"]):
+            t_ = r["source_ts"] or r["retrieved_at"]
+            pt = parse_ts(t_) if t_ else None
+            if not pt or not (a <= iso(pt) < b):
+                continue
+            s = h.db.load_snapshot(u, r["id"])
+            if s and s.spot:
+                out.append((iso(pt), {x[0]: x[col] for x in idy.strike_measures(s.contracts, s.spot, pt)}))
+        return out, "rebuilt" if out else "none"
+
+    @app.get("/api/charts/intervalmap")
+    def interval_map(underlying: str, day: str | None = None, measure: str = "gex", scope: str = "all", interval: int = 5):
+        u = h.underlying_ok(underlying)
+        if measure not in IMAP or scope not in ("all", "0dte") or interval not in (0, 1, 5, 10, 15, 30):
+            raise HTTPException(422, "measure: gex dex charm vanna volume oi; scope: all or 0dte; interval: 0 1 5 10 15 30")
+        stamps = []
+        for r in h.db.price_history(u, 20000):
+            t = parse_ts(r["source_ts"] or r["retrieved_at"])
+            if t:
+                stamps.append(t)
+        days = sorted({to_et(t).date().isoformat() for t in stamps}, reverse=True)[:40]
+        title, units, signed = IMAP[measure]
+        if not days:
+            return {"available": False, "days": [], "reason": "Nothing stored yet. The map builds from what Q DATA saves while it runs."}
+        d = datetime.fromisoformat(day).date() if day else datetime.fromisoformat(days[0]).date()
+        frames, source = imap_frames(u, d, measure, scope == "0dte")
+        base = {"days": days, "day": d.isoformat(), "measure": measure, "title": title, "units": units, "signed": signed, "scope": scope}
+        if not frames:
+            why = ("Dealer delta, charm, vanna, volume and open interest are saved over time from 1.30.0 on; for earlier days they can only be "
+                   "rebuilt while that day's full option chains are still stored (the most recent ones). GEX works for every stored day.")
+            return {"available": False, **base, "reason": f"No {title.lower()} stored for {d.isoformat()}. " + (why if measure != "gex" else "")}
+        if interval:                                   # the last snapshot of each interval
+            keep = {}
+            for t_, v in frames:
+                e = to_et(parse_ts(t_))
+                keep[(e.hour * 60 + e.minute) // interval] = (t_, v)
+            frames = [keep[k] for k in sorted(keep)]
+        a, b = _day_bounds(d)
+        price = [{"t": iso(parse_ts(r["source_ts"] or r["retrieved_at"])), "price": r["price"]} for r in h.db.price_history(u, 20000)
+                 if parse_ts(r["source_ts"] or r["retrieved_at"]) and a <= iso(parse_ts(r["source_ts"] or r["retrieved_at"])) < b]
+        ks = sorted({k for _, v in frames for k in v})
+        zz = [[(v.get(k) or None) for _, v in frames] for k in ks]
+        z0 = scope == "0dte"
+        lines = {k: [{"t": r["t"], "value": r["value"]} for r in series(u, n, d)]
+                 for k, n in (("gamma_flip", "gex0_flip" if z0 else "gamma_flip"), ("call_wall", "gex0_call_wall" if z0 else "call_wall"),
+                              ("put_wall", "gex0_put_wall" if z0 else "put_wall"))}
+        ratio, root, how = None, None, ""
+        fr = series(u, "fut_ratio", d)
+        try:
+            snap = h.snapshot(u)
+            to_f, info = h.futures_converter(u, snap, h.now_fn())
+            root = info.get("root")
+            if fr:
+                ratio, how = fr[-1]["value"], "that day's saved ratio"
+            elif to_f and snap.spot:
+                ratio, how = to_f(snap.spot) / snap.spot, "today's conversion (approximate for older days)"
+        except HTTPException:
+            pass
+        mags = sorted(abs(x) for row in zz for x in row if x)
+        cap = mags[int(len(mags) * 0.98)] if mags else 1
+        return {"available": True, **base, "source": source, "times": [t_ for t_, _ in frames], "strikes": ks, "z": zz, "cap": cap,
+                "price": price, "lines": lines, "futures_ratio": ratio, "futures_root": root, "ratio_from": how,
+                "note": ("Each column is the last stored snapshot of its interval (options data about 15 minutes delayed). "
+                         + ("Rebuilt from the full option chains still stored for this day. " if source == "rebuilt" else ""))}
 
     # ---- session replay ------------------------------------------------------------------------------------------------------
     def series(u, name, day):

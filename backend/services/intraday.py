@@ -148,3 +148,30 @@ def regime_range_rows(days):
         rng = (d["high"] - d["low"]) if d.get("high") is not None and d.get("low") is not None else None
         out.append({**d, "range": rng, "range_vs_move": (rng / d["open_move"]) if rng is not None and d.get("open_move") else None})
     return out
+
+
+# ---- the interval map (1.30.0): every exposure by strike, saved with each snapshot ----------------------------------------------
+IMAP_MEASURES = ("dex", "charm", "vanna", "volume", "oi")      # columns 1-5 all expiries, 6-10 the same for 0DTE only
+IMAP_WINDOW = 0.03                                              # strikes within 3% of price (about 750 NQ points)
+
+
+def strike_measures(contracts, spot, now, window=IMAP_WINDOW):
+    """[[strike, dex, charm, vanna, volume, oi, dex0, charm0, vanna0, volume0, oi0], ...] for strikes near price.
+    dex / charm / vanna are the modeled dealer exposures in $ (standard convention, as on the Charm and vanna and Delta exposure tabs)."""
+    from collections import defaultdict
+    from . import flows as fl
+    if not spot:
+        return []
+    fe = front_expiry(contracts, now)
+    acc = defaultdict(lambda: [0.0] * 10)
+    for c in contracts:
+        if abs(c.strike / spot - 1) > window or an.year_fraction(c.expiry, now) <= 0:
+            continue
+        row = acc[c.strike]
+        for i, m in enumerate(IMAP_MEASURES):
+            v = fl._cell_value(m, c, spot, now, "standard", {})
+            if v:
+                row[i] += v
+                if c.expiry == fe:
+                    row[i + 5] += v
+    return [[k] + [round(x) for x in acc[k]] for k in sorted(acc)]

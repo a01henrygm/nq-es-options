@@ -118,6 +118,9 @@ class Collector:
             self.db.save_metric(sid, u, "gex_profile", g["total_net_gex"], idy.compact_profile(g["strikes"], spot), now)
             if f.get("exposure_at_spot") is not None:
                 self.db.save_metric(sid, u, "gamma_at_spot", f["exposure_at_spot"], {"flip": f["flip"] if f["found"] else None}, now)
+            sm = idy.strike_measures(cons, spot, now)
+            if sm:
+                self.db.save_metric(sid, u, "imap_profile", None, sm, now)
             fl = idy.option_flow(cons)
             fe = idy.front_expiry(cons, now)
             f0 = idy.option_flow(cons, fe) if fe else {"calls": 0, "puts": 0}

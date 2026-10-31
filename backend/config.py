@@ -33,6 +33,12 @@ def ensure_data_dir() -> Path:
     env, example = DATA / ".env", ROOT / ".env.example"
     if not env.exists() and example.exists():
         env.write_text(example.read_text())
+    elif env.exists():                                       # 1.30.0: QQQ options added to the free Cboe data, once, if the list was never changed
+        txt = env.read_text()
+        if "# qqq added 1.30.0" not in txt:
+            lines = txt.splitlines()
+            lines = [("CBOE_UNDERLYINGS=_NDX,_SPX,QQQ" if ln.strip() == "CBOE_UNDERLYINGS=_NDX,_SPX" else ln) for ln in lines]
+            env.write_text("\n".join(lines + ["# qqq added 1.30.0"]) + "\n")
     return DATA
 
 
@@ -45,7 +51,7 @@ class Settings:
     options_plan: str = "delayed"
     max_rpm: int = 60
     poll_seconds: int = 60
-    underlyings: tuple = ("_NDX", "_SPX")
+    underlyings: tuple = ("_NDX", "_SPX", "QQQ")
     max_dte: int = 30
     strike_window: float = 0.12
     futures_contracts: dict = field(default_factory=lambda: {"NQ": "NQZ6", "ES": "ESZ6"})
@@ -81,7 +87,7 @@ def _settings_for(provider: str, env, default_provider: str) -> Settings:
     base_db = Path(g("DB_PATH", "data/analytics.db"))
     base_db = base_db if base_db.is_absolute() else DATA / base_db
     if provider == "cboe":
-        unders = _listify(g("CBOE_UNDERLYINGS", legacy or "_NDX,_SPX"))
+        unders = _listify(g("CBOE_UNDERLYINGS", legacy or "_NDX,_SPX,QQQ"))
         plan, poll = "delayed", max(60, int(g("POLL_SECONDS", 120)))
         db_path = base_db
     else:

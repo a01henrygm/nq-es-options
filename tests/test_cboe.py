@@ -105,7 +105,7 @@ def test_schema_and_network_errors():
 
 def test_config_defaults_need_no_key():
     s = load_settings({})
-    assert s.provider == "cboe" and not s.requires_key and s.underlyings == ("_NDX", "_SPX") and s.options_plan == "delayed" and s.poll_seconds >= 120
+    assert s.provider == "cboe" and not s.requires_key and s.underlyings == ("_NDX", "_SPX", "QQQ") and s.options_plan == "delayed" and s.poll_seconds >= 120
     assert load_settings({"POLL_SECONDS": "5"}).poll_seconds == 60               # never hammer Cboe
     with pytest.raises(ValueError): load_settings({"PROVIDER": "nope"})
 
@@ -297,3 +297,18 @@ def test_gex_uses_exact_gamma_not_cboes_rounded_one():
     assert g["contracts_used"] == {"provider": 0, "model": 1}
     exact = an.bs_gamma(7676.77, 7700, an.year_fraction(date(2026, 11, 6), now), 0.16)
     assert g["strikes"][0]["call_gex"] == pytest.approx(exact * 1000 * 100 * 7676.77 ** 2 * 0.01)
+
+
+def test_qqq_is_added_once_to_an_untouched_symbol_list(tmp_path, monkeypatch):
+    from backend import config
+    monkeypatch.setattr(config, "DATA", tmp_path)
+    env = tmp_path / ".env"
+    env.write_text("POLL_SECONDS=120\nCBOE_UNDERLYINGS=_NDX,_SPX\n")
+    config.ensure_data_dir()
+    assert "CBOE_UNDERLYINGS=_NDX,_SPX,QQQ" in env.read_text()
+    env.write_text("CBOE_UNDERLYINGS=_NDX\n# qqq added 1.30.0\n")               # removed again by hand: stays removed
+    config.ensure_data_dir()
+    assert "CBOE_UNDERLYINGS=_NDX\n" in env.read_text()
+    env.write_text("CBOE_UNDERLYINGS=_NDX,IWM\n")                                 # a custom list is left alone
+    config.ensure_data_dir()
+    assert "CBOE_UNDERLYINGS=_NDX,IWM\n" in env.read_text()

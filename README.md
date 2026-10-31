@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.30.0
+
+- **Interval map** tab (Options group): a time x strike heatmap of one exposure through the day: **GEX, dealer delta exposure (DEX),
+  charm, vanna, volume or open interest**, all expiries or 0DTE only, every snapshot or 1 / 5 / 10 / 15 / 30-minute intervals, in
+  futures points, with price, the gamma flip and the walls on top. Any stored day; DEX, charm, vanna, volume and OI are saved with
+  every snapshot from this version on (earlier days rebuild while their full chains are still stored), GEX works for every day.
+- **QQQ options data** is now loaded next to NDX and SPX (free Cboe data, same 15-minute delay). Pick QQQ in the symbol menu;
+  every tab, the TradingView copies and the backtest picker work for it. Installs still on the default list get QQQ added once.
+- QQQ levels show as **NQ prices** even with no NQ basis saved: they go through the NDX data (NDX/QQQ ratio from the stored
+  prices, times NDX's options-implied NQ fair value). Estimated: check one level; a saved basis still wins.
+
 ## New in 1.29.0
 
 - **Backtest an earlier day's GEX** on the TradingView tab (Q DATA GEX card): pick a stored day and copy its GEX levels into the

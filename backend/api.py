@@ -543,6 +543,23 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                             note=f"No {root} price or basis is saved, so {root} prices are the fair value implied by the option chain (put-call parity, "
                                  f"carried to the {settings.futures_contracts.get(root, '')} expiry). The traded price can sit a few points away; save a basis on Key levels for exact prices.")
                 return (lambda v: v * iv["ratio"]), info
+        if u not in SAME_SCALE:                              # an ETF (QQQ, SPY): go through its index (_NDX, _SPX) when that is loaded
+            sib = next((s for s in settings.underlyings if s in SAME_SCALE and INDEX_GROUP.get(s) == INDEX_GROUP.get(u)), None)
+            if sib:
+                try:
+                    ssnap = snapshot(sib)
+                    sconv, sinfo = futures_converter(sib, ssnap, now)
+                except Exception:
+                    sconv = None
+                if sconv and ssnap.spot and snap.spot:
+                    pairs = pair_observations(db.price_history(u, 300), db.price_history(sib, 300), 120)[-60:]
+                    rs = sorted(b / a for _t, a, b in pairs if a)          # index / ETF, median of recent synced prices
+                    k_idx = rs[len(rs) // 2] if rs else ssnap.spot / snap.spot
+                    k = sconv(ssnap.spot * 1.0) / ssnap.spot * k_idx if sconv(ssnap.spot) else None
+                    if k:
+                        info.update(available=True, method=f"{sib.lstrip('_')} data ({sinfo.get('method', '')}) and the {sib.lstrip('_')}/{u} ratio",
+                                    note=f"No {root} price or basis is saved for {u}, so {root} prices go through the {sib.lstrip('_')} data. Estimated: check one level.")
+                        return (lambda v: v * k), info
         info["note"] = f"Save a {root} price or basis on the Key levels tab to see {root} prices."
         return None, info
 

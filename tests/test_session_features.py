@@ -160,3 +160,19 @@ def test_phone_access_settings(tmp_path, monkeypatch):
     c.post("/api/phone", json={"enabled": False})
     assert "HOST=127.0.0.1" in (tmp_path / ".env").read_text()
     assert api_more.qr_svg("http://192.168.1.5:8000").startswith("<?xml") or "<svg" in api_more.qr_svg("http://192.168.1.5:8000")
+
+
+def test_interval_map_every_measure_over_the_day():
+    c, db, now = simulated_day()
+    for m in ("gex", "dex", "charm", "vanna", "volume", "oi"):
+        for sc in ("all", "0dte"):
+            j = c.get("/api/charts/intervalmap", params={"underlying": "_NDX", "measure": m, "scope": sc, "interval": 0}).json()
+            assert j["available"], (m, sc, j)
+            assert len(j["z"]) == len(j["strikes"]) and all(len(r) == len(j["times"]) for r in j["z"])
+            assert j["times"] == sorted(j["times"]) and j["price"]
+            assert j["signed"] == (m not in ("volume", "oi"))
+    a = c.get("/api/charts/intervalmap", params={"underlying": "_NDX", "measure": "dex", "interval": 0}).json()
+    b = c.get("/api/charts/intervalmap", params={"underlying": "_NDX", "measure": "dex", "interval": 30}).json()
+    assert a["source"] == "saved" and len(b["times"]) <= len(a["times"])
+    assert any(v for r in a["z"] for v in r if v and v < 0) or any(v for r in a["z"] for v in r if v and v > 0)
+    assert c.get("/api/charts/intervalmap", params={"underlying": "_NDX", "measure": "nope"}).status_code == 422
