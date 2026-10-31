@@ -64,3 +64,21 @@ def test_gex_levels_are_never_squeezed_out_and_merged_rows_still_count_as_gex():
     sc = pbk.scenarios(big, 100, 4, lambda v: v)
     tags = [r["tag"] for r in sc["bullish"]["levels"]]
     assert "TP1" in tags and all(r["role_title"] for r in sc["bullish"]["levels"])
+
+
+def test_key_levels_paste_in_matches_the_tab_and_has_its_own_script():
+    c, db, now = simulated_day()
+    tab = c.get("/api/analytics/levels", params={"underlying": "_NDX", "key": 10}).json()
+    r = c.post("/api/tv/keylevels/levels", params={"underlying": "_NDX", "key": 10}, json={})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ind"] == "kl" and j["levels"] == len(tab["zones"]) and j["text"].startswith("Q|2|kl|")
+    lines = j["text"].splitlines()
+    assert any(l.startswith("K|Gamma flip|") for l in lines) and all(l.split("|")[7] in "HCB-" for l in lines if l.startswith("L|"))
+    # all-levels mode follows the families switched on in the tab
+    some = c.post("/api/tv/keylevels/levels", params={"underlying": "_NDX", "categories": "gamma_flip,gex0_call_wall"}, json={}).json()
+    assert 1 <= some["levels"] <= 2
+    s = c.get("/api/tv/keylevels/script").json()
+    assert s["filename"] == "qdata_key_levels_paste_in.pine" and s["code"].startswith("//@version=6")
+    assert 'indicator("Q DATA Key Levels"' in s["code"] and '"Your levels"' in s["code"] and "gexZones" in s["code"]
+    assert s["code"].isascii()

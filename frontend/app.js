@@ -274,7 +274,14 @@ const R = {
         <div class="row"><label>${root} contract<input id="fc" value="${esc((map.roll && map.roll.contract) || "")}" size="8"></label><label>${root} price<input id="fp" size="10" placeholder="e.g. 21500.25"></label>
           <label>Price as of (ET, optional)<input id="fa" size="10" placeholder="HH:MM"></label><button id="fsave">Save ${root} price</button>
           <span class="dim">${esc(S.u)} reference: ${fmt(m.spot, 2)} at ${et(m.spot_timestamp)}. Enter the ${root} price from that same moment.</span></div></div></details>` : ""}
-      <div class="actions"><button class="go" data-gotv>TradingView indicators</button>${root ? `<button id="fcopy">Copy ${root} levels as text</button>` : ""}</div>
+      <div class="panel klcard"><h2>Q DATA Key Levels indicator</h2>
+        <p class="dim" style="margin:0 0 8px">Copies exactly what this tab is showing (${keyMode ? `${shown.length} key zones` : `${shown.length} levels`}) for the Key Levels indicator on TradingView. Built like Q DATA GEX: GEX levels are zones, each level starts when it first appeared, HOLD / CHOP / BREAK reads on every label, and an on/off switch per section.</p>
+        <div class="actions"><button class="go big" id="klcopy">Copy Key levels</button><span class="dim" id="klmsg"></span></div>
+        <p class="hint" style="margin:6px 0 0">Every time: click Copy Key levels, then in TradingView open the indicator's settings &gt; Levels &gt; select all &gt; paste &gt; OK.</p>
+        <details class="adv" data-k="kl-once"><summary>Once: add Q DATA Key Levels to TradingView</summary><div class="body">
+          <p class="dim">TradingView &gt; Pine Editor &gt; Open &gt; New indicator &gt; select everything &gt; paste the script &gt; Save &gt; Add to chart. Make sure <code>//@version=6</code> ends up as the very top line. You only do this once; after that you only paste levels.</p>
+          <div class="actions"><button class="go" id="klscript">Copy the indicator script</button><button id="kldl">Download .pine</button></div></div></details></div>
+      <div class="actions"><button data-gotv>TradingView indicators</button>${root ? `<button id="fcopy">Copy ${root} levels as text</button>` : ""}</div>
       ${root && map.roll && map.roll.note ? note(map.roll.note, map.roll.status === "expired") : ""}${root && warns.length ? note("Mapping warnings: " + warns.join(" ")) : ""}
       ${root && !map.available ? note(map.note || "No futures price entered yet, so levels are shown in " + S.u + " units only.") : ""}
       <div class="scroll tall"><table><tr><th>Level</th><th>${esc(S.u.replace(/^_/, ""))}</th><th>${root || "Futures"} estimate</th><th>Score</th><th>${keyMode ? "What lines up here" : "Where it comes from"}</th><th>Since (ET)</th><th>Trust</th></tr>${rows || "<tr><td colspan=7>No levels available</td></tr>"}</table></div>
@@ -310,6 +317,24 @@ const R = {
       try { await copyText(txt); cp.textContent = "Copied"; } catch (e) { prompt("Copy this text:", txt); }
     };
     document.querySelectorAll("[data-gotv]").forEach(b => b.onclick = () => goTab("tv"));
+    // Copy Key levels (1.28.0): the levels this tab shows, as paste-in text for the Q DATA Key Levels indicator
+    $("klcopy").onclick = async () => {
+      const b = $("klcopy"); b.disabled = true; b.textContent = "Copying...";
+      try {
+        const q = new URLSearchParams(Object.entries({ underlying: S.u, convention: $("conv").value, method: $("method").value, top: S.lvtop, by_expiry: S.lvexp, mid: S.lvmid,
+          moves: S.lvmov, ...selParams(), expiration: exps(), ...(keyMode ? {} : { categories: [...S.cats].join(",") }), ...(S.src ? { source: S.src } : {}) })
+          .filter(([, v]) => v !== undefined && v !== null && v !== ""));
+        const r = await fetch("/api/tv/keylevels/levels?" + q, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!r.ok) throw new Error((await r.json()).detail || "Could not build the levels");
+        const j = await r.json();
+        try { await copyText(j.text); } catch (e) { showText("Copy these levels", j.text); }
+        b.textContent = `Copied ${j.levels} levels`; $("klmsg").textContent = `${j.showing}, prices in ${j.mapped ? "estimated futures points" : esc(S.u)}, data ${new Date(j.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false })} ET${j.cut ? `, ${j.cut} far levels left out to fit TradingView's limit` : ""}. Now paste into the indicator's Levels setting.`;
+        setTimeout(() => { if ($("klcopy")) { $("klcopy").textContent = "Copy Key levels"; $("klcopy").disabled = false; } }, 6000);
+      } catch (e) { b.disabled = false; b.textContent = "Copy Key levels"; alert("Could not copy: " + e.message); }
+    };
+    const klScript = async () => (await api("/tv/keylevels/script", {}));
+    $("klscript").onclick = async () => { const j = await klScript(); try { await copyText(j.code); $("klscript").textContent = "Script copied"; } catch (e) { showText(j.title, j.code); } };
+    $("kldl").onclick = async () => { const j = await klScript(); download(j.filename, j.code); };
     const sv = $("fsave");
     if (sv) sv.onclick = async () => {
       const t = $("fa").value.trim(); let as_of = null;

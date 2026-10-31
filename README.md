@@ -33,6 +33,15 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.28.0
+
+- **Copy Key levels** on the Key levels tab: copies exactly what the tab shows (top N key zones, nearest N, per-type counts, or
+  all levels with the families you have on) as paste-in text for the new **Q DATA Key Levels** TradingView indicator.
+- **Q DATA Key Levels** is built on the same script as Q DATA GEX: every GEX level is a zone, each level starts on the candle it
+  first appeared, HOLD / CHOP / BREAK reads on every label, an info box, white / dark chart, and an on/off switch per section
+  (gamma flips, walls, GEX strikes, GEX zones, open interest, volume, expected move, charm and vanna, dealer delta, new positions,
+  your levels). Add it once from the same card (Copy the indicator script or Download .pine); after that you only paste levels.
+
 ## New in 1.27.0
 
 - **Playbook chart is a real trading chart** (TradingView Lightweight Charts, bundled with the app so it works offline):

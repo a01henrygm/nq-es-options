@@ -1,4 +1,5 @@
-"""The two paste-in TradingView indicators: Q DATA GEX (gamma levels only) and Q DATA Levels (everything else).
+"""The paste-in TradingView indicators: Q DATA GEX (gamma levels only), Q DATA Levels (everything else) and Q DATA Key Levels
+(the Key levels tab's own levels, 1.28.0).
 
 Pure logic, no web or database code: which section each kind of level belongs to, the white-chart colors, which kinds are key,
 the read (what price should do at a level), matching one snapshot's levels to the runs already being tracked, and the levels text.
@@ -29,6 +30,36 @@ GEX_TABS = ("gex", "zerodte", "flip")
 LV_TABS = {"oi": 0, "volume": 1, "move": 2, "flows": 3, "delta": 4, "preopen": 5, "hodlod": 6, "stackmap": 7, "gameplan": 8, "vix": 9, "quant": 10}
 HEAT_SECTION = 11
 OFF_BY_DEFAULT = {"lv": [HEAT_SECTION]}
+# Q DATA Key Levels (1.28.0): the Key levels tab's own levels, the GEX sections first (drawn like Q DATA GEX), then the rest.
+KL_SECTIONS = GEX_SECTIONS + ["Open interest", "Volume", "Expected move", "Charm and vanna", "Dealer delta", "New positions", "Your levels"]
+
+
+def kl_section(category: str, name: str) -> int:
+    """Section of the Key Levels indicator for one Key levels category."""
+    c = category or ""
+    if c in ("gamma_flip", "gex0_flip"):
+        return 0
+    if c in ("gex0_call_wall", "gex0_put_wall", "call_wall", "put_wall"):
+        return 1
+    if c == "gex_concentration":
+        return 2
+    if c.startswith("gex_"):
+        return 3
+    if c.startswith("oi") or c.startswith("open_interest"):
+        return 4
+    if c.startswith("volume"):
+        return 5
+    if c.startswith("expected_move"):
+        return 6
+    if c.startswith("charm") or c.startswith("vanna"):
+        return 7
+    if c.startswith("dex"):
+        return 8
+    if c.startswith("new_"):
+        return 9
+    if c == "custom":
+        return 10
+    return gex_section(name) if "gex" in (name or "").lower() or "wall" in (name or "").lower() or "flip" in (name or "").lower() else 4
 
 # deep, saturated colors that read well on a pure white chart (and still work on dark)
 WHITE = [
@@ -47,7 +78,7 @@ WHITE = [
     ("long entries", "#15803d"), ("short entries", "#b91c1c"), ("stops", "#64748b"), ("targets", "#2563eb"), ("stay away", "#ca8a04"),
     ("typical day +/-2", "#9333ea"), ("typical day", "#7c3aed"), ("playbook", "#0f766e"), ("monte carlo high", "#15803d"), ("monte carlo low", "#b91c1c"),
 ]
-KEY_KINDS = ("gamma flip", "0dte flip", "call wall", "put wall", "of day so far", "long entries", "short entries", "stacked areas", "projected hod", "projected lod",
+KEY_KINDS = ("gamma flip", "0dte flip", "call wall", "put wall", "your levels", "of day so far", "long entries", "short entries", "stacked areas", "projected hod", "projected lod",
              "straddle (nearest expiry)", "1 sd (nearest expiry)")
 LIVE_KINDS = ("so far", "projected", "monte carlo", "ladder", "typical day", "9:30 open", "straddle", "1 sd", "2 sd", "playbook", "expected move")
 STY = {"solid": "S", "dashed": "D", "dotted": "O"}

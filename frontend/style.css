@@ -297,3 +297,5 @@ button.big { font-size: calc(15px * var(--z)); padding: 9px 18px; }
 .pbwrap.full { position: fixed; inset: 0; z-index: 200; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
 .pbwrap.full .pbstage { flex: 1; height: auto; }
 @media (max-width: 760px) { .pbstage { height: 520px; } }
+.klcard { margin: 10px 0; border-left: 4px solid #2962ff; }
+.klcard h2 { margin-top: 0; }

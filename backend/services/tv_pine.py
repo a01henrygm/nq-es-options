@@ -1,4 +1,5 @@
-"""The scripts of the paste-in TradingView indicators: Q DATA GEX, Q DATA Levels and Q DATA All Tabs (both in one, 1.25.0).
+"""The scripts of the paste-in TradingView indicators: Q DATA GEX, Q DATA Levels, Q DATA All Tabs (both in one, 1.25.0) and
+Q DATA Key Levels (the Key levels tab, 1.28.0: built like Q DATA GEX, with the Key levels tab's other kinds as extra sections).
 
 Each is added to TradingView once and never changes; each session the levels text from Q DATA is pasted into its first setting.
 Settings are remembered by TradingView by their position, so NEW SETTINGS MUST ONLY EVER BE ADDED AT THE END.
@@ -15,7 +16,7 @@ Written as conservative Pine v6 (ASCII only); it has not been compiled by Tradin
 """
 from __future__ import annotations
 
-from .tv_levels import GEX_SECTIONS, LV_SECTIONS, HEAT_SECTION
+from .tv_levels import GEX_SECTIONS, LV_SECTIONS, HEAT_SECTION, KL_SECTIONS
 
 POSITIONS = ["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"]
 POS = ('tablePos == "Top left" ? position.top_left : tablePos == "Bottom right" ? position.bottom_right : '
@@ -432,6 +433,7 @@ ALL_LV_OFFSET = len(GEX_SECTIONS)
 ALL_SECTIONS = GEX_SECTIONS + LV_SECTIONS
 INFO = {"gex": ("Q DATA GEX", "QD GEX", "Copy GEX levels", "gamma flips and call / put walls"),
         "lv": ("Q DATA Levels", "QD Levels", "Copy Levels", "high and low of day, projected HOD / LOD, stacked areas and top setup entries"),
+        "kl": ("Q DATA Key Levels", "QD Key", "Copy Key levels", "gamma flips, call / put walls and your own levels"),
         "all": ("Q DATA All Tabs", "QD All", "Copy All Tabs levels", "gamma flips, call / put walls, high and low of day, projected HOD / LOD, stacked areas and top setup entries")}
 GEXZ_INPUT = ('grpZ = "GEX levels as zones"\n'
               'gexZones = input.string("Every GEX level", "GEX levels are drawn as", options = ["Every GEX level", "Only near price"], group = grpZ, '
@@ -441,7 +443,7 @@ GEXZ_INPUT = ('grpZ = "GEX levels as zones"\n'
 
 def build_script(ind: str) -> str:
     gex, has_heat = ind == "gex", ind in ("lv", "all")
-    secs = GEX_SECTIONS if gex else LV_SECTIONS if ind == "lv" else ALL_SECTIONS
+    secs = GEX_SECTIONS if gex else LV_SECTIONS if ind == "lv" else KL_SECTIONS if ind == "kl" else ALL_SECTIONS
     heat_sec = HEAT_SECTION + (ALL_LV_OFFSET if ind == "all" else 0)
     off = {heat_sec} if has_heat else set()
     si = []

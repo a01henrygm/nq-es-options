@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import Body, HTTPException
+from fastapi import Body, HTTPException, Query
 
 from . import notify
 from .config import DATA
@@ -25,12 +25,14 @@ from .services import behavior as bh
 from .services import flows as fl
 from .services import quant as qt
 from .services import tv_levels as tv
+from .services.level_kinds import CAT, help_for
 from .services.tv_pine import ALL_LV_OFFSET, build_script
 from .timeutil import iso, to_et
 
 log = logging.getLogger("tv")
 NAMES = {"gex": "Q DATA GEX", "lv": "Q DATA Levels", "all": "Q DATA All Tabs"}
 FILES = {"gex": "qdata_gex_paste_in.pine", "lv": "qdata_levels_paste_in.pine", "all": "qdata_all_tabs_paste_in.pine"}
+KL_NAME, KL_FILE = "Q DATA Key Levels", "qdata_key_levels_paste_in.pine"
 HEAVY_TABS = ("gameplan", "quant")   # Monte Carlo based and recomputed every snapshot anyway: skipped when replaying older snapshots
 REPLAY_VERSION = 1           # bump to rebuild today's levels from the stored snapshots (for example after a change to the matching)
 SCHEMA = """
@@ -362,6 +364,72 @@ def register(app, h, q, tab_parts):
     @app.post("/api/tv/alltabs/levels")
     def alltabs_levels(underlying: str, history: bool = True, body: dict = Body(default={})):
         return levels(underlying, "all", (body or {}).get("prefs"), history)
+
+    # ---- Q DATA Key Levels (1.28.0): exactly what the Key levels tab shows, as paste-in text for its own indicator ------------
+    @app.get("/api/tv/keylevels/script")
+    def keylevels_script():
+        return {"code": build_script("kl"), "title": KL_NAME, "filename": KL_FILE,
+                "note": "Add this to TradingView once (Pine Editor > new script > select all > paste > Save > Add to chart). "
+                        "Then on the Key levels tab click Copy Key levels and paste into its first setting."}
+
+    @app.post("/api/tv/keylevels/levels")
+    def keylevels_levels(underlying: str, convention: str = "standard", method: str = "auto", categories: str | None = None,
+                         top: int = Query(2, ge=1, le=10), expiration: str | None = None, by_expiry: int = Query(0, ge=0, le=8),
+                         mid: int = Query(0, ge=0, le=3), moves: int = Query(0, ge=0, le=8), key: int = Query(0, ge=0, le=25),
+                         near: int = Query(0, ge=0, le=60), quota: str | None = None, body: dict = Body(default={})):
+        u = h.underlying_ok(underlying)
+        j = h.levels_payload(u, convention, method, None, top, expiration, by_expiry, mid, moves, key, near, quota)
+        key_mode = j["selection"]["mode"] != "all"
+        rows_in = j["zones"] if key_mode else j["levels"]
+        if categories and not key_mode:                                   # the families switched on in the tab
+            keep = set(categories.split(","))
+            rows_in = [x for x in rows_in if x["category"] in keep]
+        snap = h.snapshot(u)
+        m, _, now = h.meta(snap, {"convention": convention})
+        data_t = snap.source_ts or snap.retrieved_at
+        data_ms = ms(iso(data_t))
+        to_f, finfo = h.futures_converter(u, snap, now)
+        mapped = bool(to_f and to_f(snap.spot) is not None)
+        conv = (lambda v: None if v is None else to_f(v)) if mapped else (lambda v: v)
+        # what price should do at each level: the same reads as the other indicators (gamma regime + dealer gamma at the level)
+        c = q.context(u, convention)
+        z = c["z"]
+        pb = qt.gamma_playbook(z, snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        gf = an.gamma_flip(snap.contracts, snap.spot, now, convention)
+        flips = [z.get("flip") if z.get("available") else None, gf["flip"] if gf["found"] else None]
+        strikes = an.gex_by_strike(snap.contracts, snap.spot, now, convention)["strikes"]
+        near_s = [s for s in strikes if abs(s["strike"] - snap.spot) <= 0.03 * snap.spot]
+        scale = max((abs(bh.local_gex(near_s, s["strike"], snap.spot)) for s in near_s), default=0.0)
+        runs = []
+        for x in rows_in:
+            v = x.get("value")
+            if v is None or v <= 0:
+                continue
+            cat = x.get("category") or "custom"
+            name = CAT.get(cat, (x.get("label") or "Level",))[0]
+            members = [mm.get("category") for mm in (x.get("inputs") or {}).get("members", []) if mm.get("category")]
+            call, why, _s, _g = bh.call_for({"value": v, "category": tv.call_category(name) if cat not in ("gamma_flip", "gex0_flip") else "gamma_flip",
+                                             "members": members}, pb["state"], snap.spot, flips, strikes, scale)
+            mem = "; ".join(f"{mm.get('label')} {mm.get('value', 0):,.0f}" for mm in (x.get("inputs") or {}).get("members", [])[:4]) if key_mode else ""
+            tip = (why or "") + (f" Lines up here: {mem}." if mem else "")
+            short, _long = help_for(name)
+            runs.append({"active": 1, "live": 0, "kind": name, "sec": tv.kl_section(cat, name), "label": x.get("label") or name, "value": float(v),
+                         "low": x.get("low"), "high": x.get("high"), "first_ts_ms": ms(x.get("first_seen")) or data_ms, "end_ts_ms": 0,
+                         "read": tv.READ.get(call, "-"), "prev": None, "tip": tip.strip() or x.get("label") or name, "short": short or "",
+                         "style": CAT.get(cat, ("", "", "solid"))[2]})
+        root = finfo.get("root")
+        units = f"ESTIMATED {root} points (from {m['underlying']})" if mapped else f"{m['underlying']} units: no {root or 'futures'} price or basis saved, use the offset"
+        made = to_et(now).strftime("%Y-%m-%d %H:%M ET")
+        sel = j["selection"]
+        shown = ("All levels" if sel["mode"] == "all" else f"Key levels: top {sel['n']}" if sel["mode"] == "key" else
+                 f"Nearest {sel['n']}" if sel["mode"] == "nearest" else "Per-type counts")
+        info = [("Data as of", to_et(data_t).strftime("%H:%M ET") + " (about 15 min delayed)"), ("Copied", to_et(now).strftime("%H:%M ET")),
+                ("Prices", f"{root} (estimated)" if mapped else m["underlying"]), ("Showing", shown)]
+        day = to_et(data_t).date().isoformat()
+        out = tv.build_text("kl", runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, data_ms, info, None,
+                            (body or {}).get("prefs"))
+        out.update({"ind": "kl", "title": KL_NAME, "mapped": mapped, "data_as_of": iso(data_t), "made": made, "heat": 0, "showing": shown})
+        return out
 
     @app.post("/api/tv/track")
     def tv_track(underlying: str, force: bool = False):
