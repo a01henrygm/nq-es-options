@@ -26,6 +26,7 @@ from .services import analytics as an
 from .services import behavior as bh
 from .services import flows as fl
 from .services import quant as qt
+from .services import strat_qs
 from .services import tv_levels as tv
 from .services.level_kinds import CAT, help_for
 from .services.tv_pine import ALL_LV_OFFSET, build_script
@@ -492,6 +493,13 @@ def register(app, h, q, tab_parts):
         return levels(underlying, "all", (body or {}).get("prefs"), history)
 
     # ---- Q DATA Key Levels (1.28.0): exactly what the Key levels tab shows, as paste-in text for its own indicator ------------
+    # ---- Strat QS (1.31.0): the Q DATA Gamma Strategy, a Pine strategy fed by the GEX and Levels copies ---------------------
+    @app.get("/api/tv/strat/script")
+    def strat_script():
+        return {"code": strat_qs.CODE, "title": strat_qs.NAME, "filename": strat_qs.FILE,
+                "note": "Add this to TradingView once (Pine Editor > new script > select all > paste > Save > Add to chart). "
+                        "Then on the Strat QS tab copy the GEX levels and the Levels into its two paste boxes."}
+
     @app.get("/api/tv/keylevels/script")
     def keylevels_script():
         return {"code": build_script("kl"), "title": KL_NAME, "filename": KL_FILE,

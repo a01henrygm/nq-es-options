@@ -15,7 +15,7 @@ def tab_keys():
 
 def test_every_tab_is_in_exactly_one_group_and_has_a_help_text():
     keys = tab_keys()
-    assert len(keys) == 40 and len(set(keys)) == 40                                  # 1.30.0 added Interval map
+    assert len(keys) == 41 and len(set(keys)) == 41                                  # 1.31.0 added Strat QS
     groups = JS[JS.index("const GROUPS = ["):JS.index("const HELP = {")]
     grouped = re.findall(r'"([a-z]+)"', groups)
     for k in keys:

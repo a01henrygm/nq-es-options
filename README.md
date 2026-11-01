@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.31.0
+
+- **Strat QS** tab (App group): everything for the **Q DATA Gamma Strategy**, a TradingView strategy that trades only from Q DATA's
+  levels. Shows the current gamma regime and the levels the strategy will use (flip, walls, biggest 0DTE strike, projected HOD / LOD,
+  stack zones near price, high / low already in), one copy button for each of the strategy's two paste boxes, past days for
+  backtesting, the strategy script (copy or download .pine), the setup steps and the rules with why each works.
+- The strategy: above the gamma flip it fades GEX levels, below it it trades breaks (the regime switches after 15 minutes past the
+  flip); it fades the projected HOD / LOD, trades stack zones by their HOLD / BREAK read and plays the afternoon pin toward the biggest
+  0DTE strike. Every level is used only 15 minutes after its options data time (the data delay), so past-day backtests never peek
+  ahead. Marks every setup, draws each trade as a green / red position box, and alerts on every entry, exit and skipped setup.
+
 ## New in 1.30.2
 
 - **Interval map, cleaner dot matrix**: small strikes stay as specks and only the heavy strikes grow into big solid dots, sized to
