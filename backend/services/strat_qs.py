@@ -10,7 +10,7 @@ NAME = "Q DATA Gamma Strategy"
 FILE = "qdata_gamma_strategy.pine"
 
 CODE = r'''//@version=6
-strategy("Q DATA Gamma Strategy", shorttitle = "QD Strategy", overlay = true, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, commission_type = strategy.commission.cash_per_contract, commission_value = 2.0, slippage = 1, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 5000)
+strategy("Q DATA Gamma Strategy", shorttitle = "QD Strategy", overlay = true, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, commission_type = strategy.commission.cash_per_contract, commission_value = 2.0, slippage = 1, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 5000)
 
 // ==========================================================================
 // Q DATA Gamma Strategy
@@ -65,6 +65,10 @@ pinSess   = input.session("1400-1550", "S4 pin window", group = grpT)
 flatSess  = input.session("0930-1555", "Flat outside", group = grpT, tooltip = "Any open trade is closed when the bar falls outside this window.")
 
 string grpV = "Display"
+showLevels = input.bool(true, "Draw the levels and zones the strategy uses", group = grpV, tooltip = "Every pasted level the rules can trade from: gamma flip, walls, GEX strikes and zones, projected HOD / LOD, Monte Carlo targets and stack zones (green HOLD, red BREAK, amber CHOP). Lines start when the level became usable (data time + delay).")
+drawPct   = input.float(3.0, "Only levels within (% of price)", minval = 0.2, step = 0.5, group = grpV)
+showEnded = input.bool(false, "Also draw levels that ended earlier", group = grpV)
+lvZoneT   = input.int(85, "Level zone transparency", minval = 0, maxval = 100, group = grpV)
 showPos   = input.bool(true, "Position boxes (green to target, red to stop)", group = grpV, tooltip = "Like TradingView's long/short position tool: drawn from the entry until the trade closes, with an arrow at the entry and the result at the exit.")
 showAll   = input.bool(true, "Show every setup", group = grpV, tooltip = "Marks every zone where the rules trigger, including setups the strategy skips because it is already in a trade or hit the daily limit. Each gets its own alert. The backtest still counts only the trades taken.")
 posT      = input.int(82, "Position box transparency", minval = 0, maxval = 100, group = grpV)
@@ -576,6 +580,50 @@ plot(showLv and dayOk ? putW : na, "Put wall", cPut, 2, plot.style_linebr)
 plot(showLv and strategy.position_size != 0 ? posTgt : na, "Trade target", #2563eb, 1, plot.style_linebr)
 plot(showLv and strategy.position_size != 0 ? posStp : na, "Trade stop", #64748b, 1, plot.style_linebr)
 bgcolor(showBg and dayOk and regime == 1 ? color.new(cCall, 95) : showBg and dayOk and regime == -1 ? color.new(cPut, 95) : na, title = "Regime tint")
+
+// ---------------- The levels and zones the strategy uses ----------------
+var int firstT = time
+var line[]  drL = array.new<line>()
+var box[]   drB = array.new<box>()
+var label[] drT = array.new<label>()
+
+f_lvName(int c, string r) =>
+    c == 1 ? "Gamma flip" : c == 2 ? "0DTE flip" : c == 3 ? "Call wall" : c == 4 ? "Put wall" : c == 12 ? "0DTE call wall" : c == 13 ? "0DTE put wall" : c == 5 ? "GEX" : c == 11 ? "Big GEX" : c == 6 ? "Proj HOD" : c == 7 ? "Proj LOD" : c == 8 ? "MC high" : c == 9 ? "MC low" : c == 10 ? (r == "H" ? "Stack HOLD" : r == "B" ? "Stack BREAK" : "Stack CHOP") : ""
+
+f_lvCol(int c, string r) =>
+    c == 1 ? #d97706 : c == 2 ? #b45309 : (c == 3 or c == 12) ? #059669 : (c == 4 or c == 13) ? #dc2626 : c == 11 ? #1d4ed8 : c == 6 ? #0e7490 : c == 7 ? #be123c : (c == 8 or c == 9) ? #7c3aed : c == 10 ? (r == "H" ? #16a34a : r == "B" ? #dc2626 : #ca8a04) : #64748b
+
+if barstate.islast
+    for x in drL
+        line.delete(x)
+    for x in drB
+        box.delete(x)
+    for x in drT
+        label.delete(x)
+    drL.clear()
+    drB.clear()
+    drT.clear()
+    n = lvP.size()
+    if showLevels and n > 0
+        int ext = time + int(timeframe.in_seconds() * 1000 * 8)
+        for i = 0 to n - 1
+            c = lvC.get(i)
+            e = lvE.get(i)
+            p = f_px(i)
+            if c != 0 and (e <= 0 or showEnded) and math.abs(p - close) <= close * drawPct / 100
+                r = lvR.get(i)
+                s0 = lvS.get(i)
+                int x1 = s0 > 0 ? int(math.min(math.max(s0 + delayMin * 60000, firstT), time)) : firstT
+                int x2 = e > 0 ? int(e) : ext
+                col = f_lvCol(c, r)
+                lo = lvLo.get(i)
+                hi = lvHi.get(i)
+                if lo > 0 and hi > lo
+                    drB.push(box.new(x1, hi + offsetPts, x2, lo + offsetPts, xloc = xloc.bar_time, border_color = color.new(col, 45), bgcolor = color.new(col, lvZoneT)))
+                else
+                    st = (c == 1 or c == 3 or c == 4) ? line.style_solid : (c >= 6 and c <= 9) ? line.style_dotted : line.style_dashed
+                    drL.push(line.new(x1, p, x2, p, xloc = xloc.bar_time, color = col, width = (c == 1 or c == 3 or c == 4) ? 2 : 1, style = st))
+                drT.push(label.new(x2, p, f_lvName(c, r) + "  " + fmt(p), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.white, 100), textcolor = col, size = size.tiny))
 
 // ---------------- Results table ----------------
 tblPos = tblPosIn == "Top left" ? position.top_left : tblPosIn == "Bottom right" ? position.bottom_right : tblPosIn == "Bottom left" ? position.bottom_left : position.top_right

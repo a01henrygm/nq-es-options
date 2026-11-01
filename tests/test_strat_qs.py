@@ -18,7 +18,7 @@ def test_strategy_script_is_pine_v6_ascii_with_two_paste_boxes_first():
     inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
     assert inputs[0].startswith("gexTxt    = input.text_area") and inputs[1].startswith("lvTxt     = input.text_area")
     assert 'str.split(txt, "\\n")' in code                                     # the raw string keeps the newline escape for Pine
-    for need in ("Data delay (minutes)", "Trade only the pasted day", "Show every setup", "Position boxes", "alert(", "strategy.exit("):
+    for need in ("Data delay (minutes)", "Trade only the pasted day", "Show every setup", "Position boxes", "alert(", "strategy.exit(", "Draw the levels and zones the strategy uses", "xloc = xloc.bar_time"):
         assert need in code, need
 
 

@@ -33,6 +33,14 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.31.1
+
+- **Q DATA Gamma Strategy draws its levels**: every level and zone it can trade from is now on the chart, not just the flip and walls:
+  gamma flip, walls, GEX strikes and GEX zones, projected HOD / LOD, Monte Carlo targets and stack zones (green HOLD, red BREAK, amber
+  CHOP), each labeled with its price. Lines start when the level became usable (data time + the 15-minute delay) and show on any day,
+  including after the session the levels came from. New Display settings: draw levels, distance from price, show ended levels, zone
+  transparency. Re-copy the strategy from the Strat QS tab.
+
 ## New in 1.31.0
 
 - **Strat QS** tab (App group): everything for the **Q DATA Gamma Strategy**, a TradingView strategy that trades only from Q DATA's
