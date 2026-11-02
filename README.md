@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.31.4
+- Q DATA Gamma Strategy now actually fills its trades. Pine strategies default to 100% margin, which needs the full contract
+  value (about $600k for one NQ) against the $50k starting capital, so TradingView rejected every order: the signals and
+  position boxes showed but the Strategy Tester stayed empty. Margin is now 0, as for a futures account.
+
 ## New in 1.31.3
 - Q DATA Gamma Strategy: the gamma flip and walls now use the last value that reached the chart, even after Q DATA stopped
   tracking that run. They are recomputed every snapshot, so their runs are short and gappy; before, most of a session had

@@ -10,7 +10,7 @@ NAME = "Q DATA Gamma Strategy"
 FILE = "qdata_gamma_strategy.pine"
 
 CODE = r'''//@version=6
-strategy("Q DATA Gamma Strategy", shorttitle = "QD Strategy", overlay = true, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, commission_type = strategy.commission.cash_per_contract, commission_value = 2.0, slippage = 1, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 5000)
+strategy("Q DATA Gamma Strategy", shorttitle = "QD Strategy", overlay = true, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, commission_type = strategy.commission.cash_per_contract, commission_value = 2.0, slippage = 1, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 5000, margin_long = 0, margin_short = 0)
 
 // ==========================================================================
 // Q DATA Gamma Strategy
@@ -24,6 +24,8 @@ strategy("Q DATA Gamma Strategy", shorttitle = "QD Strategy", overlay = true, in
 // keep "Trade only the pasted day" on, and read the Strategy Tester.
 // Each level only becomes usable after the time it first showed in the
 // options data PLUS the data delay, so the backtest never peeks ahead.
+// margin_long / margin_short = 0: futures are traded on margin. Pine's default (100%) needs the full
+// contract value in cash (about $600k for one NQ), so every order was silently rejected.
 // Comments are plain ASCII only.
 // ==========================================================================
 
