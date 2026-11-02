@@ -33,6 +33,11 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.31.2
+- Q DATA Gamma Strategy: a level now stays usable until the data that replaced it has also arrived (end time + the data delay),
+  matching its start. Before, levels that moved often (the gamma flip especially) could end before they ever became usable,
+  leaving the strategy with no flip, no regime and no trades.
+
 ## New in 1.31.1
 
 - **Q DATA Gamma Strategy draws its levels**: every level and zone it can trade from is now on the chart, not just the flip and walls:

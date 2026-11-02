@@ -160,11 +160,12 @@ if not parsed
     pDay   := d1 != "" ? d1 : d2
     parsed := true
 
-// A level is usable once its data time + delay has passed, until it ended.
+// A level is usable once its data time + delay has passed, and stays usable until the data that
+// replaced it has also arrived (its end time + the same delay).
 f_active(int i) =>
     s = lvS.get(i)
     e = lvE.get(i)
-    (s <= 0 or s + delayMin * 60000 <= time_close) and (e <= 0 or e > time)
+    (s <= 0 or s + delayMin * 60000 <= time_close) and (e <= 0 or e + delayMin * 60000 > time)
 
 f_px(int i) =>
     lvP.get(i) + offsetPts
@@ -614,7 +615,7 @@ if barstate.islast
                 r = lvR.get(i)
                 s0 = lvS.get(i)
                 int x1 = s0 > 0 ? int(math.min(math.max(s0 + delayMin * 60000, firstT), time)) : firstT
-                int x2 = e > 0 ? int(e) : ext
+                int x2 = e > 0 ? int(e + delayMin * 60000) : ext
                 col = f_lvCol(c, r)
                 lo = lvLo.get(i)
                 hi = lvHi.get(i)
