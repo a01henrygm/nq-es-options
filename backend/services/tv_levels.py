@@ -186,8 +186,9 @@ def f(text, n=None) -> str:
 
 
 def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, units: str, data_ms: int, rows: list,
-               heat: list | None = None, prefs: dict | None = None, bt_end_ms: int = 0) -> dict:
-    """runs: today's tracked runs of one indicator (current and ended). conv: index price -> chart price."""
+               heat: list | None = None, prefs: dict | None = None, bt_end_ms: int = 0, hist_per_kind: int = HIST_PER_KIND) -> dict:
+    """runs: today's tracked runs of one indicator (current and ended). conv: index price -> chart price.
+    hist_per_kind: ended runs kept per kind (a backtest copy keeps the whole day, so the flip and walls exist all session)."""
     kp = (prefs or {}).get("kinds") or {}
     kinds, kidx, out_lv, hidden = [], {}, [], {}
     cur = [r for r in runs if r["active"]]
@@ -195,7 +196,7 @@ def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, uni
     by_kind = {}
     for r in sorted(hist, key=lambda r: r["end_ts_ms"] or 0, reverse=True):
         by_kind.setdefault(r["kind"], []).append(r)
-    hist = [r for v in by_kind.values() for r in v[:HIST_PER_KIND]]
+    hist = [r for v in by_kind.values() for r in v[:hist_per_kind]]
     for r in cur + hist:
         p = kp.get(r["kind"]) or {}
         if p.get("on") is False:

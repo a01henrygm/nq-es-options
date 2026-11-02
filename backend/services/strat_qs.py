@@ -204,6 +204,27 @@ f_catPx(int c) =>
                     best := f_px(i)
     best
 
+// Last known level of one category: the one that most recently reached the chart (start + delay),
+// even if Q DATA has since stopped tracking it. The gamma flip and walls are re-computed every snapshot,
+// so their runs are short and gappy; dealers' positioning does not vanish between snapshots.
+// Among runs that started together, the one nearest price wins. na if none has arrived yet.
+f_catLast(int c) =>
+    float best = na
+    float bs = -1.0
+    float bd = 1e12
+    n = lvP.size()
+    if n > 0
+        for i = 0 to n - 1
+            if lvC.get(i) == c
+                s = lvS.get(i)
+                if s + delayMin * 60000 <= time_close
+                    d = math.abs(f_px(i) - close)
+                    if s > bs or (s == bs and d < bd)
+                        bs := s
+                        bd := d
+                        best := f_px(i)
+    best
+
 // ---------------- Per-bar context ----------------
 float atr     = ta.atr(atrLen)
 float tol     = touchIn > 0 ? touchIn : 0.25 * atr
@@ -221,15 +242,15 @@ float flip  = na
 float callW = na
 float putW  = na
 if dayOk
-    flip  := f_catPx(1)
+    flip  := f_catLast(1)
     if na(flip)
-        flip := f_catPx(2)
-    callW := f_catPx(3)
+        flip := f_catLast(2)
+    callW := f_catLast(3)
     if na(callW)
-        callW := f_catPx(12)
-    putW  := f_catPx(4)
+        callW := f_catLast(12)
+    putW  := f_catLast(4)
     if na(putW)
-        putW := f_catPx(13)
+        putW := f_catLast(13)
 
 // ---------------- Gamma regime with a hold time ----------------
 var int regime = 0

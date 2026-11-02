@@ -37,7 +37,7 @@ def test_strategy_kind_names_match_what_q_data_exports():
     assert any("flip" in n and "0dte" not in n for n in names)                 # S1 needs the gamma flip
     assert any("call wall" in n and "zone" not in n for n in names)            # plain or 0DTE call wall (the strategy takes either)
     assert any("put wall" in n and "zone" not in n for n in names)
-    assert 'c := str.contains(n, "0dte") ? 12 : 3' in strat_qs.CODE and "callW := f_catPx(12)" in strat_qs.CODE
+    assert 'c := str.contains(n, "0dte") ? 12 : 3' in strat_qs.CODE and "callW := f_catLast(12)" in strat_qs.CODE
     assert lines(g["text"], "L")
 
 
