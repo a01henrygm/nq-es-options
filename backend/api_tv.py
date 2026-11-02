@@ -382,6 +382,8 @@ def register(app, h, q, tab_parts):
         k = k_now * math.exp(CARRY * days / 365.0)
         return (lambda v: v * k), f"{root} estimated from today's basis (check one level, use Shift if off)", True, root
 
+    BT_HIST_PER_KIND = 200   # a backtest copy keeps every run of the day (size is still capped by MAX_CHARS)
+
     def past_levels(u, ind, prefs, day):
         runs, exact = day_runs(u, ind, day)
         if not runs:
@@ -394,7 +396,7 @@ def register(app, h, q, tab_parts):
                 ("Saved", "exact, as Q DATA showed them that day" if exact else "older day: no zones or reads saved")]
         made = "backtest " + day
         sym = f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_")
-        j = tv.build_text(ind, runs, conv, made, day, sym, method, last, rows, [], prefs, bt_end_ms=bt_end)
+        j = tv.build_text(ind, runs, conv, made, day, sym, method, last, rows, [], prefs, bt_end_ms=bt_end, hist_per_kind=BT_HIST_PER_KIND)
         j.update({"ind": ind, "title": NAMES[ind], "mapped": mapped, "data_as_of": datetime.fromtimestamp(last / 1000, timezone.utc).isoformat() if last else None,
                   "made": made, "heat": 0, "day": day, "exact": exact, "backtest": True, "prices": method, "catching_up": False})
         return j

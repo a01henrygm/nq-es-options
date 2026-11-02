@@ -33,6 +33,13 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.31.3
+- Q DATA Gamma Strategy: the gamma flip and walls now use the last value that reached the chart, even after Q DATA stopped
+  tracking that run. They are recomputed every snapshot, so their runs are short and gappy; before, most of a session had
+  no flip, the regime stayed on Waiting and no strategy could fire.
+- Backtest copies (a past day's GEX or Levels) now keep every run of that day instead of the last 4 per kind, so the flip
+  and walls exist from the open onward (still capped by the paste size limit).
+
 ## New in 1.31.2
 - Q DATA Gamma Strategy: a level now stays usable until the data that replaced it has also arrived (end time + the data delay),
   matching its start. Before, levels that moved often (the gamma flip especially) could end before they ever became usable,
