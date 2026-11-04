@@ -694,12 +694,15 @@ const R = {
     const recent = j.sessions.flatMap(s => s.touches.map(t => Object.assign({ date: s.date }, t))).sort((a, c) => (c.time || "").localeCompare(a.time || "")).slice(0, 30);
     $("view").innerHTML = `<div class="panel"><h2>Level reactions, ${esc(S.u)}</h2>
       ${j.total_touches ? "" : note("No level touches recorded yet. The app keeps the first set of levels each session and compares them with the prices it observes, so this fills in over days of running.")}
+      <h3>Stacked levels (${j.total_events || 0} touch events, each counted once)</h3>
+      <table><tr><th>Kinds stacked at the price</th><th>Events</th><th>Held after 15 min</th><th>Held after 30 min</th><th>Pinned (15 / 30)</th></tr>
+      ${(j.stacks || []).map(r => `<tr><td>${esc(r.stack)}</td><td class="num">${r.events}</td><td class="num">${pc(r.held_pct_15)} of ${r.measured_15}</td><td class="num">${pc(r.held_pct_30)} of ${r.measured_30}</td><td class="num">${r.pinned_15} / ${r.pinned_30}</td></tr>`).join("")}</table>
       <h3>Summary by level type (${j.sessions.length} session${j.sessions.length === 1 ? "" : "s"} stored, ${j.total_touches} touches)</h3>
-      <table><tr><th>Level type</th><th>Touches</th><th>Held after 15 min</th><th>Held after 30 min</th><th>Enough data?</th></tr>
-      ${j.summary.map(r => `<tr><td>${esc(r.category.replace(/_/g, " "))}</td><td class="num">${r.touches}</td><td class="num">${pc(r.held_pct_15)} of ${r.measured_15}</td><td class="num">${pc(r.held_pct_30)} of ${r.measured_30}</td><td>${r.enough_data ? "10+ touches" : '<span class="dim">too few to conclude</span>'}</td></tr>`).join("") || "<tr><td colspan=5 class='dim'>Nothing yet</td></tr>"}</table>
+      <table><tr><th>Level type</th><th>Touches</th><th>Held after 15 min</th><th>Held after 30 min</th><th>Pinned (15 / 30)</th><th>Enough data?</th></tr>
+      ${j.summary.map(r => `<tr><td>${esc(r.category.replace(/_/g, " "))}</td><td class="num">${r.touches}</td><td class="num">${pc(r.held_pct_15)} of ${r.measured_15}</td><td class="num">${pc(r.held_pct_30)} of ${r.measured_30}</td><td class="num">${r.pinned_15 ?? 0} / ${r.pinned_30 ?? 0}</td><td>${r.enough_data ? "10+ touches" : '<span class="dim">too few to conclude</span>'}</td></tr>`).join("") || "<tr><td colspan=6 class='dim'>Nothing yet</td></tr>"}</table>
       <h3>Recent touches</h3><div class="scroll"><table><tr><th>Date</th><th>Time (ET)</th><th>Level</th><th>Price</th><th>Approach</th><th>After 15 min</th><th>After 30 min</th></tr>
       ${recent.map(t => `<tr><td>${t.date}</td><td>${et(t.time).replace(/^[A-Za-z]+ \d+, /, "")}</td><td>${esc(t.label)}</td><td class="num">${fmt(t.level, 2)}</td><td>${t.approach}</td>
-        <td>${t.held_15 == null ? "-" : t.held_15 ? "held" : "broke"} <span class="dim">${t.move_15 == null ? "" : (t.move_15 > 0 ? "+" : "") + fmt(t.move_15, 1)}</span></td><td>${t.held_30 == null ? "-" : t.held_30 ? "held" : "broke"} <span class="dim">${t.move_30 == null ? "" : (t.move_30 > 0 ? "+" : "") + fmt(t.move_30, 1)}</span></td></tr>`).join("") || "<tr><td colspan=7 class='dim'>None</td></tr>"}</table></div>
+        <td>${t.outcome_15 || (t.held_15 == null ? "-" : t.held_15 ? "held" : "broke")} <span class="dim">${t.move_15 == null ? "" : (t.move_15 > 0 ? "+" : "") + fmt(t.move_15, 1)}</span></td><td>${t.outcome_30 || (t.held_30 == null ? "-" : t.held_30 ? "held" : "broke")} <span class="dim">${t.move_30 == null ? "" : (t.move_30 > 0 ? "+" : "") + fmt(t.move_30, 1)}</span></td></tr>`).join("") || "<tr><td colspan=7 class='dim'>None</td></tr>"}</table></div>
       <p class="dim">${esc(j.method)} Tolerance: ${j.tolerance_pct}% of the level.</p>${note(j.note)}</div>`;
   },
   async events() {

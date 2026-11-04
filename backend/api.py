@@ -819,10 +819,11 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                 t["time"] = iso(t["time"])
             sessions.append({"date": d, "levels": len(lv), "price_observations": len(px), "touches": tc})
             all_t += tc
-        return {"underlying": u, "sessions": sessions, "summary": rx.summarize(all_t), "tolerance_pct": tolerance_pct,
-                "total_touches": len(all_t),
+        return {"underlying": u, "sessions": sessions, "summary": rx.summarize(all_t), "stacks": rx.summarize_stacks(all_t), "tolerance_pct": tolerance_pct,
+                "total_touches": len(all_t), "total_events": len(rx.stacks(all_t)),
                 "method": "The first set of levels of each session is kept. A touch is price within the tolerance of a level, or crossing it between two stored "
-                          "observations. 'Held' means price was still on the side it approached from 15 or 30 minutes later.",
+                          "observations. 'Held' means price was still on the side it approached from 15 or 30 minutes later; 'broke' means it was on the other side "
+                          "by more than the tolerance; inside the tolerance it is 'pinned' (stuck on the level), counted separately and left out of the held %.",
                 "note": "Descriptive only. Samples are small, prices are about 15 minutes delayed, and observations arrive about every 2 minutes, so a touch can be missed or timed loosely. "
                         "It is not evidence of an edge until it has hundreds of touches."}
 

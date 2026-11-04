@@ -132,7 +132,9 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        if ind == "gex":                                       # 1.25.0 added "GEX levels are drawn as" after it, the only later setting
+        assert inputs[-2].startswith("zoneFilter = input.string(") and inputs[-1].startswith("showStackN")   # 1.32.0, last
+        inputs = inputs[:-2]
+        if ind == "gex":                                       # 1.25.0 added "GEX levels are drawn as" after it
             assert inputs[-1].startswith("gexZones = input.string(")
             inputs = inputs[:-1]
         assert inputs[-2].startswith("startMode = input.string(\"When the data first showed it\"") and inputs[-1].startswith("startBars")
@@ -174,3 +176,16 @@ def test_an_earlier_days_gex_levels_can_be_copied_for_a_backtest():
     assert len(lines(t["text"], "Q")[0]) == 8
     code = build_script("gex")
     assert "qdBtEnd(dataTxt)" in code and "refClose()" in code and "btEnd > 0 ? int(math.min(btEnd" in code
+
+
+def test_best_zones_filter_defaults_and_classes():
+    for ind, dflt in (("gex", "Best zones only"), ("kl", "Best zones only"), ("lv", "Everything"), ("all", "Everything")):
+        code = build_script(ind)
+        assert f'zoneFilter = input.string("{dflt}", "Show"' in code and all(ord(ch) < 128 for ch in code)
+        assert "classOk(g)" in code and "array.push(kCls, kindClass(fld(a, 1)))" in code and "__" not in code.replace("__future__", "")
+    code = build_script("kl")
+    for best in ("biggest gex", "positive gex", "negative gex", "call wall zone", "put wall zone", "call open interest", "dealer delta: long"):
+        assert f'"{best}"' in code
+    for brk in ("flip", "expected move", "call volume"):
+        assert f'"{brk}"' in code
+    assert 'x" + str.tostring(cnt)' in code and "BREAK LEVEL" in code

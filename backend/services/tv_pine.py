@@ -65,6 +65,10 @@ grpT = "Where levels start"
 startMode = input.string("When the data first showed it", "Levels start at", options = ["When the data first showed it", "9:30 open", "Start of chart data", "Last N bars"], group = grpT, inline = "st", tooltip = "When the data first showed it: each level starts on the candle of the options data time it first appeared, and moves show as faded steps. 9:30 open: every level starts at today's open (the last session's open before 9:30). Start of chart data: from the left edge. Last N bars: the number on the right.")
 startBars = input.int(100, "", minval = 1, maxval = 5000, group = grpT, inline = "st")
 __GEXZ_INPUT__
+// added in 1.32.0 (last, so earlier settings keep their place)
+grpB = "Best zones filter"
+zoneFilter = input.string(__ZF_DEFAULT__, "Show", options = ["Best zones only", "Best zones + break levels", "Everything"], group = grpB, tooltip = "Best zones only: the kinds that held best in the Reactions tab - biggest GEX strikes, positive and negative GEX zones, GEX call and put wall zones, call open interest and dealer long delta - plus your own levels. Best zones + break levels: also gamma flips, expected move and call volume, drawn dashed because price tends to push THROUGH them (continuation, not a fade). Everything: the old view, every kind.")
+showStackN = input.bool(true, "Count stacked levels (x2, x3...)", group = grpB, tooltip = "When several kinds of level sit at the same price, one label shows them all with a count in front. Bigger stacks held best in the Reactions tab.")
 
 // ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
 qdBtEnd(string txt) =>
@@ -104,6 +108,7 @@ var int[]    kW = array.new<int>()
 var int[]    kSec = array.new<int>()
 var bool[]   kKey = array.new<bool>()
 var bool[]   kHide = array.new<bool>()
+var int[]    kCls = array.new<int>()
 var float[]  hmP = array.new<float>()
 var float[]  hmLo = array.new<float>()
 var float[]  hmHi = array.new<float>()
@@ -136,6 +141,28 @@ hiddenName(string nm) =>
             if str.length(w) > 0 and str.contains(lowNm, w)
                 hid := true
     hid
+
+// 0 = best zone, 1 = break level, 2 = other, 3 = your own levels (always shown)
+kindClass(string nm) =>
+    n = str.lower(nm)
+    int c = 2
+    if str.contains(n, "your level")
+        c := 3
+    else if str.contains(n, "biggest gex") or str.contains(n, "positive gex") or str.contains(n, "negative gex") or str.contains(n, "call wall zone") or str.contains(n, "put wall zone") or str.contains(n, "call open interest") or str.contains(n, "dealer delta: long")
+        c := 0
+    else if str.contains(n, "flip") or str.contains(n, "expected move") or str.contains(n, "call volume")
+        c := 1
+    c
+
+clsOf(int g) =>
+    g >= 0 and g < array.size(kCls) ? array.get(kCls, g) : 2
+
+classOk(int g) =>
+    c = clsOf(g)
+    zoneFilter == "Everything" or c == 0 or c == 3 or (c == 1 and zoneFilter == "Best zones + break levels")
+
+breakStyle(int g) =>
+    zoneFilter != "Everything" and clsOf(g) == 1
 
 secOn(int s) =>
     s >= 0 and s < array.size(secs) ? array.get(secs, s) : false
@@ -194,6 +221,7 @@ qdParse(string txt) =>
     array.clear(kSec)
     array.clear(kKey)
     array.clear(kHide)
+    array.clear(kCls)
     array.clear(hmP)
     array.clear(hmLo)
     array.clear(hmHi)
@@ -214,6 +242,7 @@ qdParse(string txt) =>
             array.push(kSec, int(num(a, 6)))
             array.push(kKey, fld(a, 7) == "1")
             array.push(kHide, hiddenName(fld(a, 1)))
+            array.push(kCls, kindClass(fld(a, 1)))
         else if tag == "L" and array.size(a) >= 10
             p = num(a, 1)
             if p > 0
@@ -270,7 +299,7 @@ startX(float levelStart) =>
 visibleAt(int i) =>
     g = array.get(lvG, i)
     p = array.get(lvP, i) + offsetPts
-    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct
+    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and classOk(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct
 
 // which current levels get drawn: Clean = key levels + the nearest perSide on each side
 qdPick(int n) =>
@@ -304,6 +333,8 @@ qdDraw(int n, bool[] pick, int endX) =>
     labP = array.new<float>()
     labI = array.new<int>()
     labTip = array.new<string>()
+    labCnt = array.new<int>()
+    labBase = array.new<string>()
     drawn = 0
     // faded history first, so current levels sit on top
     if showHist and dataStart()
@@ -311,7 +342,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             e = array.get(lvE, i)
             g = array.get(lvG, i)
             p = array.get(lvP, i) + offsetPts
-            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct and array.size(lns) < 480
+            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and classOk(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct and array.size(lns) < 480
                 c = kindColor(g)
                 array.push(lns, line.new(clampT(array.get(lvS, i)), p, clampT(e), p, xloc = xloc.bar_time, color = color.new(c, histT), width = 1, style = line.style_dotted))
     for i = 0 to n - 1
@@ -324,8 +355,11 @@ qdDraw(int n, bool[] pick, int endX) =>
             hi = array.get(lvHi, i)
             band = hi > lo and lo > 0
             gexZ = gexZones == "Every GEX level" and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
-            near = math.abs(p - refClose()) <= nd or gexZ
-            if near and array.size(bxs) < 480
+            brk = breakStyle(g)
+            near = (math.abs(p - refClose()) <= nd or gexZ) and not brk
+            if brk
+                array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 10 : 20), width = 1, style = line.style_dashed))
+            else if near and array.size(bxs) < 480
                 zt = band ? hi + offsetPts : p + hh
                 zb = band ? lo + offsetPts : p - hh
                 array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, bgcolor = color.new(c, zoneT)))
@@ -348,16 +382,22 @@ qdDraw(int n, bool[] pick, int endX) =>
                         twin := k
             if twin >= 0
                 lb = array.get(lbs, array.get(labI, twin))
-                label.set_text(lb, nm + " / " + label.get_text(lb))
+                cnt = array.get(labCnt, twin) + 1
+                array.set(labCnt, twin, cnt)
+                base = nm + " / " + array.get(labBase, twin)
+                array.set(labBase, twin, base)
+                label.set_text(lb, (showStackN ? "x" + str.tostring(cnt) + "  " : "") + base)
                 jt = tip + " || " + array.get(labTip, twin)
                 array.set(labTip, twin, jt)
                 label.set_tooltip(lb, jt)
             else
-                txt = nm + " " + fmtP(p) + (rd != "" ? "  " + rd : "")
+                txt = nm + " " + fmtP(p) + (brk ? "  BREAK LEVEL" : rd != "" ? "  " + rd : "")
                 array.push(lbs, label.new(endX, p, txt, xloc = xloc.bar_time, style = label.style_label_left, color = white ? color.new(c, 86) : color.new(c, 25), textcolor = white ? c : color.white, size = sz, tooltip = tip))
                 array.push(labP, p)
                 array.push(labI, array.size(lbs) - 1)
                 array.push(labTip, tip)
+                array.push(labCnt, 1)
+                array.push(labBase, txt)
     drawn
 
 __HEAT_FUNC__
@@ -474,6 +514,7 @@ def build_script(ind: str) -> str:
     code = code.replace("__HEAT_FUNC__", HEAT_FUNC.replace("__HEATSEC__", str(heat_sec)) if has_heat else "")
     code = code.replace("__HEAT_CALL__\n", "        qdHeat(endX)\n" if has_heat else "")
     code = code.replace("__GEXZ_INPUT__", GEXZ_INPUT if ind != "lv" else 'gexZones = "Only near price"')
+    code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}

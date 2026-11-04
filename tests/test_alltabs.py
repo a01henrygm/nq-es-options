@@ -20,7 +20,8 @@ def test_all_tabs_script_has_every_section_and_the_paste_box_first():
         assert f'sec{i} = input.bool(' in code and f'"{nm}"' in code
     heat = tv.HEAT_SECTION + ALL_LV_OFFSET
     assert f'sec{heat} = input.bool(false, "Heatmap"' in code and f"secOn({heat})" in code
-    assert inputs[-1].startswith("gexZones = input.string(")                   # new settings go last
+    assert inputs[-3].startswith("gexZones = input.string(")                   # new settings go last
+    assert inputs[-2].startswith('zoneFilter = input.string("Everything"') and inputs[-1].startswith("showStackN = input.bool(")
 
 
 def test_all_tabs_levels_hold_gex_and_levels_sections():
@@ -42,7 +43,7 @@ def test_every_gex_level_is_a_zone_by_default():
     for ind in ("gex", "all"):
         code = build_script(ind)
         assert 'gexZones = input.string("Every GEX level"' in code
-        assert f"kindOf(g, 0) <= {len(tv.GEX_SECTIONS) - 1}" in code and "near = math.abs(p - refClose()) <= nd or gexZ" in code
+        assert f"kindOf(g, 0) <= {len(tv.GEX_SECTIONS) - 1}" in code and "near = (math.abs(p - refClose()) <= nd or gexZ) and not brk" in code
     lv = build_script("lv")
     assert 'gexZones = "Only near price"' in lv and "input.string(\"Every GEX level\"" not in lv
 
