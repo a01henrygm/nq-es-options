@@ -40,6 +40,16 @@ async function newWindow() {
   } catch (e) { /* not the desktop app */ }
   window.open(`/?w=1&tab=${encodeURIComponent(S.tab)}&u=${encodeURIComponent(S.u || "")}`, "_blank");       // in a browser: a new tab or window
 }
+// 1.33.0: tell the desktop app which page this window shows, so it reopens there (and reopens extra windows) after a restart
+let DESKWIN = null;
+async function reportWindow() {
+  if (DESKWIN === false) return;
+  try {
+    const r = await fetch("/api/desktop/window-state", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ w: new URLSearchParams(location.search).get("w") || "main", tab: S.tab, u: S.u || "" }) });
+    DESKWIN = r.ok;
+  } catch (e) { DESKWIN = false; }
+}
 function saveUI() {
   try {
     const o = {}; UIKEYS.forEach(k => o[k] = S[k]);
@@ -948,7 +958,7 @@ async function scenariosPanel() {
 async function render() {
   if (S.busy) { S.again = true; return; }                  // something changed while a refresh was running: run again right after it
   S.busy = true; $("clock").textContent = "Updating...";
-  saveUI();
+  saveUI(); reportWindow();
   try { await R[S.tab](); } catch (e) { showError(e); } finally { S.busy = false; }
   if (S.again) { S.again = false; return render(); }
   addHelp(); persistDetails(); eventsBanner();

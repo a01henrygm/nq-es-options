@@ -69,6 +69,8 @@ __GEXZ_INPUT__
 grpB = "Best zones filter"
 zoneFilter = input.string(__ZF_DEFAULT__, "Show", options = ["Best zones only", "Best zones + break levels", "Everything"], group = grpB, tooltip = "Best zones only: the kinds that held best in the Reactions tab - biggest GEX strikes, positive and negative GEX zones, GEX call and put wall zones, call open interest and dealer long delta - plus your own levels. Best zones + break levels: also gamma flips, expected move and call volume, drawn dashed because price tends to push THROUGH them (continuation, not a fade). Everything: the old view, every kind.")
 showStackN = input.bool(true, "Count stacked levels (x2, x3...)", group = grpB, tooltip = "When several kinds of level sit at the same price, one label shows them all with a count in front. Bigger stacks held best in the Reactions tab.")
+// added in 1.33.0 (last)
+symTagIn = input.string("Auto", "Label tag", options = ["Auto", "Always", "Never"], group = grpB, tooltip = "Puts the symbol the levels came from in front of every label (for example QQQ), so NDX and QQQ levels pasted into two copies of this indicator on one chart are easy to tell apart. Auto: only for levels that did not come from the index itself (QQQ, SPY).")
 
 // ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
 qdBtEnd(string txt) =>
@@ -184,6 +186,13 @@ kindColor(int g) =>
 kindStyle(int g) =>
     sn = g >= 0 and g < array.size(kSty) ? array.get(kSty, g) : "S"
     sn == "D" ? line.style_dashed : sn == "O" ? line.style_dotted : line.style_solid
+
+// the symbol the pasted levels came from ("QQQ -> NQ" gives "QQQ"), shown in front of labels per "Label tag"
+symTag() =>
+    sym = array.get(meta, 3)
+    first = str.length(sym) > 0 ? array.get(str.split(str.trim(sym), " "), 0) : ""
+    show = symTagIn == "Always" or (symTagIn == "Auto" and first != "" and first != "NDX" and first != "SPX")
+    show and first != "" ? first + " " : ""
 
 sizeOf() =>
     labelSize == "Tiny" ? size.tiny : labelSize == "Normal" ? size.normal : size.small
@@ -391,7 +400,7 @@ qdDraw(int n, bool[] pick, int endX) =>
                 array.set(labTip, twin, jt)
                 label.set_tooltip(lb, jt)
             else
-                txt = nm + " " + fmtP(p) + (brk ? "  BREAK LEVEL" : rd != "" ? "  " + rd : "")
+                txt = symTag() + nm + " " + fmtP(p) + (brk ? "  BREAK LEVEL" : rd != "" ? "  " + rd : "")
                 array.push(lbs, label.new(endX, p, txt, xloc = xloc.bar_time, style = label.style_label_left, color = white ? color.new(c, 86) : color.new(c, 25), textcolor = white ? c : color.white, size = sz, tooltip = tip))
                 array.push(labP, p)
                 array.push(labI, array.size(lbs) - 1)

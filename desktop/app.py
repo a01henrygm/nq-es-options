@@ -26,6 +26,10 @@ from pydantic import BaseModel  # noqa: E402
 class NewWindowIn(BaseModel):
     tab: str = ""        # which page the new window opens on
     u: str = ""          # which symbol
+class WindowStateIn(BaseModel):
+    w: str = "main"      # "main" or the extra window's number
+    tab: str = ""
+    u: str = ""
 class SaveFileIn(BaseModel):
     name: str            # file name the page asked for, e.g. qdata_stack_map_NDX.pine
     text: str
@@ -351,16 +355,37 @@ def main(argv=None):
         threading.Thread(target=install_and_quit, daemon=True).start()
         return {"ok": True}
 
-    extra = []
+    extra = {}
+    from desktop.windows import WindowStore
+    wins = WindowStore(DATA / "windows.json")             # 1.33.0: extra windows and each window's page come back after a restart
+
+    def open_extra(rec: dict):
+        """Opens one extra window from its saved record. Closing it yourself forgets it; quitting the app keeps it for next time."""
+        from urllib.parse import urlencode
+        n = rec["n"]
+        q = urlencode({"w": n, "tab": rec["tab"], "u": rec["u"]})
+        ww = webview.create_window(f"{APP_NAME} ({n})", url=f"{url}/?{q}", width=1280, height=860, min_size=(700, 500),
+                                   text_select=True, background_color="#0b0d10")
+        extra[n] = ww
+
+        def closed():
+            extra.pop(n, None)
+            if not quitting.is_set():
+                wins.remove(n)
+        ww.events.closed += closed
+        return ww
 
     def new_window(w: NewWindowIn):
         """Another dashboard window in the same app (same server and data), opened on the page you were on."""
-        from urllib.parse import urlencode
-        n = len(extra) + 2
-        q = urlencode({"w": n, "tab": re.sub(r"[^a-z]", "", w.tab or "")[:20], "u": re.sub(r"[^A-Za-z0-9_:]", "", w.u or "")[:20]})
-        extra.append(webview.create_window(f"{APP_NAME} ({n})", url=f"{url}/?{q}", width=1280, height=860, min_size=(700, 500),
-                                           text_select=True, background_color="#0b0d10"))
-        return {"ok": True, "window": n}
+        rec = wins.add(w.tab, w.u)
+        if rec is None:
+            return {"ok": False, "reason": "Up to 8 extra windows."}
+        open_extra(rec)
+        return {"ok": True, "window": rec["n"]}
+
+    def window_state(w: WindowStateIn):
+        """Each window tells the app which page it shows, so it opens there again next time."""
+        return {"ok": wins.update(w.w, w.tab, w.u)}
 
     def save_file(f: SaveFileIn):
         if len(f.text) > 20_000_000:
@@ -377,7 +402,7 @@ def main(argv=None):
             return {"ok": False, "reason": "Too large."}
         return {"ok": set_clipboard(f.text)}
 
-    for path, fn, method in (("/api/desktop/copy", copy, "POST"), ("/api/desktop/save-file", save_file, "POST"), ("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"),
+    for path, fn, method in (("/api/desktop/copy", copy, "POST"), ("/api/desktop/save-file", save_file, "POST"), ("/api/desktop/info", info, "GET"), ("/api/desktop/show", show, "POST"), ("/api/desktop/new-window", new_window, "POST"), ("/api/desktop/window-state", window_state, "POST"),
                              ("/api/desktop/update/check", check_now, "POST"), ("/api/desktop/update/install", install_now, "POST"),
                              ("/api/desktop/restart", restart, "POST")):
         app.router.routes.insert(0, APIRoute(path, fn, methods=[method]))          # in front of the page files mounted at /
@@ -469,7 +494,9 @@ def main(argv=None):
             say("Starting the data server...")
             start_server()
             say("Starting data collection...")
-            win.load_url(url)
+            from urllib.parse import urlencode
+            m = {k: v for k, v in wins.main.items() if v}
+            win.load_url(url + ("/?" + urlencode(m) if m else ""))      # the page it was last on (the page's own memory does the same)
             say("Loading your dashboard...")
             time.sleep(max(0.0, 1.8 - (time.time() - t0)))           # long enough to read, never slower than the start itself
         except Exception:
@@ -479,6 +506,13 @@ def main(argv=None):
             state["visible"] = True
         if splash:
             splash.destroy()
+        if not background:
+            for rec in wins.to_restore():                 # the extra windows that were open when the app last quit
+                try:
+                    open_extra(rec)
+                    time.sleep(0.3)
+                except Exception:
+                    log.exception("could not reopen window %s", rec.get("n"))
 
     def on_closing():
         if quitting.is_set():
@@ -504,6 +538,9 @@ def main(argv=None):
                     win.show()
                     win.restore()
                     state["visible"] = True
+                    if not extra:                         # started in the background at sign-in: bring the saved windows back too
+                        for rec in wins.to_restore():
+                            open_extra(rec)
                 except Exception:
                     log.exception("could not show the window")
 

@@ -132,8 +132,9 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        assert inputs[-2].startswith("zoneFilter = input.string(") and inputs[-1].startswith("showStackN")   # 1.32.0, last
-        inputs = inputs[:-2]
+        assert inputs[-3].startswith("zoneFilter = input.string(") and inputs[-2].startswith("showStackN")   # 1.32.0
+        assert inputs[-1].startswith('symTagIn = input.string("Auto"')                                          # 1.33.0, last
+        inputs = inputs[:-3]
         if ind == "gex":                                       # 1.25.0 added "GEX levels are drawn as" after it
             assert inputs[-1].startswith("gexZones = input.string(")
             inputs = inputs[:-1]
@@ -189,3 +190,8 @@ def test_best_zones_filter_defaults_and_classes():
     for brk in ("flip", "expected move", "call volume"):
         assert f'"{brk}"' in code
     assert 'x" + str.tostring(cnt)' in code and "BREAK LEVEL" in code
+
+
+def test_symbol_tag_on_labels():
+    code = build_script("gex")
+    assert "txt = symTag() + nm" in code and 'first != "NDX"' in code

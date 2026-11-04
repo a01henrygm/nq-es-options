@@ -15,6 +15,40 @@ async function tvFetch(path, params, body) {
   return j;
 }
 const tvLevels = ind => tvFetch("/tv/levels", { underlying: S.u, ind }, { prefs: { kinds: TV2.kinds } });
+
+// ---- 1.33.0: GEX and Key levels for the index AND its ETF (NDX + QQQ, or SPX + SPY) from this one tab, no symbol switching ----
+const TVPAIRS = [["_NDX", "QQQ"], ["_SPX", "SPY"]];
+function tvPair() {
+  const have = new Set([...(($("u") || {}).options || [])].map(o => o.value));
+  const pr = TVPAIRS.find(p => p.includes(S.u)) || TVPAIRS[0];
+  return pr.filter(x => have.has(x) || x === S.u);
+}
+const tvNice = u => String(u || "").replace(/^_/, "");
+async function tvQuickCopy(u, kind, btn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Copying...";
+  try {
+    let r;
+    if (kind === "gex") r = await tvFetch("/tv/levels", { underlying: u, ind: "gex" }, { prefs: { kinds: TV2.kinds } });
+    else r = await tvFetch("/tv/keylevels/levels", Object.assign({ underlying: u, convention: "standard", method: "auto", top: S.lvtop, by_expiry: S.lvexp, mid: S.lvmid, moves: S.lvmov,
+      categories: [...S.cats].join(",") }, selParams()), { prefs: { kinds: TV2.kinds } });
+    try { await copyText(r.text); } catch (e) { showText(`${tvNice(u)} ${kind === "gex" ? "GEX" : "Key levels"}`, r.text); }
+    TV2.copied[u + ":" + (kind === "gex" ? "gex" : "kl")] = Date.now(); tv2Save();
+    btn.textContent = `Copied ${r.levels} ${tvNice(u)} levels`;
+    const h = document.getElementById("tvq_" + u.replace(/\W/g, "") + "_" + kind);
+    if (h) h.textContent = `${r.mapped ? "NQ/ES points (estimated)" : tvNice(u) + " units: save a basis on Key levels"}, data ${new Date(r.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false })} ET`;
+  } catch (e) { btn.textContent = old; alert(`Could not copy ${tvNice(u)} ${kind === "gex" ? "GEX" : "Key levels"}: ` + (e.msg || e.message)); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 5000);
+}
+function tvQuickPanel() {
+  const pr = tvPair();
+  const at = (u, k) => { const c = TV2.copied[u + ":" + k]; return c ? new Date(c).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "not yet"; };
+  const col = u => `<div class="tvqcol"><h3 style="margin:0 0 6px">${esc(tvNice(u))}</h3>
+      <div class="actions"><button class="go" data-q="${esc(u)}" data-k="gex">Copy ${esc(tvNice(u))} GEX</button><button data-q="${esc(u)}" data-k="kl">Copy ${esc(tvNice(u))} Key levels</button></div>
+      <p class="hint" style="margin:4px 0 0">You copied GEX ${at(u, "gex")}, Key levels ${at(u, "kl")}. <span id="tvq_${u.replace(/\W/g, "")}_gex"></span> <span id="tvq_${u.replace(/\W/g, "")}_kl"></span></p></div>`;
+  return `<div class="panel tvcard"><h2>${pr.map(tvNice).join(" + ")}: GEX and Key levels</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">${pr.map(col).join("")}</div>
+      <p class="hint">Both symbols from here, no switching. On TradingView add Q DATA GEX and Q DATA Key Levels twice (one copy for ${esc(tvNice(pr[0]))}, one for ${esc(tvNice(pr[1] || ""))}) and paste each into its own copy. ${esc(tvNice(pr[1] || ""))} levels are converted to futures points and tagged "${esc(tvNice(pr[1] || ""))}" on their labels so you can tell them apart.</p></div>`;
+}
 // GEX levels of an earlier day, for backtesting on TradingView (1.29.0)
 async function tvCopyDay(day, btn) {
   if (!day) return;
@@ -138,6 +172,7 @@ R.tv = async function () {
   const kinds = [...g.kinds, ...(g.hidden_kinds || [])].map(k => ({ ...k, ind: "GEX" })).concat([...l.kinds, ...(l.hidden_kinds || [])].map(k => ({ ...k, ind: "Levels" })));
   $("view").innerHTML = `<div class="panel pagehead"><h2>TradingView</h2>
       <p style="max-width:90ch">Paste-in indicators: Q DATA GEX and Q DATA Levels, or both in one with Q DATA All Tabs. Add each once, then paste new levels when Q DATA tells you they changed. Each level starts on the candle of the <b>options data time</b> it first appeared; when a level moves, the old spot stays faded with a step to the new price. Levels near price are see-through zones, farther ones thin lines, and every label says what price should do there. Colors are made for a white chart.</p></div>
+    ${tvQuickPanel()}
     <div class="tvgrid">${card("gex", g)}${card("lv", l)}${allCard}</div>
     <div class="panel"><h2>Alerts when levels change</h2>
       <div class="row"><label><span><input type="checkbox" id="tval_on" ${al.on ? "checked" : ""}> Alerts on</span></label>
@@ -155,6 +190,7 @@ R.tv = async function () {
       <div class="actions"><button id="tvkdef">Back to Q DATA's colors</button></div></div></details></div>`;
   const v = $("view");
   v.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await tvCopy(b.dataset.copy, b); });
+  v.querySelectorAll("[data-q]").forEach(b => b.onclick = () => tvQuickCopy(b.dataset.q, b.dataset.k, b));
   const dc = $("tvdaycopy"); if (dc) dc.onclick = () => tvCopyDay($("tvday").value, dc);
   const ds = $("tvday"); if (ds) ds.onchange = () => { dc.textContent = "Copy GEX levels for this day"; };
   v.querySelector("[data-allcopy]").onclick = e => allCopy(e.target);
