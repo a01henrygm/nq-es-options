@@ -71,6 +71,7 @@ zoneFilter = input.string(__ZF_DEFAULT__, "Show", options = ["Best zones only", 
 showStackN = input.bool(true, "Count stacked levels (x2, x3...)", group = grpB, tooltip = "When several kinds of level sit at the same price, one label shows them all with a count in front. Bigger stacks held best in the Reactions tab.")
 // added in 1.33.0 (last)
 symTagIn = input.string("Auto", "Label tag", options = ["Auto", "Always", "Never"], group = grpB, tooltip = "Puts the symbol the levels came from in front of every label (for example QQQ), so NDX and QQQ levels pasted into two copies of this indicator on one chart are easy to tell apart. Auto: only for levels that did not come from the index itself (QQQ, SPY).")
+__COMBO_INPUT__
 
 // ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
 qdBtEnd(string txt) =>
@@ -210,6 +211,22 @@ nearDist() =>
 
 halfH() =>
     (zoneH > 0 ? zoneH : refClose() * 0.0003) / 2
+
+// distance zones (combined indicators, 1.34.0): super close levels get a small, tight zone
+superDist() =>
+    superNear > 0 ? superNear : refClose() * 0.001
+
+smallHalf() =>
+    (smallH > 0 ? smallH : refClose() * 0.00012) / 2
+
+// the symbol the pasted levels came from: "QQQ -> NQ" gives "QQQ"
+symFirst() =>
+    sym = array.get(meta, 3)
+    str.length(sym) > 0 ? array.get(str.split(str.trim(sym), " "), 0) : ""
+
+// combined indicators only take their own ticker's levels
+wrongSym() =>
+    wantSym != "" and symFirst() != "" and symFirst() != wantSym
 
 // ---- reading the pasted text ----
 qdParse(string txt) =>
@@ -365,14 +382,19 @@ qdDraw(int n, bool[] pick, int endX) =>
             band = hi > lo and lo > 0
             gexZ = gexZones == "Every GEX level" and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
             brk = breakStyle(g)
-            near = (math.abs(p - refClose()) <= nd or gexZ) and not brk
-            if brk
+            dist = math.abs(p - refClose())
+            // distance zones: every non-GEX level (expected move, OI, HOD / LOD...) is a zone when decently close, a small tight zone when super close
+            tiered = distZones and not gexZ
+            near = tiered ? dist <= nd : (dist <= nd or gexZ) and not brk
+            small = tiered and dist <= superDist()
+            if brk and not near
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 10 : 20), width = 1, style = line.style_dashed))
             else if near and array.size(bxs) < 480
-                zt = band ? hi + offsetPts : p + hh
-                zb = band ? lo + offsetPts : p - hh
-                array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, bgcolor = color.new(c, zoneT)))
-                if band
+                sh = smallHalf()
+                zt = small ? p + sh : band ? hi + offsetPts : p + hh
+                zb = small ? p - sh : band ? lo + offsetPts : p - hh
+                array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, border_style = brk ? line.style_dashed : line.style_solid, bgcolor = color.new(c, small ? math.max(zoneT - 12, 0) : zoneT)))
+                if band and not small
                     array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, 35), width = 1, style = line.style_dotted))
             else
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 5 : 15), width = kindOf(g, 1), style = kindStyle(g)))
@@ -452,8 +474,9 @@ qdTable(int n, bool[] pick) =>
         table.cell(out, 1, rows + 2, nextText(dn), text_color = dn < 0 ? tx : kindColor(gAt(dn)), text_size = size.tiny, text_halign = text.align_left)
         today = str.format_time(time, "yyyy-MM-dd", "America/New_York")
         old = warnOld and btEnd == 0 and n > 0 and array.get(meta, 2) != "" and array.get(meta, 2) != today
-        table.cell(out, 0, rows + 3, old ? "Old levels" : btEnd > 0 ? "Backtest" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
-        table.cell(out, 1, rows + 3, old ? "These are from " + array.get(meta, 2) + ": copy today's from Q DATA" : btEnd > 0 ? "Levels of " + array.get(meta, 2) + ", drawn to that day's 5 pm ET close" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
+        wr = n > 0 and wrongSym()
+        table.cell(out, 0, rows + 3, wr ? "Wrong ticker" : old ? "Old levels" : btEnd > 0 ? "Backtest" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
+        table.cell(out, 1, rows + 3, wr ? "Pasted " + symFirst() + " levels: this indicator is for " + wantSym : old ? "These are from " + array.get(meta, 2) + ": copy today's from Q DATA" : btEnd > 0 ? "Levels of " + array.get(meta, 2) + ", drawn to that day's 5 pm ET close" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
     out
 
 // ---- draw everything on the last bar ----
@@ -472,6 +495,8 @@ if barstate.islast
     pick = array.new<bool>()
     if n == 0
         array.push(lbs, label.new(time, close, __NAME__ + ": open the settings and paste the levels from Q DATA (TradingView tab > __COPYBTN__)", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(#64748b, 70), textcolor = color.new(#0f172a, 0), size = size.small))
+    else if wrongSym()
+        array.push(lbs, label.new(time, close, __NAME__ + ": these are " + symFirst() + " levels. Paste them into Q DATA " + symFirst() + ", and copy " + wantSym + " levels for this one.", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(#dc2626, 80), textcolor = color.new(#991b1b, 0), size = size.small))
     else
 __HEAT_CALL__
         pick := qdPick(n)
@@ -498,6 +523,11 @@ qdHeat(int endX) =>
 # Q DATA All Tabs = the GEX sections first, then the Levels sections (Levels section i is All Tabs section ALL_LV_OFFSET + i)
 ALL_LV_OFFSET = len(GEX_SECTIONS)
 ALL_SECTIONS = GEX_SECTIONS + LV_SECTIONS
+# Combined per-ticker indicators (1.34.0): All Tabs + Key levels in one, named for the ticker (Q DATA NDX, Q DATA QQQ, Q DATA SPX).
+# Key levels sections 0-9 are the same sections as All Tabs 0-9; its "Your levels" goes last.
+COMBO_SECTIONS = ALL_SECTIONS + ["Your levels"]
+COMBO_YOURS = len(ALL_SECTIONS)
+COMBO_TICKERS = {"NDX": "_NDX", "QQQ": "QQQ", "SPX": "_SPX"}
 INFO = {"gex": ("Q DATA GEX", "QD GEX", "Copy GEX levels", "gamma flips and call / put walls"),
         "lv": ("Q DATA Levels", "QD Levels", "Copy Levels", "high and low of day, projected HOD / LOD, stacked areas and top setup entries"),
         "kl": ("Q DATA Key Levels", "QD Key", "Copy Key levels", "gamma flips, call / put walls and your own levels"),
@@ -506,25 +536,41 @@ GEXZ_INPUT = ('grpZ = "GEX levels as zones"\n'
               'gexZones = input.string("Every GEX level", "GEX levels are drawn as", options = ["Every GEX level", "Only near price"], group = grpZ, '
               'tooltip = "Every GEX level (default): gamma flips, call / put walls, GEX strikes and GEX zones are see-through zones wherever they are. '
               'Only near price: like the other levels, zones only close to price and thin lines farther away.")')
+COMBO_INPUT = ('// added in 1.34.0 (last)\n'
+               'grpC = "Distance zones"\n'
+               'distZones = input.bool(true, "Zones by distance for every non-GEX level", group = grpC, tooltip = "Expected move, open interest, volume, HOD / LOD, charm / vanna and the rest: a see-through zone only when decently close (Quick setup > Zones within), a thin line when farther. Super close ones get a small, tight zone. GEX levels follow GEX levels as zones.")\n'
+               'superNear = input.float(0.0, "Small zone when within (points, 0 = auto)", minval = 0.0, step = 1.0, group = grpC, tooltip = "Auto: 0.1% of price (about 20 NQ points, 6 ES points).")\n'
+               'smallH = input.float(0.0, "Small zone height (points, 0 = auto)", minval = 0.0, step = 0.25, group = grpC, tooltip = "Auto: 0.012% of price (about 2.5 NQ points, 0.8 ES points).")\n'
+               'wantSym = __WANT__')
+NO_COMBO = 'distZones = false\nsuperNear = 0.0\nsmallH = 0.0\nwantSym = ""'
 
 
-def build_script(ind: str) -> str:
-    gex, has_heat = ind == "gex", ind in ("lv", "all")
-    secs = GEX_SECTIONS if gex else LV_SECTIONS if ind == "lv" else KL_SECTIONS if ind == "kl" else ALL_SECTIONS
-    heat_sec = HEAT_SECTION + (ALL_LV_OFFSET if ind == "all" else 0)
+def build_script(ind: str, ticker: str | None = None) -> str:
+    """ind gex, lv, kl, all, or combo (with ticker NDX, QQQ or SPX)."""
+    combo = ind == "combo"
+    if combo and ticker not in COMBO_TICKERS:
+        raise ValueError("ticker must be NDX, QQQ or SPX")
+    gex, has_heat = ind == "gex", ind in ("lv", "all", "combo")
+    secs = (GEX_SECTIONS if gex else LV_SECTIONS if ind == "lv" else KL_SECTIONS if ind == "kl" else COMBO_SECTIONS if combo else ALL_SECTIONS)
+    heat_sec = HEAT_SECTION + (ALL_LV_OFFSET if ind in ("all", "combo") else 0)
     off = {heat_sec} if has_heat else set()
     si = []
     for i, nm in enumerate(secs):
         tip = ', tooltip = "Off until you switch it on: shaded strike bands where the most options activity sits (volume, open interest, GEX)."' if (has_heat and i == heat_sec) else ""
         si.append(f'sec{i} = input.bool({"false" if i in off else "true"}, {_q(nm)}, group = grpS{tip})')
     sa = f'secs = array.from({", ".join(f"sec{i}" for i in range(len(secs)))})'
-    name, short, btn, keys = INFO[ind]
+    if combo:
+        name, short, btn = f"Q DATA {ticker}", f"QD {ticker}", f"Copy {ticker} combined"
+        keys = "gamma flips, call / put walls, high and low of day, projected HOD / LOD, stacked areas, top setup entries and your own levels"
+    else:
+        name, short, btn, keys = INFO[ind]
     code = TEMPLATE
     code = code.replace("__HEAT_FUNC__", HEAT_FUNC.replace("__HEATSEC__", str(heat_sec)) if has_heat else "")
     code = code.replace("__HEAT_CALL__\n", "        qdHeat(endX)\n" if has_heat else "")
     code = code.replace("__GEXZ_INPUT__", GEXZ_INPUT if ind != "lv" else 'gexZones = "Only near price"')
     code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
+    code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first

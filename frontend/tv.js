@@ -49,6 +49,45 @@ function tvQuickPanel() {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">${pr.map(col).join("")}</div>
       <p class="hint">Both symbols from here, no switching. On TradingView add Q DATA GEX and Q DATA Key Levels twice (one copy for ${esc(tvNice(pr[0]))}, one for ${esc(tvNice(pr[1] || ""))}) and paste each into its own copy. ${esc(tvNice(pr[1] || ""))} levels are converted to futures points and tagged "${esc(tvNice(pr[1] || ""))}" on their labels so you can tell them apart.</p></div>`;
 }
+// ---- 1.34.0: one combined indicator per ticker (Q DATA NDX, Q DATA QQQ, Q DATA SPX): GEX + Key levels + All Tabs in one paste-in ----
+const TVCOMBO = [["NDX", "_NDX"], ["QQQ", "QQQ"], ["SPX", "_SPX"]];
+function comboList() {
+  const have = new Set([...(($("u") || {}).options || [])].map(o => o.value));
+  return TVCOMBO.filter(([, u]) => have.has(u) || u === S.u);
+}
+async function comboCopy(t, btn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Copying...";
+  try {
+    const r = await tvFetch("/tv/combo/levels", Object.assign({ ticker: t, convention: "standard", method: "auto", top: S.lvtop, by_expiry: S.lvexp, mid: S.lvmid, moves: S.lvmov,
+      categories: [...(S.cats || [])].join(",") }, typeof selParams === "function" ? selParams() : {}), { prefs: { kinds: TV2.kinds } });
+    try { await copyText(r.text); } catch (e) { showText(`Levels for Q DATA ${t}`, r.text); }
+    TV2.copied["combo:" + t] = Date.now(); tv2Save();
+    btn.textContent = `Copied ${r.levels} ${t} levels`;
+    const h = document.getElementById("tvc_" + t);
+    if (h) h.textContent = `${r.mapped ? (t === "SPX" ? "ES" : "NQ") + " points (estimated)" : t + " units: save a basis on Key levels"}, data ${new Date(r.data_as_of).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false })} ET${r.cut ? `, ${r.cut} far levels left out to fit` : ""}.`;
+  } catch (e) { btn.textContent = old; alert(`Could not copy the ${t} levels: ` + (e.msg || e.message)); }
+  setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 5000);
+}
+async function comboScript(t, btn, dl) {
+  try {
+    const r = await tvFetch("/tv/combo/script", { ticker: t });
+    if (dl) { download(r.filename, r.code); btn.textContent = "Downloaded"; return; }
+    try { await copyText(r.code); btn.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); }
+  } catch (e) { alert(`Could not get Q DATA ${t}: ` + (e.msg || e.message)); }
+}
+function tvComboPanel() {
+  const list = comboList();
+  if (!list.length) return "";
+  const at = t => { const c = TV2.copied["combo:" + t]; return c ? new Date(c).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "not yet"; };
+  const col = ([t]) => `<div class="tvqcol"><h3 style="margin:0 0 6px">Q DATA ${t}</h3>
+      <div class="actions"><button class="go" data-cc="${t}">Copy ${t} combined</button></div>
+      <p class="hint" style="margin:4px 0 0">You copied: ${at(t)}. <span id="tvc_${t}"></span></p>
+      <details class="adv"><summary>Once: add Q DATA ${t} to TradingView</summary><div class="body"><div class="actions"><button data-cs="${t}">Copy the indicator</button><button data-csdl="${t}">Download .pine</button></div></div></details></div>`;
+  return `<div class="panel tvcard"><h2>Combined: one indicator per ticker</h2>
+      <p class="dim" style="margin:0 0 6px">Each one holds that ticker's GEX levels, Key levels and every All Tabs section in one paste-in, named for the ticker. GEX levels are zones everywhere; every other level (expected move, OI, HOD / LOD...) is a zone only when it is decently close to price, and a small tight zone when it is very close. Each indicator only accepts its own ticker's levels.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">${list.map(col).join("")}</div>
+      <p class="hint">Add each indicator once, then paste its own copy into its first setting. QQQ levels are converted to NQ points and SPX to ES points, like the others.</p></div>`;
+}
 // GEX levels of an earlier day, for backtesting on TradingView (1.29.0)
 async function tvCopyDay(day, btn) {
   if (!day) return;
@@ -172,6 +211,7 @@ R.tv = async function () {
   const kinds = [...g.kinds, ...(g.hidden_kinds || [])].map(k => ({ ...k, ind: "GEX" })).concat([...l.kinds, ...(l.hidden_kinds || [])].map(k => ({ ...k, ind: "Levels" })));
   $("view").innerHTML = `<div class="panel pagehead"><h2>TradingView</h2>
       <p style="max-width:90ch">Paste-in indicators: Q DATA GEX and Q DATA Levels, or both in one with Q DATA All Tabs. Add each once, then paste new levels when Q DATA tells you they changed. Each level starts on the candle of the <b>options data time</b> it first appeared; when a level moves, the old spot stays faded with a step to the new price. Levels near price are see-through zones, farther ones thin lines, and every label says what price should do there. Colors are made for a white chart.</p></div>
+    ${tvComboPanel()}
     ${tvQuickPanel()}
     <div class="tvgrid">${card("gex", g)}${card("lv", l)}${allCard}</div>
     <div class="panel"><h2>Alerts when levels change</h2>
@@ -191,6 +231,9 @@ R.tv = async function () {
   const v = $("view");
   v.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { await tvCopy(b.dataset.copy, b); });
   v.querySelectorAll("[data-q]").forEach(b => b.onclick = () => tvQuickCopy(b.dataset.q, b.dataset.k, b));
+  v.querySelectorAll("[data-cc]").forEach(b => b.onclick = () => comboCopy(b.dataset.cc, b));
+  v.querySelectorAll("[data-cs]").forEach(b => b.onclick = () => comboScript(b.dataset.cs, b, false));
+  v.querySelectorAll("[data-csdl]").forEach(b => b.onclick = () => comboScript(b.dataset.csdl, b, true));
   const dc = $("tvdaycopy"); if (dc) dc.onclick = () => tvCopyDay($("tvday").value, dc);
   const ds = $("tvday"); if (ds) ds.onchange = () => { dc.textContent = "Copy GEX levels for this day"; };
   v.querySelector("[data-allcopy]").onclick = e => allCopy(e.target);

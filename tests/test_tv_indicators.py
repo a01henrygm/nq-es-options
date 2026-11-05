@@ -195,3 +195,48 @@ def test_best_zones_filter_defaults_and_classes():
 def test_symbol_tag_on_labels():
     code = build_script("gex")
     assert "txt = symTag() + nm" in code and 'first != "NDX"' in code
+
+
+def test_combined_indicators_are_named_for_their_ticker_and_only_take_their_own_levels():
+    from backend.services.tv_pine import COMBO_SECTIONS
+    for t in ("NDX", "QQQ", "SPX"):
+        code = build_script("combo", t)
+        assert code.startswith("//@version=6") and all(ord(ch) < 128 for ch in code) and code == build_script("combo", t)
+        assert f'indicator("Q DATA {t}", shorttitle = "QD {t}"' in code and f'wantSym = "{t}"' in code
+        assert [x for x in code.splitlines() if " input." in x and not x.startswith(" ")][0].startswith("dataTxt = input.text_area")
+        assert f'sec{len(COMBO_SECTIONS) - 1} = input.bool(true, "Your levels"' in code and 'input.bool(false, "Heatmap"' in code
+        assert 'distZones = input.bool(true' in code and "superDist()" in code and "border_style = brk ? line.style_dashed" in code
+        assert 'zoneFilter = input.string("Everything", "Show"' in code       # every section shows by default
+    # the other indicators keep their old drawing: no distance zones, no ticker check, settings order unchanged
+    for ind in ("gex", "lv", "kl", "all"):
+        code = build_script(ind)
+        assert "distZones = false" in code and 'wantSym = ""' in code and "input.bool(true, \"Zones by distance" not in code
+    try:
+        build_script("combo", "SPY")
+        assert False
+    except ValueError:
+        pass
+
+
+def test_combined_levels_merge_all_tabs_and_key_levels_without_duplicates():
+    c, db, now = simulated_day()
+    s = c.get("/api/tv/combo/script", params={"ticker": "ndx"}).json()
+    assert s["title"] == "Q DATA NDX" and s["filename"].endswith(".pine") and 'indicator("Q DATA NDX"' in s["code"]
+    assert c.get("/api/tv/combo/script", params={"ticker": "SPY"}).status_code == 422
+    assert c.post("/api/tv/combo/levels", params={"ticker": "QQQ"}, json={}).status_code == 404     # not in this test's symbol list
+    j = c.post("/api/tv/combo/levels", params={"ticker": "NDX", "key": 8}, json={}).json()
+    a = c.post("/api/tv/alltabs/levels", params={"underlying": "_NDX"}, json={}).json()
+    assert j["title"] == "Q DATA NDX" and lines(j["text"], "Q")[0][2] == "combo" and lines(j["text"], "Q")[0][5].startswith("NDX")
+    assert j["levels"] >= a["levels"] and j["chars"] <= tv.MAX_CHARS
+    from backend.services.tv_pine import COMBO_SECTIONS
+    secs = {k["sec"] for k in j["kinds"]}
+    assert secs and all(0 <= x < len(COMBO_SECTIONS) for x in secs)
+    cur = [x for x in lines(j["text"], "L") if x[6] == "0"]
+    ks = lines(j["text"], "K")
+    seen = set()
+    for x in cur:
+        key = (ks[int(x[4])][6], ks[int(x[4])][1], x[1])
+        assert key not in seen, key                      # one level per section, kind and price
+        seen.add(key)
+    assert any(r[1] == "Key levels" for r in lines(j["text"], "R"))
+    assert j["key_levels"] > 0 and j["levels"] < a["levels"] + j["key_levels"]      # Key levels already on All Tabs were not added twice

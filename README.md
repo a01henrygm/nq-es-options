@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.34.0
+
+- **One combined indicator per ticker: Q DATA NDX, Q DATA QQQ and Q DATA SPX.** Each holds that ticker's GEX levels, its Key
+  levels and every All Tabs section in one paste-in (Key levels already on All Tabs are not drawn twice; "Your levels" has its own
+  section). On the TradingView tab use **Copy NDX combined** (or QQQ / SPX), and add each indicator once from the same card. Each
+  indicator only accepts its own ticker's levels: paste QQQ levels into Q DATA NDX and it says so instead of drawing them.
+- **Distance zones.** In the combined indicators every non-GEX level (expected move, open interest, volume, HOD / LOD, charm /
+  vanna...) is a see-through zone only when it is decently close to price (Quick setup > Zones within, auto 0.35%), a thin line
+  when farther, and a **small, tight zone** when it is very close (auto 0.1%, height auto 0.012%; both in "Distance zones").
+  Break levels (flips, expected move, call volume) keep a dashed border. GEX levels stay zones everywhere.
+
 ## New in 1.31.4
 - Q DATA Gamma Strategy now actually fills its trades. Pine strategies default to 100% margin, which needs the full contract
   value (about $600k for one NQ) against the $50k starting capital, so TradingView rejected every order: the signals and
