@@ -29,7 +29,7 @@ from .services import quant as qt
 from .services import strat_qs
 from .services import tv_levels as tv
 from .services.level_kinds import CAT, help_for
-from .services.tv_pine import ALL_LV_OFFSET, COMBO_TICKERS, COMBO_YOURS, build_script
+from .services.tv_pine import ALL_LV_OFFSET, COMBO_TICKERS, build_script, combo_sec_all, combo_sec_kl
 from .services.mapping import SAME_SCALE, contract_expiry, implied_forward_ratio
 from .timeutil import ET, iso, parse_ts, to_et
 
@@ -427,7 +427,7 @@ def register(app, h, q, tab_parts):
             r["first_ts_ms"], r["end_ts_ms"] = ms(r["first_ts"]), ms(r["end_ts"])
         return rows
 
-    def levels(u, ind, prefs=None, history=True, day=None, extra=None, tag=None, extra_rows=None):
+    def levels(u, ind, prefs=None, history=True, day=None, extra=None, tag=None, extra_rows=None, sec_map=None):
         """extra: more runs (the Key levels, for a combined indicator) added to All Tabs, minus any already there. tag: the ind written in the text."""
         if ind not in NAMES:
             raise HTTPException(422, "ind must be gex, lv or all")
@@ -452,6 +452,8 @@ def register(app, h, q, tab_parts):
             runs = runs_today(u, "gex", day) + [dict(r, sec=int(r["sec"]) + ALL_LV_OFFSET) for r in runs_today(u, "lv", day)]
         else:
             runs = runs_today(u, ind, day)
+        if sec_map:                                           # the combined indicators number their sections their own way
+            runs = [dict(r, sec=sec_map(int(r["sec"]))) for r in runs]
         if not history:
             runs = [r for r in runs if r["active"]]
         if extra:
@@ -610,8 +612,8 @@ def register(app, h, q, tab_parts):
             kl, shown = kl_runs(u, convention, method, categories, top, expiration, by_expiry, mid, moves, key, near, quota)
         except HTTPException:
             kl, shown = [], "none (no Key levels yet)"
-        kl = [dict(x, sec=COMBO_YOURS if int(x["sec"]) == len(tv.KL_SECTIONS) - 1 else int(x["sec"])) for x in kl]
-        j = levels(u, "all", (body or {}).get("prefs"), history, extra=kl, tag="combo", extra_rows=[("Key levels", shown)])
+        kl = [dict(x, sec=combo_sec_kl(int(x["sec"]))) for x in kl]
+        j = levels(u, "all", (body or {}).get("prefs"), history, extra=kl, tag="combo", extra_rows=[("Key levels", shown)], sec_map=combo_sec_all)
         j.update({"ind": "combo", "title": f"Q DATA {t}", "ticker": t, "key_levels": len(kl)})
         return j
 

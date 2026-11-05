@@ -31,6 +31,8 @@ def family_of(category):
         return "flip"
     if category == "custom":
         return "mine"
+    if FAMILY.get(category) == "iv":                 # IV walls (1.35.0) are shown on their own, not counted in stacks
+        return None
     return FAMILY.get(category)
 
 

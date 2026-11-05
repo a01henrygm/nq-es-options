@@ -480,12 +480,42 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         return {"meta": m, "available": True, "data": d, "futures_root": root, "mapped": mapper is not None, "oi_from": poi_t,
                 "mapping_note": None if mapper else mapping.get("note")}
 
+    def index_sibling(u):
+        """The loaded index (_NDX, _SPX) an ETF (QQQ, SPY) tracks, or None."""
+        if u in SAME_SCALE:
+            return None
+        return next((s for s in settings.underlyings if s in SAME_SCALE and INDEX_GROUP.get(s) == INDEX_GROUP.get(u)), None)
+
+    def etf_ratio(u, sib, snap, ssnap):
+        """Index / ETF price ratio (about 41 for NDX / QQQ): median of recent synced prices, else the two snapshots' spots."""
+        pairs = pair_observations(db.price_history(u, 300), db.price_history(sib, 300), 120)[-60:]
+        rs = sorted(b / a for _t, a, b in pairs if a)
+        return rs[len(rs) // 2] if rs else (ssnap.spot / snap.spot if ssnap.spot and snap.spot else None)
+
     def futures_mapper(u, snap, now, method="auto"):
-        """(mapper, mapping info). mapper(value) -> mapped dict, or None when no futures price or basis is saved."""
+        """(mapper, mapping info). mapper(value) -> mapped dict, or None when no futures price or basis is saved.
+        An ETF (QQQ, SPY) goes through its index (_NDX, _SPX) when that is loaded (1.35.0): ETF level x index/ETF ratio, then the index's
+        own NQ / ES conversion, so a typed NQ basis works for QQQ too and the result matches the NDX levels."""
         root = FUTURES_FOR.get(u)
         mapping = {"futures_root": root, "available": False}
         if not root:
             return None, mapping
+        sib = index_sibling(u)
+        if sib:
+            try:
+                ssnap = snapshot(sib)
+                smap, sinfo = futures_mapper(sib, ssnap, now, "auto" if method == "ratio" else method)
+                k = etf_ratio(u, sib, snap, ssnap) if smap else None
+            except Exception:
+                smap, k = None, None
+            if smap and k:
+                def via(v, smap=smap, k=k, sib=sib):
+                    r = dict(smap(v * k))
+                    r["warnings"] = list(r.get("warnings") or []) + [f"{u} level x {k:.4f} ({sib.lstrip('_')} / {u}) = {sib.lstrip('_')} {v * k:,.2f}, then converted like the {sib.lstrip('_')} levels."]
+                    r.update(original_level=v, original_units=u, via=sib, etf_ratio=k)
+                    return r
+                return via, {**sinfo, "futures_root": root, "via": sib, "etf_ratio": k,
+                             "note": f"{u} levels go through the {sib.lstrip('_')} data: {u} x {k:.4f}, then the {sib.lstrip('_')} to {root} conversion."}
         row = db.latest_price(root)
         contract = settings.futures_contracts.get(root, "")
         mapping["roll"] = roll_status(contract, now.date())
@@ -516,6 +546,19 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                     r["status"] = "stale"
                 return r
             return mp, mapping
+        if u in SAME_SCALE and method == "auto":            # 1.35.0: nothing saved, use the futures fair value implied by the chain (as the TradingView copies do)
+            from .services.mapping import contract_expiry, implied_forward_ratio
+            ivr = implied_forward_ratio(snap.contracts, snap.spot, now, contract_expiry(contract, now.date()))
+            if ivr:
+                k = ivr["ratio"]
+                mapping.update(available=True, implied=ivr, note=f"No {root} price or basis saved, so {root} prices are the fair value implied by the option chain. "
+                                                                 f"The traded price can sit a few points away: save a basis for exact prices.")
+
+                def imp(v, k=k):
+                    return {"original_level": v, "original_units": u, "mapped": v * k, "method": "options_implied", "status": "estimated",
+                            "base_price": snap.spot, "futures_price": None, "calculated_at": iso(now),
+                            "warnings": [f"Options-implied {root} fair value (x {k:.5f}); no {root} price or basis is saved."]}
+                return imp, mapping
         mapping["note"] = f"Enter a {root} price on the dashboard to see levels in futures points."
         return None, mapping
 
@@ -532,7 +575,15 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
             def conv(v):
                 r = mapper(v)
                 return r["mapped"] if r.get("mapped") is not None and r.get("status") != "invalid" else None
-            info.update(available=True, method="your saved " + root + " price or basis")
+            imp = mapping.get("implied")
+            if imp:
+                info.update(available=True, method="options-implied fair value", ratio=imp["ratio"], from_expiry=imp["from_expiry"],
+                            futures_expiry=imp["futures_expiry"], note=mapping.get("note"))
+            else:
+                info.update(available=True, method="your saved " + root + " price or basis")
+            if mapping.get("via"):
+                info.update(method=f"{mapping['via'].lstrip('_')} data ({info['method']}) and the {mapping['via'].lstrip('_')}/{u} ratio", via=mapping["via"],
+                            note=mapping.get("note"))
             return conv, info
         if u in SAME_SCALE:
             from .services.mapping import contract_expiry, implied_forward_ratio
@@ -544,7 +595,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                                  f"carried to the {settings.futures_contracts.get(root, '')} expiry). The traded price can sit a few points away; save a basis on Key levels for exact prices.")
                 return (lambda v: v * iv["ratio"]), info
         if u not in SAME_SCALE:                              # an ETF (QQQ, SPY): go through its index (_NDX, _SPX) when that is loaded
-            sib = next((s for s in settings.underlyings if s in SAME_SCALE and INDEX_GROUP.get(s) == INDEX_GROUP.get(u)), None)
+            sib = index_sibling(u)
             if sib:
                 try:
                     ssnap = snapshot(sib)
@@ -552,10 +603,8 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
                 except Exception:
                     sconv = None
                 if sconv and ssnap.spot and snap.spot:
-                    pairs = pair_observations(db.price_history(u, 300), db.price_history(sib, 300), 120)[-60:]
-                    rs = sorted(b / a for _t, a, b in pairs if a)          # index / ETF, median of recent synced prices
-                    k_idx = rs[len(rs) // 2] if rs else ssnap.spot / snap.spot
-                    k = sconv(ssnap.spot * 1.0) / ssnap.spot * k_idx if sconv(ssnap.spot) else None
+                    k_idx = etf_ratio(u, sib, snap, ssnap)             # index / ETF, median of recent synced prices
+                    k = sconv(ssnap.spot * 1.0) / ssnap.spot * k_idx if (k_idx and sconv(ssnap.spot)) else None
                     if k:
                         info.update(available=True, method=f"{sib.lstrip('_')} data ({sinfo.get('method', '')}) and the {sib.lstrip('_')}/{u} ratio",
                                     note=f"No {root} price or basis is saved for {u}, so {root} prices go through the {sib.lstrip('_')} data. Estimated: check one level.")
@@ -605,12 +654,13 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         greek_top = None
         if q:                                                # charm, vanna, dealer delta and new positions: enough of each to fill its count
             greek_top = min(8, -(-max(q["charm"], q["vanna"], q["dex"], q["new"]) // 2) + 1) if any(q[k] for k in ("charm", "vanna", "dex", "new")) else 0
+        iv_top = (min(8, -(-q["iv"] // 2) + 1) if q["iv"] else 0) if q else None
         snap = snapshot(u)
         m, fr, now = meta(snap, {"convention": convention, "reliability_rule": RELIABILITY_RULE})
         poi, poi_t = prev_oi_for(u, snap) if (greek_top is None or greek_top) else ({}, None)
         m["new_positions_from"] = poi_t
         lv = build_levels(snap, now, convention, fr, top=top, expirations=exps(expiration), per_expiry=by_expiry, mid=mid, moves=moves, gex_top=gex_top,
-                          greek_top=greek_top, prev_oi=poi or None)
+                          greek_top=greek_top, prev_oi=poi or None, iv_top=iv_top)
         for cl in db.list_custom_levels(u):
             lv.append({"instrument": snap.underlying, "source_timestamp": m["source_timestamp"], "data_status": fr.status, "provider": snap.provider,
                        "category": "custom", "label": cl["label"], "value": cl["value"], "method": "Typed in by you", "inputs": {},
@@ -626,7 +676,9 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
         mt = an.moves_table(snap.contracts, snap.spot, now, 1)
         scale = (mt[0]["sd1"] or mt[0]["straddle"]) if mt else None
         score_levels(lv, snap.spot, scale)
-        zones = make_zones(lv, snap.spot, 999 if (near or q) else key) if (near or key or q) else []
+        # IV walls (1.35.0) only enter the zone list through their own per-type count, so the Key levels top N and nearest N stay as they were
+        zl = lv if q else [x for x in lv if not x["category"].startswith("iv_")]
+        zones = make_zones(zl, snap.spot, 999 if (near or q) else key) if (near or key or q) else []
         available = len(zones)
         if q:
             zones = select_by_quota(zones, q)

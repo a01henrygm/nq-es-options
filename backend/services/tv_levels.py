@@ -24,19 +24,22 @@ HIST_PER_KIND = 4
 
 GEX_SECTIONS = ["Gamma flips", "Walls", "GEX strikes", "GEX zones"]
 LV_SECTIONS = ["Open interest", "Volume", "Expected move", "Charm and vanna", "Dealer delta", "New positions", "HOD / LOD",
-               "Stack zones", "Game plan", "VIX day", "Quant targets", "Heatmap"]
+               "Stack zones", "Game plan", "VIX day", "Quant targets", "Heatmap", "IV walls"]      # IV walls last (1.35.0) so no section moved
 # Q DATA tab -> section of the Levels indicator. GEX comes from these tabs instead: gex, zerodte, flip.
 GEX_TABS = ("gex", "zerodte", "flip")
-LV_TABS = {"oi": 0, "volume": 1, "move": 2, "flows": 3, "delta": 4, "preopen": 5, "hodlod": 6, "stackmap": 7, "gameplan": 8, "vix": 9, "quant": 10}
+LV_TABS = {"oi": 0, "volume": 1, "move": 2, "flows": 3, "delta": 4, "preopen": 5, "hodlod": 6, "stackmap": 7, "gameplan": 8, "vix": 9, "quant": 10, "ivwalls": 12}
 HEAT_SECTION = 11
 OFF_BY_DEFAULT = {"lv": [HEAT_SECTION]}
 # Q DATA Key Levels (1.28.0): the Key levels tab's own levels, the GEX sections first (drawn like Q DATA GEX), then the rest.
-KL_SECTIONS = GEX_SECTIONS + ["Open interest", "Volume", "Expected move", "Charm and vanna", "Dealer delta", "New positions", "Your levels"]
+KL_SECTIONS = GEX_SECTIONS + ["Open interest", "Volume", "Expected move", "Charm and vanna", "Dealer delta", "New positions", "Your levels", "IV walls"]
+KL_YOURS, KL_IV = KL_SECTIONS.index("Your levels"), KL_SECTIONS.index("IV walls")       # IV walls after Your levels so Your levels kept its place
 
 
 def kl_section(category: str, name: str) -> int:
     """Section of the Key Levels indicator for one Key levels category."""
     c = category or ""
+    if c.startswith("iv_"):
+        return KL_IV
     if c in ("gamma_flip", "gex0_flip"):
         return 0
     if c in ("gex0_call_wall", "gex0_put_wall", "call_wall", "put_wall"):
@@ -58,11 +61,12 @@ def kl_section(category: str, name: str) -> int:
     if c.startswith("new_"):
         return 9
     if c == "custom":
-        return 10
+        return KL_YOURS
     return gex_section(name) if "gex" in (name or "").lower() or "wall" in (name or "").lower() or "flip" in (name or "").lower() else 4
 
 # deep, saturated colors that read well on a pure white chart (and still work on dark)
 WHITE = [
+    ("iv wall: vega", "#4d7c0f"), ("iv wall: spike", "#c026d3"), ("iv wall: skew flip", "#92400e"),
     ("0dte flip", "#b45309"), ("gamma flip", "#d97706"), ("flip", "#d97706"),
     ("0dte call wall", "#0891b2"), ("0dte put wall", "#db2777"), ("call wall zone", "#10b981"), ("put wall zone", "#ef4444"),
     ("call wall", "#059669"), ("put wall", "#dc2626"),
@@ -80,7 +84,7 @@ WHITE = [
 ]
 KEY_KINDS = ("gamma flip", "0dte flip", "call wall", "put wall", "your levels", "of day so far", "long entries", "short entries", "stacked areas", "projected hod", "projected lod",
              "straddle (nearest expiry)", "1 sd (nearest expiry)")
-LIVE_KINDS = ("so far", "projected", "monte carlo", "ladder", "typical day", "9:30 open", "straddle", "1 sd", "2 sd", "playbook", "expected move")
+LIVE_KINDS = ("iv wall: spike", "iv wall: skew flip", "so far", "projected", "monte carlo", "ladder", "typical day", "9:30 open", "straddle", "1 sd", "2 sd", "playbook", "expected move")
 STY = {"solid": "S", "dashed": "D", "dotted": "O"}
 
 
@@ -116,6 +120,8 @@ def gex_section(name: str) -> int:
 
 def call_category(name: str) -> str:
     n = (name or "").lower()
+    if "iv wall" in n:
+        return "other"
     if "flip" in n:
         return "gamma_flip"
     if "expected move" in n or "straddle" in n or " sd" in n:

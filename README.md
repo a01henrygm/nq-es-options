@@ -33,6 +33,22 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.35.0
+
+- **IV walls**, three levels read from implied volatility, in one new "IV walls" section of Q DATA NDX / QQQ / SPX, All Tabs and
+  Levels (switch it on or off there), and as an "IV walls" family on the Key levels tab:
+  - **Vega walls**: strikes holding the most vega (open interest x vega), split into call and put zones like the open-interest zones.
+    Where a jump or crush in implied volatility moves the most option value.
+  - **IV spikes**: strikes whose IV sits clearly above the strikes next to it on the same expiry (at least 0.6 vol points and 3
+    robust standard deviations, with 100+ contracts there), on the nearest two expirations.
+  - **Skew flip**: the bottom of the smile, where put skew turns into call skew; one per expiry (nearest, and the first a day out).
+  They are not "best zones" (not tested in the Reactions tab), so "Best zones only" hides them, and they never take a slot in the
+  Key levels top N or the Stack map. Set an IV walls count in the per-type counts to show them there. Old copies of the indicators
+  keep working but need re-adding to show the new section.
+- **QQQ always comes out in NQ points.** QQQ levels now go through the NDX data everywhere in the app (QQQ x the NDX/QQQ ratio, then
+  the same NQ conversion as the NDX levels), so a typed NQ basis works for QQQ too. With no NQ price or basis saved, NDX and QQQ use
+  the NQ fair value implied by the option chain, the same estimate the TradingView copies already used.
+
 ## New in 1.34.0
 
 - **One combined indicator per ticker: Q DATA NDX, Q DATA QQQ and Q DATA SPX.** Each holds that ticker's GEX levels, its Key

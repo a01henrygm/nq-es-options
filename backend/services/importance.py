@@ -3,7 +3,7 @@
 Importance (0 to 100) of one level = size x type x closeness, then merged into zones:
   size       how big the level is compared with the biggest level of its own kind (open interest, volume, GEX...). The gamma flip and
              levels you typed in count as full size.
-  type       gamma flip 1.0, your own levels 1.0, GEX 0.9, open interest 0.85, expected-move edges 0.85, volume 0.7, by-expiry 0.6, mid-size 0.4.
+  type       gamma flip 1.0, your own levels 1.0, GEX 0.9, open interest 0.85, expected-move edges 0.85, volume 0.7, IV walls 0.6-0.7, by-expiry 0.6, mid-size 0.4.
   closeness  levels inside about one expected move of price count fully; the factor fades to 35% at two expected moves away and beyond.
 Zones: only GEX zones and the call and put wall zones are drawn as bands; GEX bands that overlap by half or more are merged into one that shows
 both names, +0.12 for agreeing. Everything else (open interest, volume, expected move, charm, vanna, dealer delta, new positions) is a single
@@ -19,7 +19,7 @@ from datetime import datetime
 TYPE_FACTOR = {"gamma_flip": 1.0, "custom": 1.0, "gex0_call_wall": 0.95, "gex0_put_wall": 0.95, "gex0_flip": 0.9, "gex_call_zone": 0.95, "gex_put_zone": 0.95, "gex_pos_zone": 0.9, "gex_neg_zone": 0.9, "expected_move_ext": 0.7, "oi_call_zone": 0.85, "oi_put_zone": 0.85, "volume_call_zone": 0.7, "volume_put_zone": 0.7, "gex_concentration": 0.9, "open_interest": 0.85, "expected_move": 0.85, "volume": 0.7,
                "oi_by_expiry": 0.6, "volume_by_expiry": 0.6, "oi_mid": 0.4, "volume_mid": 0.4,
                "charm_sell_zone": 0.75, "charm_buy_zone": 0.75, "vanna_pos_zone": 0.7, "vanna_neg_zone": 0.7, "dex_pos_zone": 0.65, "dex_neg_zone": 0.65,
-               "new_call_zone": 0.8, "new_put_zone": 0.8}
+               "new_call_zone": 0.8, "new_put_zone": 0.8, "iv_vega_wall": 0.7, "iv_spike": 0.6, "iv_skew_flip": 0.7}
 RULE = ("Importance = size (versus the biggest level of its kind) x type weight x closeness to price (full inside about one expected move, "
         "fading to 35% beyond two). Only GEX zones and the call and put walls are bands; every other level is its own line (levels at the "
         "exact same price share one line, +0.12 for each extra kind). The weights are my own judgement, not tested evidence.")
@@ -39,6 +39,8 @@ def _metric(l):
             return abs(i[k])
     if cat == "volume":
         return (i.get("call") or 0) + (i.get("put") or 0)
+    if cat == "iv_spike":
+        return i.get("bump")
     for k in ("call_oi", "put_oi", "call", "put", "total"):
         if k in i and isinstance(i[k], (int, float)):
             return i[k]
@@ -46,7 +48,8 @@ def _metric(l):
 
 
 GREEK_TAGS = {"charm_sell_zone": "Charm sell", "charm_buy_zone": "Charm buy", "vanna_pos_zone": "Vanna+", "vanna_neg_zone": "Vanna-",
-              "dex_pos_zone": "Dealer long delta", "dex_neg_zone": "Dealer short delta", "new_call_zone": "New call OI", "new_put_zone": "New put OI"}
+              "dex_pos_zone": "Dealer long delta", "dex_neg_zone": "Dealer short delta", "new_call_zone": "New call OI", "new_put_zone": "New put OI",
+              "iv_vega_wall": "Vega wall", "iv_spike": "IV spike", "iv_skew_flip": "Skew flip"}
 
 
 def short_tag(l):
@@ -88,6 +91,8 @@ def score_levels(levels, spot, scale):
         c, lab = l["category"], l["label"]
         if c in ("gamma_flip", "custom", "gex0_flip"):
             size = 1.0 if c != "custom" else 0.95
+        elif c == "iv_skew_flip":
+            size = 0.8
         elif c in ("expected_move", "expected_move_ext"):
             d = (l.get("inputs") or {}).get("days")
             base = 1.0 if c == "expected_move" else 0.5
@@ -108,9 +113,10 @@ FAMILY = {"gex0_call_wall": "gex", "gex0_put_wall": "gex", "gex0_flip": "gex", "
           "volume": "vol", "volume_call_zone": "vol", "volume_put_zone": "vol", "volume_by_expiry": "vol", "volume_mid": "vol",
           "expected_move": "move", "expected_move_ext": "move",
           "charm_sell_zone": "charm", "charm_buy_zone": "charm", "vanna_pos_zone": "vanna", "vanna_neg_zone": "vanna",
-          "dex_pos_zone": "dex", "dex_neg_zone": "dex", "new_call_zone": "new", "new_put_zone": "new"}
-QUOTA_KEYS = ("gex", "oi", "vol", "move", "charm", "vanna", "dex", "new")
-QUOTA_RULE = ("Per-type counts: within each family (GEX, open interest, volume, expected move, charm, vanna, dealer delta, new positions) the highest-scoring zones are kept, up to that family's "
+          "dex_pos_zone": "dex", "dex_neg_zone": "dex", "new_call_zone": "new", "new_put_zone": "new",
+          "iv_vega_wall": "iv", "iv_spike": "iv", "iv_skew_flip": "iv"}
+QUOTA_KEYS = ("gex", "oi", "vol", "move", "charm", "vanna", "dex", "new", "iv")
+QUOTA_RULE = ("Per-type counts: within each family (GEX, open interest, volume, expected move, charm, vanna, dealer delta, new positions, IV walls) the highest-scoring zones are kept, up to that family's "
               "count. A zone where several families line up uses ONE slot, from the family that leads it if it has room, otherwise from another "
               "family in it that still has room. The gamma flip and levels you typed in are always shown and use no slot.")
 

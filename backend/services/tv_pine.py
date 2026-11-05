@@ -16,7 +16,7 @@ Written as conservative Pine v6 (ASCII only); it has not been compiled by Tradin
 """
 from __future__ import annotations
 
-from .tv_levels import GEX_SECTIONS, LV_SECTIONS, HEAT_SECTION, KL_SECTIONS
+from .tv_levels import GEX_SECTIONS, LV_SECTIONS, HEAT_SECTION, KL_SECTIONS, KL_YOURS, KL_IV
 
 POSITIONS = ["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"]
 POS = ('tablePos == "Top left" ? position.top_left : tablePos == "Bottom right" ? position.bottom_right : '
@@ -153,6 +153,8 @@ kindClass(string nm) =>
         c := 3
     else if str.contains(n, "biggest gex") or str.contains(n, "positive gex") or str.contains(n, "negative gex") or str.contains(n, "call wall zone") or str.contains(n, "put wall zone") or str.contains(n, "call open interest") or str.contains(n, "dealer delta: long")
         c := 0
+    else if str.contains(n, "iv wall")
+        c := 2
     else if str.contains(n, "flip") or str.contains(n, "expected move") or str.contains(n, "call volume")
         c := 1
     c
@@ -524,9 +526,21 @@ qdHeat(int endX) =>
 ALL_LV_OFFSET = len(GEX_SECTIONS)
 ALL_SECTIONS = GEX_SECTIONS + LV_SECTIONS
 # Combined per-ticker indicators (1.34.0): All Tabs + Key levels in one, named for the ticker (Q DATA NDX, Q DATA QQQ, Q DATA SPX).
-# Key levels sections 0-9 are the same sections as All Tabs 0-9; its "Your levels" goes last.
-COMBO_SECTIONS = ALL_SECTIONS + ["Your levels"]
-COMBO_YOURS = len(ALL_SECTIONS)
+# Key levels sections 0-9 are the same sections as All Tabs 0-9; then "Your levels", then "IV walls" (1.35.0, last so nothing moved).
+ALL_IV = ALL_LV_OFFSET + LV_SECTIONS.index("IV walls")
+COMBO_SECTIONS = [s for i, s in enumerate(ALL_SECTIONS) if i != ALL_IV] + ["Your levels", "IV walls"]
+COMBO_YOURS, COMBO_IV = len(COMBO_SECTIONS) - 2, len(COMBO_SECTIONS) - 1
+assert ALL_IV == len(ALL_SECTIONS) - 1
+
+
+def combo_sec_all(sec: int) -> int:
+    """All Tabs section -> combined indicator section."""
+    return COMBO_IV if sec == ALL_IV else sec
+
+
+def combo_sec_kl(sec: int) -> int:
+    """Key levels section -> combined indicator section."""
+    return COMBO_YOURS if sec == KL_YOURS else COMBO_IV if sec == KL_IV else sec
 COMBO_TICKERS = {"NDX": "_NDX", "QQQ": "QQQ", "SPX": "_SPX"}
 INFO = {"gex": ("Q DATA GEX", "QD GEX", "Copy GEX levels", "gamma flips and call / put walls"),
         "lv": ("Q DATA Levels", "QD Levels", "Copy Levels", "high and low of day, projected HOD / LOD, stacked areas and top setup entries"),

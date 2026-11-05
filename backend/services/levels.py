@@ -3,6 +3,7 @@ from __future__ import annotations
 from . import analytics as an
 from . import intraday as idy
 from . import flows as fl
+from . import iv_walls as ivw
 
 RELIABILITY_RULE = ("high: data fresh/closed-session and 100+ contracts used; medium: 30+ contracts; "
                     "low: fewer, stale, or no source timestamp. Open-interest levels are daily figures by nature.")
@@ -27,12 +28,13 @@ def tiered(zs, side, top, mid, floor):
     return mine[:top], mids
 
 
-def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expiry=0, mid=0, moves=0, gex_top=None, greek_top=None, prev_oi=None) -> list:
+def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expiry=0, mid=0, moves=0, gex_top=None, greek_top=None, prev_oi=None, iv_top=None) -> list:
     """top: how many strikes to keep per type. expirations: list of ISO dates to use (None = all in the snapshot).
     per_expiry: also add open-interest and volume strikes for each of the next N expirations on their own (0 = off).
     gex_top: how many GEX strikes and GEX zones to build per side (None = same as top, up to 3 zones). Lets GEX have more levels than the rest.
     greek_top: how many charm, vanna and dealer-delta zones to build per side (None = same as top, up to 3; 0 = none).
-    prev_oi: {ticker: open interest} from the previous session, for the new-positioning zones (None = skip them)."""
+    prev_oi: {ticker: open interest} from the previous session, for the new-positioning zones (None = skip them).
+    iv_top: how many IV walls of each kind (vega zones per side, IV spikes per expiry) to build (None = same as top, up to 3; 0 = none)."""
     gt = gex_top or top
     gz = max(1, min(gex_top, 8)) if gex_top else max(1, min(top, 3))
     spot = snap.spot
@@ -169,4 +171,25 @@ def build_levels(snap, now, convention, fresh, top=2, expirations=None, per_expi
                     add(f"new_{side}_zone", f"New {side} positions zone" + (f" #{i + 1}" if i else ""), z_["center"], fl.NEW_OI_RULE,
                         {"low": z_["low"], "high": z_["high"], "zone_mag": z_["magnitude"], "peak": z_["peak"], "call_strikes": z_["call_strikes"],
                          "put_strikes": z_["put_strikes"], "members": z_["members"]}, len(rows), {"low": z_["low"], "high": z_["high"]})
+    # IV walls (1.35.0): vega walls, IV spikes and the skew flip, read from implied volatility. Positions and prices, not a forecast.
+    it = max(0, min(iv_top, 8)) if iv_top is not None else max(1, min(top, 3))
+    if it:
+        vz, n_v = ivw.vega_walls(cons, spot, now, it)
+        for side in ("call", "put"):
+            for i, z_ in enumerate(z_ for z_ in vz if z_["side"] == side):
+                add("iv_vega_wall", f"Vega wall ({side}s)" + (f" #{i + 1}" if i else ""), z_["center"], ivw.VEGA_RULE,
+                    {"low": z_["low"], "high": z_["high"], "zone_mag": z_["magnitude"], "peak": z_["peak"], "call_strikes": z_["call_strikes"],
+                     "put_strikes": z_["put_strikes"], "members": z_["members"], "units": "dollars per 1 volatility point"}, n_v, {"low": z_["low"], "high": z_["high"]})
+        seen_tag = {}
+        for s_ in ivw.iv_spikes(cons, spot, now, top=it):
+            tag = f"{s_['expiry'][5:7]}/{s_['expiry'][8:10]}"
+            seen_tag[tag] = seen_tag.get(tag, 0) + 1
+            add("iv_spike", f"IV spike {tag}" + (f" #{seen_tag[tag]}" if seen_tag[tag] > 1 else ""), s_["strike"], ivw.SPIKE_RULE,
+                {"expiry": s_["expiry"], "days": s_["dte"], "iv": round(s_["iv"], 4), "bump": round(s_["bump"], 4), "bump_points": round(s_["bump"] * 100, 2),
+                 "activity": s_["activity"]}, int(s_["activity"]))
+        for f_ in ivw.skew_flips(cons, spot, now):
+            tag = f"{f_['expiry'][5:7]}/{f_['expiry'][8:10]}"
+            add("iv_skew_flip", f"Skew flip {tag}", f_["strike"], ivw.SKEW_RULE,
+                {"expiry": f_["expiry"], "days": f_["dte"], "iv": round(f_["iv"], 4), "put_side_iv": round(f_["put_side_iv"], 4),
+                 "call_side_iv": round(f_["call_side_iv"], 4)}, len(cons))
     return out

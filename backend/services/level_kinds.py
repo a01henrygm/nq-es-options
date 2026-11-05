@@ -20,12 +20,17 @@ CAT = {
     "vanna_pos_zone": ("Vanna positive", "#c34dff", "solid"), "vanna_neg_zone": ("Vanna negative", "#ffb300", "solid"),
     "dex_pos_zone": ("Dealer delta: long", "#29d3ff", "solid"), "dex_neg_zone": ("Dealer delta: short", "#ff0a78", "solid"),
     "new_call_zone": ("New call positions", "#9dff4d", "solid"), "new_put_zone": ("New put positions", "#ff4d4d", "solid"),
+    "iv_vega_wall": ("IV wall: vega", "#a3e635", "solid"), "iv_spike": ("IV wall: spike", "#f472b6", "dashed"),
+    "iv_skew_flip": ("IV wall: skew flip", "#fde68a", "dashed"),
     "custom": ("Your levels", "#ffffff", "solid"),
 }
 
 
 # What each kind of level means, in plain words: (short meaning shown next to the label, longer help shown in the settings tooltip)
 HELP_RULES = [
+    ("IV wall: vega", "vega wall", "Strikes holding the most vega (open interest x vega): where a jump or crush in implied volatility moves the most option value, so hedging reacts most there. Like an open-interest wall, weighted by volatility."),
+    ("IV wall: spike", "IV bump", "Implied volatility at this strike sits clearly above the strikes next to it: traders are paying up for this exact price. Hover for how many vol points and which expiry."),
+    ("IV wall: skew flip", "skew flip", "The bottom of the smile. Below it IV rises as price falls (put skew); above it IV rises as price rises (call skew). A volatility regime line, like the gamma flip for vol."),
     ("High of day so far", "today's high", "The session's high so far. Above it, price is making a new high of day."),
     ("Low of day so far", "today's low", "The session's low so far. Below it, price is making a new low of day."),
     ("HOD ladder", "HOD target", "The 9:30 open plus k standard deviations of the day: where the high of day usually lands. Hover for the chance of reaching it."),

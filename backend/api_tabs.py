@@ -34,6 +34,7 @@ TABS = {
     "move": ("Q DATA Expected Move", "QD ExpMove", "expected_move"),
     "delta": ("Q DATA Delta Exposure", "QD Delta", "delta_exposure"),
     "hodlod": ("Q DATA HOD / LOD", "QD HOD/LOD", "hod_lod"),      # last, so adding it did not move the other tabs' settings
+    "ivwalls": ("Q DATA IV Walls", "QD IV", "iv_walls"),          # 1.35.0, after HOD / LOD for the same reason
 }
 # Tabs whose levels are the app's level list filtered to some categories: (categories, extra levels_payload settings)
 CAT_TABS = {
@@ -44,6 +45,7 @@ CAT_TABS = {
     "volume": (["volume", "volume_by_expiry", "volume_mid", "volume_call_zone", "volume_put_zone"], {"top": 6, "by_expiry": 4, "mid": 2}),
     "preopen": (["new_call_zone", "new_put_zone"], {}),
     "delta": (["dex_pos_zone", "dex_neg_zone"], {}),
+    "ivwalls": (["iv_vega_wall", "iv_spike", "iv_skew_flip"], {"top": 3}),
 }
 
 

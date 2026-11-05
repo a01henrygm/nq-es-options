@@ -204,7 +204,8 @@ def test_combined_indicators_are_named_for_their_ticker_and_only_take_their_own_
         assert code.startswith("//@version=6") and all(ord(ch) < 128 for ch in code) and code == build_script("combo", t)
         assert f'indicator("Q DATA {t}", shorttitle = "QD {t}"' in code and f'wantSym = "{t}"' in code
         assert [x for x in code.splitlines() if " input." in x and not x.startswith(" ")][0].startswith("dataTxt = input.text_area")
-        assert f'sec{len(COMBO_SECTIONS) - 1} = input.bool(true, "Your levels"' in code and 'input.bool(false, "Heatmap"' in code
+        assert 'sec16 = input.bool(true, "Your levels"' in code and 'input.bool(false, "Heatmap"' in code      # same place as in 1.34.0
+        assert f'sec{len(COMBO_SECTIONS) - 1} = input.bool(true, "IV walls"' in code
         assert 'distZones = input.bool(true' in code and "superDist()" in code and "border_style = brk ? line.style_dashed" in code
         assert 'zoneFilter = input.string("Everything", "Show"' in code       # every section shows by default
     # the other indicators keep their old drawing: no distance zones, no ticker check, settings order unchanged
