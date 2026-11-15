@@ -33,6 +33,16 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.36.0
+
+- **Time cycle slabs** under the candles in Q DATA NDX / QQQ / SPX (and the other paste-ins), in a new "Time cycles" group at the
+  end of the settings: one row of colored slabs per cycle, top to bottom **90 minute** (Q1-Q4 of each session), **1 hour** (off by
+  default), **4 hour** (18, 22, 02, 06, 10, 14 ET), **sessions** (Asia / London / NY AM / NY PM), **day of week**, **week** and
+  **month** (off by default). The cycle price is in right now is outlined and shows the time left. Rows only show on timeframes
+  shorter than their cycle, the slabs sit just under the lowest candle in view and follow as you scroll, and the day can start at
+  18:00 ET (futures, default) or midnight. On by default in Q DATA NDX and SPX, off in QQQ and the older paste-ins so two
+  indicators on one chart don't draw it twice. Re-add the indicator once to get it.
+
 ## New in 1.35.0
 
 - **IV walls**, three levels read from implied volatility, in one new "IV walls" section of Q DATA NDX / QQQ / SPX, All Tabs and

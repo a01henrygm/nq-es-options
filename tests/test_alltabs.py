@@ -20,6 +20,7 @@ def test_all_tabs_script_has_every_section_and_the_paste_box_first():
         assert f'sec{i} = input.bool(' in code and f'"{nm}"' in code
     heat = tv.HEAT_SECTION + ALL_LV_OFFSET
     assert f'sec{heat} = input.bool(false, "Heatmap"' in code and f"secOn({heat})" in code
+    inputs = inputs[:next(i for i, x in enumerate(inputs) if x.startswith("cycOn "))]          # 1.36.0 time cycles go after
     assert inputs[-4].startswith("gexZones = input.string(")                   # new settings go last
     assert inputs[-3].startswith('zoneFilter = input.string("Everything"') and inputs[-2].startswith("showStackN = input.bool(")
     assert inputs[-1].startswith("symTagIn = input.string(")

@@ -132,6 +132,7 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        inputs = inputs[:next(i for i, x in enumerate(inputs) if x.startswith("cycOn "))]          # 1.36.0 time cycles go after
         assert inputs[-3].startswith("zoneFilter = input.string(") and inputs[-2].startswith("showStackN")   # 1.32.0
         assert inputs[-1].startswith('symTagIn = input.string("Auto"')                                          # 1.33.0, last
         inputs = inputs[:-3]
@@ -241,3 +242,13 @@ def test_combined_levels_merge_all_tabs_and_key_levels_without_duplicates():
         seen.add(key)
     assert any(r[1] == "Key levels" for r in lines(j["text"], "R"))
     assert j["key_levels"] > 0 and j["levels"] < a["levels"] + j["key_levels"]      # Key levels already on All Tabs were not added twice
+
+
+def test_time_cycle_slabs_are_the_last_settings_and_on_for_ndx_and_spx():
+    for t, on in (("NDX", True), ("SPX", True), ("QQQ", False)):
+        code = build_script("combo", t)
+        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        assert inputs[-1].startswith("cycLeft   = input.bool(") and f'cycOn     = input.bool({"true" if on else "false"}, "Show time cycle slabs"' in code
+        assert "chart.left_visible_bar_time" in code and "cycDraw(495 - array.size(bxs))" in code and '"18:00 ET (futures)"' in code
+    for ind in ("gex", "lv", "kl", "all"):
+        assert 'cycOn     = input.bool(false, "Show time cycle slabs"' in build_script(ind)
