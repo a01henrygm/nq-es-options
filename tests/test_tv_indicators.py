@@ -132,7 +132,7 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        inputs = inputs[:next(i for i, x in enumerate(inputs) if x.startswith("cycOn "))]          # 1.36.0 time cycles go after
+        inputs = inputs[:next((i for i, x in enumerate(inputs) if x.startswith("gpOn ")), len(inputs))]   # 1.37.0 GEX bars go after
         assert inputs[-3].startswith("zoneFilter = input.string(") and inputs[-2].startswith("showStackN")   # 1.32.0
         assert inputs[-1].startswith('symTagIn = input.string("Auto"')                                          # 1.33.0, last
         inputs = inputs[:-3]
@@ -244,14 +244,40 @@ def test_combined_levels_merge_all_tabs_and_key_levels_without_duplicates():
     assert j["key_levels"] > 0 and j["levels"] < a["levels"] + j["key_levels"]      # Key levels already on All Tabs were not added twice
 
 
-def test_time_cycle_slabs_are_the_last_settings_and_on_for_ndx_and_spx():
-    for t, on in (("NDX", True), ("SPX", True), ("QQQ", False)):
-        code = build_script("combo", t)
-        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        assert inputs[-8].startswith("cycLeft   = input.bool(") and f'cycOn     = input.bool({"true" if on else "false"}, "Show time cycle slabs"' in code
-        assert "chart.left_visible_bar_time" in code and "cycDraw(495 - array.size(bxs))" in code and '"18:00 ET (futures)"' in code
-    for ind in ("gex", "lv", "kl", "all"):
-        assert 'cycOn     = input.bool(false, "Show time cycle slabs"' in build_script(ind)
+def test_time_cycle_slabs_are_gone_from_every_indicator():
+    """1.38.0: the 1.36.0 time cycle slabs were taken out of every paste-in."""
+    for code in [build_script(i) for i in ("gex", "lv", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
+        assert "cyc" not in code and "slab" not in code.lower() and "Time cycles" not in code
+        assert "gpDraw()" in code and all(ord(ch) < 128 for ch in code)
+
+
+def test_day_map_reads_the_combined_copy_and_shows_gex_key_levels_and_the_straddle():
+    """1.38.0: Q DATA Day Map - every GEX strike, the key levels of the day, the straddle; fed by Copy NDX combined."""
+    import re
+    from backend.services.tv_daymap import build_daymap_script
+    code = build_daymap_script()
+    assert code == build_daymap_script() and code.startswith("//@version=6") and all(ord(ch) < 128 for ch in code)
+    assert "__" not in code.replace("max_bars_back", "")
+    inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+    assert inputs[0].startswith("dataTxt = input.text_area")
+    assert 'indicator("Q DATA Day Map"' in code and "cyc" not in code
+    # parsing matches where build_text writes the fields
+    assert 'array.push(kSec, int(num(a, 6)))' in code and 'array.push(kKey, fld(a, 7) == "1")' in code
+    assert "p = num(a, 1)" in code and "array.push(lvG, int(num(a, 4)))" in code and "array.push(lvN, fld(a, 9))" in code
+    assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "keyDraw(endX)" in code and "Straddle high" in code
+    # balanced parentheses / brackets on every line (a cheap syntax guard, the script is not compiled here)
+    for ln in code.splitlines():
+        t = re.sub(r'"[^"]*"', '""', ln.split("//")[0] if not ln.lstrip().startswith("//") else "")
+        assert t.count("(") == t.count(")") and t.count("[") == t.count("]"), ln
+    c, db, now = simulated_day()
+    s = c.get("/api/tv/daymap/script").json()
+    assert s["code"] == code and s["filename"].endswith(".pine") and s["title"] == "Q DATA Day Map"
+    j = c.post("/api/tv/combo/levels", params={"ticker": "NDX"}, json={}).json()
+    ks = lines(j["text"], "K")
+    names = [k[1].lower() for k in ks]
+    assert any("straddle" in n and "nearest" in n for n in names)              # the straddle is in the combined copy
+    assert any(k[7] == "1" for k in ks) and len(lines(j["text"], "G")) > 12    # key levels and every GEX strike too
+    assert any(r[1] == "Data as of" for r in lines(j["text"], "R"))
 
 
 def test_every_gex_strike_goes_to_every_indicator_with_gex():

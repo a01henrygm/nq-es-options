@@ -12,8 +12,7 @@ What it draws (made for a pure white chart, with a Dark chart option):
   - a short read on each label: HOLD (rejects down / bounces up), BREAK (pushes through), CHOP, worked out live against price;
   - an info box: data time, copy time, the nearest level above and below with their reads;
   - Levels only: the Activity heatmap as shaded strike bands (off until switched on).
-  - time cycles (1.36.0): rows of slabs under the candles for 90 minute, 1 hour, 4 hour, sessions, day of week, week and month,
-    the current one outlined with the time left (on by default in Q DATA NDX and SPX).
+  - (the 1.36.0 time cycle slabs were taken out again in 1.38.0.)
   - GEX by strike (1.37.0, every indicator with GEX): EVERY strike's net GEX as a bar on the left of the chart, length by size,
     blue positive / purple negative, the biggest labeled. Drawn with two filled polylines, so it never eats the line / box budget.
 Written as conservative Pine v6 (ASCII only); it has not been compiled by TradingView from here.
@@ -76,21 +75,6 @@ showStackN = input.bool(true, "Count stacked levels (x2, x3...)", group = grpB, 
 // added in 1.33.0 (last)
 symTagIn = input.string("Auto", "Label tag", options = ["Auto", "Always", "Never"], group = grpB, tooltip = "Puts the symbol the levels came from in front of every label (for example QQQ), so NDX and QQQ levels pasted into two copies of this indicator on one chart are easy to tell apart. Auto: only for levels that did not come from the index itself (QQQ, SPY).")
 __COMBO_INPUT__
-// added in 1.36.0 (last, so earlier settings keep their place)
-grpY = "Time cycles (slabs under the candles)"
-cycOn     = input.bool(__CYC_DEFAULT__, "Show time cycle slabs", group = grpY, tooltip = "Rows of colored slabs under the candles, one row per cycle: 90 minute, 1 hour, 4 hour, sessions (Asia / London / NY AM / NY PM), day of week, week and month. The cycle price is in right now is outlined and shows the time left. A row only shows when the chart timeframe is shorter than its cycle. With two Q DATA indicators on one chart, switch this on in only one of them.")
-cyc90     = input.bool(true, "90 minute", group = grpY, inline = "y1")
-cyc1h     = input.bool(false, "1 hour", group = grpY, inline = "y1")
-cyc4h     = input.bool(true, "4 hour", group = grpY, inline = "y1")
-cycSes    = input.bool(true, "Sessions", group = grpY, inline = "y2")
-cycDay    = input.bool(true, "Day of week", group = grpY, inline = "y2")
-cycWk     = input.bool(true, "Week", group = grpY, inline = "y2")
-cycMon    = input.bool(false, "Month", group = grpY, inline = "y2")
-cycStart  = input.string("18:00 ET (futures)", "Day starts at", options = ["18:00 ET (futures)", "Midnight ET"], group = grpY, tooltip = "18:00 ET: the futures trading day, so Monday starts Sunday 18:00, the 4 hour slabs are 18, 22, 02, 06, 10, 14 (like TradingView's 4H candles on CME) and the 90 minute cycles are the four quarters of each 6 hour session.")
-cycRowPct = input.float(3.0, "Slab height (% of the visible range)", minval = 0.5, maxval = 15.0, step = 0.5, group = grpY)
-cycGapPct = input.float(1.0, "Gap under the candles (% of the visible range)", minval = 0.0, maxval = 15.0, step = 0.5, group = grpY)
-cycT      = input.int(62, "Slab transparency", minval = 0, maxval = 100, group = grpY)
-cycLeft   = input.bool(true, "Time left in the current cycle", group = grpY)
 __GP_INPUT__
 
 // ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
@@ -513,150 +497,6 @@ qdTable(int n, bool[] pick) =>
         table.cell(out, 1, rows + 3, wr ? "Pasted " + symFirst() + " levels: this indicator is for " + wantSym : old ? "These are from " + array.get(meta, 2) + ": copy today's from Q DATA" : btEnd > 0 ? "Levels of " + array.get(meta, 2) + ", drawn to that day's 5 pm ET close" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)
     out
 
-// ---- time cycles (1.36.0): slabs under the candles, one row per cycle ----
-// rows top to bottom: 0 = 90 minute, 1 = 1 hour, 2 = 4 hour, 3 = session, 4 = day, 5 = week, 6 = month
-cycLen(int r) =>
-    r == 0 ? 5400000 : r == 1 ? 3600000 : r == 2 ? 14400000 : r == 3 ? 21600000 : r == 4 ? 86400000 : r == 5 ? 604800000 : 2419200000
-
-cycUsed(int r) =>
-    sw = r == 0 ? cyc90 : r == 1 ? cyc1h : r == 2 ? cyc4h : r == 3 ? cycSes : r == 4 ? cycDay : r == 5 ? cycWk : cycMon
-    cycOn and sw and cycLen(r) > timeframe.in_seconds() * 1000
-
-// New York wall clock of a time as epoch ms, moved 6 hours ahead when the day starts at 18:00 ET
-cycWall(int t) =>
-    w = timestamp("UTC", year(t, "America/New_York"), month(t, "America/New_York"), dayofmonth(t, "America/New_York"), hour(t, "America/New_York"), minute(t, "America/New_York"), second(t, "America/New_York"))
-    w + (cycStart == "18:00 ET (futures)" ? 21600000 : 0)
-
-dowName(int d) =>
-    d == 2 ? "MON" : d == 3 ? "TUE" : d == 4 ? "WED" : d == 5 ? "THU" : d == 6 ? "FRI" : d == 7 ? "SAT" : "SUN"
-
-cycColor(int r, int k) =>
-    color c = color.gray
-    if r == 4
-        c := k == 2 ? #2563eb : k == 3 ? #7c3aed : k == 4 ? #d97706 : k == 5 ? #059669 : k == 6 ? #dc2626 : #94a3b8
-    else if r == 3
-        c := k == 0 ? #7c3aed : k == 1 ? #0284c7 : k == 2 ? #ea580c : #059669
-    else if r == 0
-        c := k == 0 ? #64748b : k == 1 ? #d97706 : k == 2 ? #2563eb : #9333ea
-    else if r == 5
-        c := k == 0 ? #4f46e5 : #818cf8
-    else if r == 6
-        c := k == 0 ? #be185d : #f472b6
-    else
-        c := k == 0 ? #475569 : #94a3b8
-    c
-
-cycLeftTxt(int ms) =>
-    m = int(ms / 60000)
-    d = int(m / 1440)
-    h = int((m % 1440) / 60)
-    mm = m % 60
-    d > 0 ? str.tostring(d) + "d " + str.tostring(h) + "h" : h > 0 ? str.tostring(h) + "h " + str.tostring(mm) + "m" : str.tostring(mm) + "m"
-
-var float cycLo = na
-var float cycHi = na
-var int[]    cyR = array.new<int>()
-var int[]    cyS = array.new<int>()
-var int[]    cyE = array.new<int>()
-var int[]    cyK = array.new<int>()
-var string[] cyT = array.new<string>()
-var int[]    cyLast = array.new<int>(7, -1)
-var box[]    cyB = array.new<box>()
-
-// on every candle in view: its high / low, and a new slab where a cycle starts
-if cycOn and time >= chart.left_visible_bar_time and time <= chart.right_visible_bar_time
-    cycLo := na(cycLo) ? low : math.min(cycLo, low)
-    cycHi := na(cycHi) ? high : math.max(cycHi, high)
-    L = cycWall(time)
-    for r = 0 to 6
-        if cycUsed(r)
-            int id = 0
-            int ws = 0
-            int we = 0
-            if r <= 4
-                P = cycLen(r)
-                id := int(math.floor(L / P))
-                ws := id * P
-                we := ws + P
-            else if r == 5
-                dn = int(math.floor(L / 86400000))
-                id := int(math.floor((dn + 3) / 7))
-                ws := (id * 7 - 3) * 86400000
-                we := ws + 604800000
-            else
-                y = year(L, "UTC")
-                mo = month(L, "UTC")
-                id := y * 12 + mo
-                ws := timestamp("UTC", y, mo, 1, 0, 0)
-                we := timestamp("UTC", mo == 12 ? y + 1 : y, mo == 12 ? 1 : mo + 1, 1, 0, 0)
-            if id != array.get(cyLast, r)
-                array.set(cyLast, r, id)
-                rs = time - (L - ws)
-                re = time + (we - L)
-                int k = id % 2
-                string tx = ""
-                if r == 0
-                    k := id % 4
-                    tx := "90m Q" + str.tostring(k + 1) + "  " + str.format_time(rs, "HH:mm", "America/New_York")
-                else if r == 1
-                    tx := str.format_time(rs, "HH:mm", "America/New_York")
-                else if r == 2
-                    tx := "4H " + str.format_time(rs, "HH:mm", "America/New_York")
-                else if r == 3
-                    hs = hour(rs, "America/New_York")
-                    k := hs >= 17 ? 0 : hs < 6 ? 1 : hs < 12 ? 2 : 3
-                    tx := k == 0 ? "ASIA" : k == 1 ? "LONDON" : k == 2 ? "NY AM" : "NY PM"
-                else if r == 4
-                    k := dayofweek(L, "UTC")
-                    tx := dowName(k) + "  " + str.format_time(ws, "MM/dd", "UTC")
-                else if r == 5
-                    tx := "WEEK of " + str.format_time(ws, "MMM d", "UTC")
-                else
-                    tx := str.format_time(ws, "MMMM yyyy", "UTC")
-                array.push(cyR, r)
-                array.push(cyS, rs)
-                array.push(cyE, re)
-                array.push(cyK, k)
-                array.push(cyT, tx)
-                if array.size(cyR) > 450
-                    array.shift(cyR)
-                    array.shift(cyS)
-                    array.shift(cyE)
-                    array.shift(cyK)
-                    array.shift(cyT)
-
-// drawn on the last candle with the boxes the levels left free
-cycDraw(int budget) =>
-    for b in cyB
-        box.delete(b)
-    array.clear(cyB)
-    if cycOn and not na(cycLo) and array.size(cyR) > 0
-        white = theme == "White chart"
-        rng = math.max(cycHi - cycLo, syminfo.mintick * 20)
-        rowH = rng * cycRowPct / 100
-        gap = rng * cycGapPct / 100
-        rowPos = array.new<int>(7, -1)
-        nRows = 0
-        for r = 0 to 6
-            if cycUsed(r)
-                array.set(rowPos, r, nRows)
-                nRows += 1
-        for i = array.size(cyR) - 1 to 0
-            r = array.get(cyR, i)
-            pos = array.get(rowPos, r)
-            if pos >= 0 and array.size(cyB) < budget
-                s = array.get(cyS, i)
-                e = array.get(cyE, i)
-                c = cycColor(r, array.get(cyK, i))
-                cur = s <= time and time < e
-                tx = array.get(cyT, i)
-                if cur and cycLeft and e > timenow
-                    tx := tx + "  (" + cycLeftTxt(e - timenow) + " left)"
-                top = cycLo - gap - pos * rowH
-                bot = top - rowH * 0.86
-                array.push(cyB, box.new(s, top, e, bot, xloc = xloc.bar_time, border_color = color.new(c, cur ? 0 : 45), border_width = cur ? 2 : 1, bgcolor = color.new(c, cur ? math.max(cycT - 25, 0) : cycT), text = tx, text_size = size.tiny, text_color = white ? color.new(#0f172a, 0) : color.new(#f8fafc, 0), text_halign = text.align_center, text_valign = text.align_center))
-    array.size(cyB)
-
 // ---- GEX by strike (1.37.0): every strike's net GEX as a bar on the left of the chart ----
 var polyline[] gpPl = array.new<polyline>()
 var label[]    gpLb = array.new<label>()
@@ -745,7 +585,6 @@ __HEAT_CALL__
         pick := qdPick(n)
         qdDraw(n, pick, endX)
     gpDraw()
-    cycDraw(495 - array.size(bxs))
     if not na(tb)
         table.delete(tb)
     tb := qdTable(n, pick)
@@ -837,7 +676,6 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__GEXZ_INPUT__", GEXZ_INPUT if ind != "lv" else 'gexZones = "Only near price"')
     code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
-    code = code.replace("__CYC_DEFAULT__", "true" if combo and ticker != "QQQ" else "false")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
     code = code.replace("__GP_INPUT__", GP_INPUT if ind != "lv" else NO_GP)
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,

@@ -30,6 +30,7 @@ from .services import strat_qs
 from .services import tv_levels as tv
 from .services.level_kinds import CAT, help_for
 from .services.tv_pine import ALL_LV_OFFSET, COMBO_TICKERS, build_script, combo_sec_all, combo_sec_kl
+from .services import tv_daymap
 from .services.mapping import SAME_SCALE, contract_expiry, implied_forward_ratio
 from .timeutil import ET, iso, parse_ts, to_et
 
@@ -605,6 +606,11 @@ def register(app, h, q, tab_parts):
         return {"code": build_script("combo", t), "title": f"Q DATA {t}", "filename": f"qdata_{t.lower()}_combined_paste_in.pine", "ticker": t,
                 "note": f"Add this to TradingView once (Pine Editor > new script > select all > paste > Save > Add to chart). "
                         f"Then in Q DATA click Copy {t} combined and paste into its first setting. It only accepts {t} levels."}
+
+    @app.get("/api/tv/daymap/script")
+    def daymap_script():
+        """Q DATA Day Map (1.38.0): every GEX strike, the key levels of the day and the straddle. Takes the combined copy."""
+        return {"code": tv_daymap.build_daymap_script(), "title": tv_daymap.NAME, "filename": tv_daymap.FILE}
 
     @app.post("/api/tv/combo/levels")
     def combo_levels(ticker: str, history: bool = True, convention: str = "standard", method: str = "auto", categories: str | None = None,

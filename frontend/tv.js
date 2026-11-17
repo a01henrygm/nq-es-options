@@ -75,6 +75,14 @@ async function comboScript(t, btn, dl) {
     try { await copyText(r.code); btn.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); }
   } catch (e) { alert(`Could not get Q DATA ${t}: ` + (e.msg || e.message)); }
 }
+// 1.38.0: Q DATA Day Map - every GEX strike, the key levels of the day and the straddle; reads the combined copy
+async function dayMapScript(btn, dl) {
+  try {
+    const r = await tvFetch("/tv/daymap/script", {});
+    if (dl) { download(r.filename, r.code); btn.textContent = "Downloaded"; return; }
+    try { await copyText(r.code); btn.textContent = "Copied the indicator"; } catch (e) { showText(r.title, r.code); }
+  } catch (e) { alert("Could not get Q DATA Day Map: " + (e.msg || e.message)); }
+}
 function tvComboPanel() {
   const list = comboList();
   if (!list.length) return "";
@@ -86,7 +94,10 @@ function tvComboPanel() {
   return `<div class="panel tvcard"><h2>Combined: one indicator per ticker</h2>
       <p class="dim" style="margin:0 0 6px">Each one holds that ticker's GEX levels, Key levels and every All Tabs section in one paste-in, named for the ticker. GEX levels are zones everywhere; every other level (expected move, OI, HOD / LOD...) is a zone only when it is decently close to price, and a small tight zone when it is very close. Each indicator only accepts its own ticker's levels.</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">${list.map(col).join("")}</div>
-      <p class="hint">Add each indicator once, then paste its own copy into its first setting. QQQ levels are converted to NQ points and SPX to ES points, like the others.</p></div>`;
+      <p class="hint">Add each indicator once, then paste its own copy into its first setting. QQQ levels are converted to NQ points and SPX to ES points, like the others.</p>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line, #e2e8f0)"><h3 style="margin:0 0 4px">Q DATA Day Map</h3>
+      <p class="dim" style="margin:0 0 6px">The clean one: every GEX strike as bars, only the key levels of the day (flips, walls, HOD / LOD, projected HOD / LOD, stacks, your levels) and the straddle drawn as a band, with how much of it today's move has used. It takes the same copy as above (Copy NDX combined, or QQQ / SPX), so one copy feeds both.</p>
+      <details class="adv"><summary>Once: add Q DATA Day Map to TradingView</summary><div class="body"><div class="actions"><button data-dm="1">Copy the indicator</button><button data-dmdl="1">Download .pine</button></div></div></details></div></div>`;
 }
 // GEX levels of an earlier day, for backtesting on TradingView (1.29.0)
 async function tvCopyDay(day, btn) {
@@ -234,6 +245,8 @@ R.tv = async function () {
   v.querySelectorAll("[data-cc]").forEach(b => b.onclick = () => comboCopy(b.dataset.cc, b));
   v.querySelectorAll("[data-cs]").forEach(b => b.onclick = () => comboScript(b.dataset.cs, b, false));
   v.querySelectorAll("[data-csdl]").forEach(b => b.onclick = () => comboScript(b.dataset.csdl, b, true));
+  v.querySelectorAll("[data-dm]").forEach(b => b.onclick = () => dayMapScript(b, false));
+  v.querySelectorAll("[data-dmdl]").forEach(b => b.onclick = () => dayMapScript(b, true));
   const dc = $("tvdaycopy"); if (dc) dc.onclick = () => tvCopyDay($("tvday").value, dc);
   const ds = $("tvday"); if (ds) ds.onchange = () => { dc.textContent = "Copy GEX levels for this day"; };
   v.querySelector("[data-allcopy]").onclick = e => allCopy(e.target);

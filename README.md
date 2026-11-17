@@ -33,6 +33,20 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.38.0
+
+- **Q DATA Day Map**, a new clean paste-in indicator (TradingView tab, under the combined indicators: "Once: add Q DATA Day Map").
+  It takes the SAME copy as Q DATA NDX / QQQ / SPX (Copy NDX combined), so one copy feeds both, and draws only three things:
+  - **GEX by strike**: every strike's net GEX as a bar on the left of the chart (blue positive, purple negative), biggest labeled;
+  - **the key levels of the day**: gamma flips, call / put walls and the 0DTE ones, high / low of day so far, projected HOD / LOD,
+    stacked areas, top setup entries and your own levels, GEX ones as zones, each with its HOLD / BREAK / CHOP read
+    (optionally the best GEX zones too);
+  - **the straddle**: price at the data time +/- the at-the-money straddle of the nearest expiry, shaded between the edges, with
+    a meter in the info box: the move from the 9:30 open as a % of the straddle (green, amber past 70%, red past it), today's range
+    vs the straddle, and the room left to each edge. 1 sd lines can be switched on too.
+- **Time cycle slabs removed** from every Q DATA paste-in (NDX / QQQ / SPX, GEX, Levels, Key levels, All Tabs). Re-add the
+  indicator once; the "GEX by strike" settings moved up into the slabs' old place, so check them once.
+
 ## New in 1.37.0
 
 - **Every GEX strike, not just the biggest few.** Q DATA NDX / QQQ / SPX, Q DATA GEX, All Tabs and Key levels now get the net GEX of
