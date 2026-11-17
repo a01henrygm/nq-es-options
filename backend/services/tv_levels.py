@@ -13,12 +13,14 @@ The levels text (one record per line, fields split by |):
   K|<name>|#rrggbb|S|D|O|<width>|<short meaning>|<section>|<key 1/0>       kinds; levels refer to them by order
   L|<price>|<low>|<high>|<kind>|<start ms>|<end ms, 0 = current>|<read H C B ->|<moved from, 0 = none>|<label>|<hover>
   H|<price>|<low>|<high>|<heat 0-100>                                       heatmap rows (Levels only)
+  G|<price>|<net GEX as % of the biggest strike, signed>|<net GEX, short>       every strike's GEX (1.37.0, GEX sections)
   R|<name>|<value>                                                           info box rows
 """
 from __future__ import annotations
 import re
 
 MAX_CHARS = 30000
+GEXP_RANGE_PCT = 8.0      # every strike with GEX within this % of spot goes in the G rows (the chart hides farther ones itself)
 TIP_CHARS = 150
 HIST_PER_KIND = 4
 
@@ -185,6 +187,31 @@ def match(old_runs: list, new_levels: list) -> tuple[list, list, list, list]:
     return same, moved, new, rest_r
 
 
+def money(v: float) -> str:
+    """Signed short dollars: +1.42B, -315M, +48K."""
+    a = abs(v)
+    t = f"{a / 1e9:.2f}B" if a >= 1e9 else f"{a / 1e6:.0f}M" if a >= 1e6 else f"{a / 1e3:.0f}K"
+    return ("+" if v >= 0 else "-") + t
+
+
+def gex_profile(strikes: list, spot: float, conv, range_pct: float = GEXP_RANGE_PCT) -> list:
+    """Every strike with GEX (not just the biggest few) for the GEX-by-strike bars: [{price, pct, text}] sorted by price.
+    pct is the strike's net GEX as a signed % of the biggest strike in range. conv: index price -> chart price."""
+    rows = []
+    for s in strikes or []:
+        k, g = s.get("strike"), s.get("net_gex") or 0.0
+        if not k or not g or not spot or abs(k - spot) / spot * 100 > range_pct:
+            continue
+        p = conv(k)
+        if p is None or p <= 0:
+            continue
+        rows.append((float(p), float(g)))
+    mx = max((abs(g) for _p, g in rows), default=0.0)
+    if not mx:
+        return []
+    return [{"price": p, "pct": g / mx * 100, "text": money(g)} for p, g in sorted(rows)]
+
+
 def f(text, n=None) -> str:
     t = re.sub(r"\s+", " ", str(text if text is not None else "").replace("|", "/")).strip()
     t = "".join(ch if ord(ch) < 128 else " " for ch in t)
@@ -192,9 +219,11 @@ def f(text, n=None) -> str:
 
 
 def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, units: str, data_ms: int, rows: list,
-               heat: list | None = None, prefs: dict | None = None, bt_end_ms: int = 0, hist_per_kind: int = HIST_PER_KIND) -> dict:
+               heat: list | None = None, prefs: dict | None = None, bt_end_ms: int = 0, hist_per_kind: int = HIST_PER_KIND,
+               gexp: list | None = None) -> dict:
     """runs: today's tracked runs of one indicator (current and ended). conv: index price -> chart price.
-    hist_per_kind: ended runs kept per kind (a backtest copy keeps the whole day, so the flip and walls exist all session)."""
+    hist_per_kind: ended runs kept per kind (a backtest copy keeps the whole day, so the flip and walls exist all session).
+    gexp: every strike's GEX from gex_profile (already in chart prices); always kept whole, hover text is cut first."""
     kp = (prefs or {}).get("kinds") or {}
     kinds, kidx, out_lv, hidden = [], {}, [], {}
     cur = [r for r in runs if r["active"]]
@@ -232,6 +261,7 @@ def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, uni
         o += [f"L|{x['price']:.2f}|{x['low']:.2f}|{x['high']:.2f}|{x['kind']}|{x['start']}|{x['end']}|{x['read']}|{x['prev']:.2f}|{f(x['label'], 36)}|"
               + (f(x["tip"], TIP_CHARS) if tips else "") for x in levels]
         o += [f"H|{h['price']:.2f}|{h['low']:.2f}|{h['high']:.2f}|{int(h['heat'])}" for h in (heat or [])]
+        o += [f"G|{g['price']:.2f}|{g['pct']:.1f}|{f(g['text'], 10)}" for g in (gexp or [])]
         o += [f"R|{f(k, 30)}|{f(v, 60)}" for k, v in rows if v not in (None, "")]
         return "\n".join(o) + "\n"
 
@@ -246,4 +276,4 @@ def build_text(ind: str, runs: list, conv, made: str, day: str, symbol: str, uni
         out_lv = sorted(keep, key=lambda x: (not x["cur"], -x["price"]))
         text = render(out_lv, False)
     return {"text": text, "levels": sum(1 for x in out_lv if x["cur"]), "history": sum(1 for x in out_lv if not x["cur"]),
-            "kinds": kinds, "hidden_kinds": list(hidden.values()), "chars": len(text), "cut": cut}
+            "kinds": kinds, "hidden_kinds": list(hidden.values()), "chars": len(text), "cut": cut, "gex_strikes": len(gexp or [])}

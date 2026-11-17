@@ -14,6 +14,8 @@ What it draws (made for a pure white chart, with a Dark chart option):
   - Levels only: the Activity heatmap as shaded strike bands (off until switched on).
   - time cycles (1.36.0): rows of slabs under the candles for 90 minute, 1 hour, 4 hour, sessions, day of week, week and month,
     the current one outlined with the time left (on by default in Q DATA NDX and SPX).
+  - GEX by strike (1.37.0, every indicator with GEX): EVERY strike's net GEX as a bar on the left of the chart, length by size,
+    blue positive / purple negative, the biggest labeled. Drawn with two filled polylines, so it never eats the line / box budget.
 Written as conservative Pine v6 (ASCII only); it has not been compiled by TradingView from here.
 """
 from __future__ import annotations
@@ -89,6 +91,7 @@ cycRowPct = input.float(3.0, "Slab height (% of the visible range)", minval = 0.
 cycGapPct = input.float(1.0, "Gap under the candles (% of the visible range)", minval = 0.0, maxval = 15.0, step = 0.5, group = grpY)
 cycT      = input.int(62, "Slab transparency", minval = 0, maxval = 100, group = grpY)
 cycLeft   = input.bool(true, "Time left in the current cycle", group = grpY)
+__GP_INPUT__
 
 // ---- backtest: levels copied for an earlier day carry that day's session end (added in 1.29.0) ----
 qdBtEnd(string txt) =>
@@ -133,6 +136,9 @@ var float[]  hmP = array.new<float>()
 var float[]  hmLo = array.new<float>()
 var float[]  hmHi = array.new<float>()
 var float[]  hmV = array.new<float>()
+var float[]  gpP = array.new<float>()
+var float[]  gpV = array.new<float>()
+var string[] gpTx = array.new<string>()
 var string[] tbK = array.new<string>()
 var string[] tbV = array.new<string>()
 var string[] meta = array.from("", "", "", "", "", "0")
@@ -271,6 +277,9 @@ qdParse(string txt) =>
     array.clear(hmLo)
     array.clear(hmHi)
     array.clear(hmV)
+    array.clear(gpP)
+    array.clear(gpV)
+    array.clear(gpTx)
     array.clear(tbK)
     array.clear(tbV)
     for row in str.split(txt, "\n")
@@ -306,6 +315,12 @@ qdParse(string txt) =>
             array.push(hmLo, num(a, 2))
             array.push(hmHi, num(a, 3))
             array.push(hmV, num(a, 4))
+        else if tag == "G" and array.size(a) >= 4
+            gp = num(a, 1)
+            if gp > 0
+                array.push(gpP, gp)
+                array.push(gpV, num(a, 2))
+                array.push(gpTx, fld(a, 3))
         else if tag == "R" and array.size(a) >= 3
             array.push(tbK, fld(a, 1))
             array.push(tbV, fld(a, 2))
@@ -642,6 +657,71 @@ cycDraw(int budget) =>
                 array.push(cyB, box.new(s, top, e, bot, xloc = xloc.bar_time, border_color = color.new(c, cur ? 0 : 45), border_width = cur ? 2 : 1, bgcolor = color.new(c, cur ? math.max(cycT - 25, 0) : cycT), text = tx, text_size = size.tiny, text_color = white ? color.new(#0f172a, 0) : color.new(#f8fafc, 0), text_halign = text.align_center, text_valign = text.align_center))
     array.size(cyB)
 
+// ---- GEX by strike (1.37.0): every strike's net GEX as a bar on the left of the chart ----
+var polyline[] gpPl = array.new<polyline>()
+var label[]    gpLb = array.new<label>()
+
+gpDraw() =>
+    for pl in gpPl
+        polyline.delete(pl)
+    array.clear(gpPl)
+    for l in gpLb
+        label.delete(l)
+    array.clear(gpLb)
+    nG = array.size(gpP)
+    int shown = 0
+    if gpOn and nG > 0 and not wrongSym()
+        white = theme == "White chart"
+        barMs = timeframe.in_seconds() * 1000
+        x0 = chart.left_visible_bar_time
+        ok = array.new<bool>(nG, false)
+        float mx = 0.0
+        for i = 0 to nG - 1
+            p = array.get(gpP, i) + offsetPts
+            v = math.abs(array.get(gpV, i))
+            if math.abs(p - refClose()) / refClose() * 100 <= maxPct and v >= gpMin
+                array.set(ok, i, true)
+                mx := math.max(mx, v)
+        if mx > 0
+            ptsP = array.new<chart.point>()
+            ptsN = array.new<chart.point>()
+            for i = 0 to nG - 1
+                if array.get(ok, i)
+                    p = array.get(gpP, i) + offsetPts
+                    v = array.get(gpV, i)
+                    gUp = i < nG - 1 ? array.get(gpP, i + 1) - array.get(gpP, i) : 0.0
+                    gDn = i > 0 ? array.get(gpP, i) - array.get(gpP, i - 1) : 0.0
+                    gap = gUp > 0 and gDn > 0 ? math.min(gUp, gDn) : math.max(gUp, gDn)
+                    hh = gap > 0 ? gap * 0.4 : refClose() * 0.0002
+                    x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                    pts = v > 0 ? ptsP : ptsN
+                    array.push(pts, chart.point.from_time(x0, p - hh))
+                    array.push(pts, chart.point.from_time(x1, p - hh))
+                    array.push(pts, chart.point.from_time(x1, p + hh))
+                    array.push(pts, chart.point.from_time(x0, p + hh))
+                    shown += 1
+            if array.size(ptsP) >= 4
+                array.push(gpPl, polyline.new(ptsP, curved = false, closed = true, xloc = xloc.bar_time, line_color = color.new(gpPosC, white ? 10 : 20), fill_color = color.new(gpPosC, gpT), line_width = 1))
+            if array.size(ptsN) >= 4
+                array.push(gpPl, polyline.new(ptsN, curved = false, closed = true, xloc = xloc.bar_time, line_color = color.new(gpNegC, white ? 10 : 20), fill_color = color.new(gpNegC, gpT), line_width = 1))
+            // labels on the biggest strikes in view
+            used = array.new<bool>(nG, false)
+            nLab = math.min(gpLab, 495 - array.size(lbs))
+            for k = 1 to math.max(nLab, 1)
+                if k <= nLab
+                    best = -1
+                    for i = 0 to nG - 1
+                        if array.get(ok, i) and not array.get(used, i) and (best < 0 or math.abs(array.get(gpV, i)) > math.abs(array.get(gpV, best)))
+                            best := i
+                    if best >= 0
+                        array.set(used, best, true)
+                        p = array.get(gpP, best) + offsetPts
+                        v = array.get(gpV, best)
+                        c = v > 0 ? gpPosC : gpNegC
+                        x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                        array.push(gpLb, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
+    shown
+
 // ---- draw everything on the last bar ----
 if barstate.islast
     for l in lns
@@ -664,6 +744,7 @@ if barstate.islast
 __HEAT_CALL__
         pick := qdPick(n)
         qdDraw(n, pick, endX)
+    gpDraw()
     cycDraw(495 - array.size(bxs))
     if not na(tb)
         table.delete(tb)
@@ -719,6 +800,16 @@ COMBO_INPUT = ('// added in 1.34.0 (last)\n'
                'smallH = input.float(0.0, "Small zone height (points, 0 = auto)", minval = 0.0, step = 0.25, group = grpC, tooltip = "Auto: 0.012% of price (about 2.5 NQ points, 0.8 ES points).")\n'
                'wantSym = __WANT__')
 NO_COMBO = 'distZones = false\nsuperNear = 0.0\nsmallH = 0.0\nwantSym = ""'
+GP_INPUT = ('// added in 1.37.0 (last, so earlier settings keep their place)\n'
+            'grpG = "GEX by strike (every strike)"\n'
+            'gpOn   = input.bool(true, "Show every strike\'s GEX as bars", group = grpG, tooltip = "Every strike with GEX, not just the biggest few: one bar per strike on the left of the chart, longer = more GEX. Blue: positive GEX (dealers dampen moves, price tends to stick or reject). Purple: negative GEX (dealers speed moves up). Uses the same distance limit as the levels (Hide levels farther than).")\n'
+            'gpLen  = input.int(40, "Length of the biggest bar (candles)", minval = 5, maxval = 400, group = grpG)\n'
+            'gpLab  = input.int(10, "Label the biggest strikes (how many)", minval = 0, maxval = 25, group = grpG)\n'
+            'gpMin  = input.float(0.0, "Hide strikes smaller than (% of the biggest)", minval = 0.0, maxval = 90.0, step = 1.0, group = grpG, tooltip = "0 = show every strike.")\n'
+            'gpT    = input.int(45, "Bar transparency", minval = 0, maxval = 100, group = grpG)\n'
+            'gpPosC = input.color(#2563eb, "Positive GEX color", group = grpG)\n'
+            'gpNegC = input.color(#7c3aed, "Negative GEX color", group = grpG)')
+NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed'
 
 
 def build_script(ind: str, ticker: str | None = None) -> str:
@@ -748,6 +839,7 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     code = code.replace("__CYC_DEFAULT__", "true" if combo and ticker != "QQQ" else "false")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
+    code = code.replace("__GP_INPUT__", GP_INPUT if ind != "lv" else NO_GP)
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first

@@ -248,7 +248,47 @@ def test_time_cycle_slabs_are_the_last_settings_and_on_for_ndx_and_spx():
     for t, on in (("NDX", True), ("SPX", True), ("QQQ", False)):
         code = build_script("combo", t)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        assert inputs[-1].startswith("cycLeft   = input.bool(") and f'cycOn     = input.bool({"true" if on else "false"}, "Show time cycle slabs"' in code
+        assert inputs[-8].startswith("cycLeft   = input.bool(") and f'cycOn     = input.bool({"true" if on else "false"}, "Show time cycle slabs"' in code
         assert "chart.left_visible_bar_time" in code and "cycDraw(495 - array.size(bxs))" in code and '"18:00 ET (futures)"' in code
     for ind in ("gex", "lv", "kl", "all"):
         assert 'cycOn     = input.bool(false, "Show time cycle slabs"' in build_script(ind)
+
+
+def test_every_gex_strike_goes_to_every_indicator_with_gex():
+    """1.37.0: not just the biggest few GEX strikes - every strike with GEX, as G rows, drawn as bars by the GEX indicators."""
+    c, db, now = simulated_day()
+    snap = None
+    for ind, url, kw in (("gex", "/api/tv/levels", {"params": {"underlying": "_NDX", "ind": "gex"}}),
+                         ("all", "/api/tv/alltabs/levels", {"params": {"underlying": "_NDX"}, "json": {}}),
+                         ("kl", "/api/tv/keylevels/levels", {"params": {"underlying": "_NDX"}, "json": {}}),
+                         ("combo", "/api/tv/combo/levels", {"params": {"ticker": "NDX"}, "json": {}})):
+        j = (c.get(url, **kw) if ind == "gex" else c.post(url, **kw)).json()
+        g = lines(j["text"], "G")
+        biggest = lines(j["text"], "L")
+        assert j["gex_strikes"] == len(g) and len(g) > 12, (ind, len(g))           # far more than the top 6 per side
+        prices = [float(x[1]) for x in g]
+        assert prices == sorted(prices) and len(set(prices)) == len(prices)
+        pct = [float(x[2]) for x in g]
+        assert max(abs(v) for v in pct) == 100.0 and all(-100 <= v <= 100 and v != 0 for v in pct)
+        assert all(x[3][0] in "+-" and x[3][-1] in "BMK" for x in g)
+        assert any(r[1] == "GEX by strike" for r in lines(j["text"], "R")) and j["chars"] <= tv.MAX_CHARS and biggest
+    l = c.get("/api/tv/levels", params={"underlying": "_NDX", "ind": "lv"}).json()
+    assert not lines(l["text"], "G")                                                 # the Levels indicator has no GEX
+
+
+def test_gex_profile_keeps_every_strike_in_range_and_scales_to_the_biggest():
+    strikes = [{"strike": k, "net_gex": g} for k, g in ((18000, 5e9), (20000, 2e9), (20010, -1e9), (20020, 0.0), (20030, 4e8), (23000, 9e9))]
+    rows = tv.gex_profile(strikes, 20000.0, lambda v: v * 1.01)
+    assert [round(r["price"], 2) for r in rows] == [20200.0, 20210.1, 20230.3]       # 18000 / 23000 are > 8% away, 20020 has none
+    assert [round(r["pct"], 1) for r in rows] == [100.0, -50.0, 20.0] and [r["text"] for r in rows] == ["+2.00B", "-1.00B", "+400M"]
+    t = tv.build_text("gex", [], lambda v: v, "m", "2026-01-02", "NDX", "u", 0, [], gexp=rows)
+    assert lines(t["text"], "G")[0] == ["G", "20200.00", "100.0", "+2.00B"] and t["gex_strikes"] == 3
+
+
+def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
+    for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
+        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        assert inputs[-7].startswith("gpOn   = input.bool(true") and inputs[-1].startswith("gpNegC = input.color(")
+        assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "gpDraw()" in code and all(ord(ch) < 128 for ch in code)
+    lv = build_script("lv")
+    assert "gpOn = false" in lv and "gpOn   = input.bool" not in lv

@@ -469,7 +469,13 @@ def register(app, h, q, tab_parts):
             c = q.context(u, "standard")
             heat = [{**x, "price": conv(x["price"]), "low": conv(x["low"]), "high": conv(x["high"])} for x in heat_rows(c)]
             heat = [x for x in heat if x["price"] is not None]
-        j = tv.build_text(tag or ind, runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, ms(iso(data_t)), rows, heat, prefs)
+        gexp = []
+        if ind in ("gex", "all"):                             # every strike's GEX, not just the biggest few (1.37.0)
+            gexp = tv.gex_profile(an.gex_by_strike(snap.contracts, snap.spot, now, "standard")["strikes"], snap.spot, conv)
+            if gexp:
+                rows = rows + [("GEX by strike", f"{len(gexp)} strikes (bars on the left)")]
+        j = tv.build_text(tag or ind, runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, ms(iso(data_t)), rows, heat, prefs,
+                          gexp=gexp)
         with h.db.conn() as cn:
             st = cn.execute("SELECT snapshot_id FROM tv_state WHERE underlying=?", (u,)).fetchone()
         j["catching_up"] = not st or st["snapshot_id"] != getattr(snap, "snapshot_id", None)
@@ -577,8 +583,11 @@ def register(app, h, q, tab_parts):
         info = [("Data as of", to_et(data_t).strftime("%H:%M ET") + " (about 15 min delayed)"), ("Copied", to_et(now).strftime("%H:%M ET")),
                 ("Prices", f"{root} (estimated)" if mapped else m["underlying"]), ("Showing", shown)]
         day = to_et(data_t).date().isoformat()
+        gexp = tv.gex_profile(an.gex_by_strike(snap.contracts, snap.spot, now, convention)["strikes"], snap.spot, conv)
+        if gexp:
+            info.append(("GEX by strike", f"{len(gexp)} strikes (bars on the left)"))
         out = tv.build_text("kl", runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, data_ms, info, None,
-                            (body or {}).get("prefs"))
+                            (body or {}).get("prefs"), gexp=gexp)
         out.update({"ind": "kl", "title": KL_NAME, "mapped": mapped, "data_as_of": iso(data_t), "made": made, "heat": 0, "showing": shown})
         return out
 

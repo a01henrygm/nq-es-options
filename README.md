@@ -33,6 +33,16 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.37.0
+
+- **Every GEX strike, not just the biggest few.** Q DATA NDX / QQQ / SPX, Q DATA GEX, All Tabs and Key levels now get the net GEX of
+  EVERY strike within 8% of price (before, only the 6 biggest each side made it to TradingView). They draw as one bar per strike on
+  the left of the chart, longer = more GEX, blue for positive GEX and purple for negative, with the 10 biggest in view labeled
+  (strike and GEX in dollars; hover for what it means). New "GEX by strike (every strike)" group at the end of the settings: on/off,
+  bar length, how many to label, hide strikes smaller than a % of the biggest (0 = show all), transparency and colors. The bars
+  follow "Hide levels farther than" like the levels do, and use polylines, so they never take room from the level lines or zones.
+  Re-add the indicator once to get it.
+
 ## New in 1.36.0
 
 - **Time cycle slabs** under the candles in Q DATA NDX / QQQ / SPX (and the other paste-ins), in a new "Time cycles" group at the
