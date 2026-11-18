@@ -474,7 +474,7 @@ def register(app, h, q, tab_parts):
         if ind in ("gex", "all"):                             # every strike's GEX, not just the biggest few (1.37.0)
             gexp = tv.gex_profile(an.gex_by_strike(snap.contracts, snap.spot, now, "standard")["strikes"], snap.spot, conv)
             if gexp:
-                rows = rows + [("GEX by strike", f"{len(gexp)} strikes (bars on the left)")]
+                rows = rows + [("GEX by strike", f"{len(gexp)} strikes, {gexp[0]['price']:,.0f} to {gexp[-1]['price']:,.0f}")]
         j = tv.build_text(tag or ind, runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, ms(iso(data_t)), rows, heat, prefs,
                           gexp=gexp)
         with h.db.conn() as cn:
@@ -586,7 +586,7 @@ def register(app, h, q, tab_parts):
         day = to_et(data_t).date().isoformat()
         gexp = tv.gex_profile(an.gex_by_strike(snap.contracts, snap.spot, now, convention)["strikes"], snap.spot, conv)
         if gexp:
-            info.append(("GEX by strike", f"{len(gexp)} strikes (bars on the left)"))
+            info.append(("GEX by strike", f"{len(gexp)} strikes, {gexp[0]['price']:,.0f} to {gexp[-1]['price']:,.0f}"))
         out = tv.build_text("kl", runs, conv, made, day, f"{u.lstrip('_')} -> {root}" if mapped else u.lstrip("_"), units, data_ms, info, None,
                             (body or {}).get("prefs"), gexp=gexp)
         out.update({"ind": "kl", "title": KL_NAME, "mapped": mapped, "data_as_of": iso(data_t), "made": made, "heat": 0, "showing": shown})

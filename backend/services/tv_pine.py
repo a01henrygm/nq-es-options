@@ -14,7 +14,7 @@ What it draws (made for a pure white chart, with a Dark chart option):
   - Levels only: the Activity heatmap as shaded strike bands (off until switched on).
   - (the 1.36.0 time cycle slabs were taken out again in 1.38.0.)
   - GEX by strike (1.37.0, every indicator with GEX): EVERY strike's net GEX as a bar on the left of the chart, length by size,
-    blue positive / purple negative, the biggest labeled. Drawn with two filled polylines, so it never eats the line / box budget.
+    blue positive / purple negative, the biggest labeled; 1.39.0: pinned to the last candle (no longer slides when you scroll), whole chain. Drawn with two filled polylines, so it never eats the line / box budget.
 Written as conservative Pine v6 (ASCII only); it has not been compiled by TradingView from here.
 """
 from __future__ import annotations
@@ -501,6 +501,17 @@ qdTable(int n, bool[] pick) =>
 var polyline[] gpPl = array.new<polyline>()
 var label[]    gpLb = array.new<label>()
 
+// GEX by strike placement and range (1.39.0)
+gpIn(float p) =>
+    gpRange <= 0 or math.abs(p - refClose()) / refClose() * 100 <= gpRange
+
+// where the bars start: fixed at the last candle (growing back over the candles), right of price, or the left edge of the screen
+gpX0(int barMs) =>
+    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + gpOff * barMs : time
+
+gpDir() =>
+    gpWhere == "Behind the candles (fixed)" ? -1 : 1
+
 gpDraw() =>
     for pl in gpPl
         polyline.delete(pl)
@@ -513,13 +524,14 @@ gpDraw() =>
     if gpOn and nG > 0 and not wrongSym()
         white = theme == "White chart"
         barMs = timeframe.in_seconds() * 1000
-        x0 = chart.left_visible_bar_time
+        x0 = gpX0(barMs)
+        dr = gpDir()
         ok = array.new<bool>(nG, false)
         float mx = 0.0
         for i = 0 to nG - 1
             p = array.get(gpP, i) + offsetPts
             v = math.abs(array.get(gpV, i))
-            if math.abs(p - refClose()) / refClose() * 100 <= maxPct and v >= gpMin
+            if gpIn(p) and v >= gpMin
                 array.set(ok, i, true)
                 mx := math.max(mx, v)
         if mx > 0
@@ -533,7 +545,7 @@ gpDraw() =>
                     gDn = i > 0 ? array.get(gpP, i) - array.get(gpP, i - 1) : 0.0
                     gap = gUp > 0 and gDn > 0 ? math.min(gUp, gDn) : math.max(gUp, gDn)
                     hh = gap > 0 ? gap * 0.4 : refClose() * 0.0002
-                    x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                    x1 = x0 + dr * int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
                     pts = v > 0 ? ptsP : ptsN
                     array.push(pts, chart.point.from_time(x0, p - hh))
                     array.push(pts, chart.point.from_time(x1, p - hh))
@@ -558,8 +570,8 @@ gpDraw() =>
                         p = array.get(gpP, best) + offsetPts
                         v = array.get(gpV, best)
                         c = v > 0 ? gpPosC : gpNegC
-                        x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
-                        array.push(gpLb, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
+                        x1 = x0 + dr * int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                        array.push(gpLb, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = dr < 0 ? label.style_label_right : label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
     shown
 
 // ---- draw everything on the last bar ----
@@ -647,8 +659,9 @@ GP_INPUT = ('// added in 1.37.0 (last, so earlier settings keep their place)\n'
             'gpMin  = input.float(0.0, "Hide strikes smaller than (% of the biggest)", minval = 0.0, maxval = 90.0, step = 1.0, group = grpG, tooltip = "0 = show every strike.")\n'
             'gpT    = input.int(45, "Bar transparency", minval = 0, maxval = 100, group = grpG)\n'
             'gpPosC = input.color(#2563eb, "Positive GEX color", group = grpG)\n'
-            'gpNegC = input.color(#7c3aed, "Negative GEX color", group = grpG)')
-NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed'
+            'gpNegC = input.color(#7c3aed, "Negative GEX color", group = grpG)\n'
+            + '// added in 1.39.0 (last, so earlier settings keep their place)\ngrpG2 = "GEX by strike: placement"\ngpWhere = input.string("Behind the candles (fixed)", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price: they start this many bars right of the last candle and grow to the right. Left edge of the screen: the old way, they follow the screen as you scroll.")\ngpOff   = input.int(60, "Bars right of price (Right of price)", minval = 0, maxval = 500, group = grpG2)\ngpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")')
+NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed\ngpWhere = "Behind the candles (fixed)"\ngpOff = 60\ngpRange = 0.0'
 
 
 def build_script(ind: str, ticker: str | None = None) -> str:

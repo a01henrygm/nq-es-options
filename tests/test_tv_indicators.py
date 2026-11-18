@@ -304,17 +304,31 @@ def test_every_gex_strike_goes_to_every_indicator_with_gex():
 
 def test_gex_profile_keeps_every_strike_in_range_and_scales_to_the_biggest():
     strikes = [{"strike": k, "net_gex": g} for k, g in ((18000, 5e9), (20000, 2e9), (20010, -1e9), (20020, 0.0), (20030, 4e8), (23000, 9e9))]
-    rows = tv.gex_profile(strikes, 20000.0, lambda v: v * 1.01)
+    rows = tv.gex_profile(strikes, 20000.0, lambda v: v * 1.01, range_pct=8.0)
     assert [round(r["price"], 2) for r in rows] == [20200.0, 20210.1, 20230.3]       # 18000 / 23000 are > 8% away, 20020 has none
     assert [round(r["pct"], 1) for r in rows] == [100.0, -50.0, 20.0] and [r["text"] for r in rows] == ["+2.00B", "-1.00B", "+400M"]
     t = tv.build_text("gex", [], lambda v: v, "m", "2026-01-02", "NDX", "u", 0, [], gexp=rows)
     assert lines(t["text"], "G")[0] == ["G", "20200.00", "100.0", "+2.00B"] and t["gex_strikes"] == 3
+    # 1.39.0: the whole chain by default, from the lowest strike to the highest
+    full = tv.gex_profile(strikes, 20000.0, lambda v: v)
+    assert [r["price"] for r in full] == [18000.0, 20000.0, 20010.0, 20030.0, 23000.0]
+
+
+def test_gex_profile_row_budget_keeps_the_lowest_and_highest_strike():
+    strikes = [{"strike": 10000 + 5 * i, "net_gex": (1e6 if i not in (0, 999) else 1e3) * (1 + i % 7)} for i in range(1000)]
+    rows = tv.gex_profile(strikes, 12500.0, lambda v: v)
+    assert len(rows) == tv.GEXP_MAX_ROWS and rows[0]["price"] == 10000.0 and rows[-1]["price"] == 14995.0
+    assert [r["price"] for r in rows] == sorted(r["price"] for r in rows)
+    t = tv.build_text("gex", [], lambda v: v, "m", "2026-01-02", "NDX", "u", 0, [], gexp=rows)
+    assert len(lines(t["text"], "G")) == tv.GEXP_MAX_ROWS and t["chars"] <= tv.MAX_CHARS // 2
 
 
 def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
     for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-        assert inputs[-7].startswith("gpOn   = input.bool(true") and inputs[-1].startswith("gpNegC = input.color(")
+        assert inputs[-10].startswith("gpOn   = input.bool(true") and inputs[-4].startswith("gpNegC = input.color(")
+        assert inputs[-3].startswith('gpWhere = input.string("Behind the candles (fixed)"') and inputs[-1].startswith("gpRange = input.float(0.0")     # 1.39.0
+        assert "chart.left_visible_bar_time" not in code.split("gpX0(int barMs) =>")[0] and "x0 = gpX0(barMs)" in code
         assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "gpDraw()" in code and all(ord(ch) < 128 for ch in code)
     lv = build_script("lv")
     assert "gpOn = false" in lv and "gpOn   = input.bool" not in lv

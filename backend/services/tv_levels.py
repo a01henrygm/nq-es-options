@@ -19,8 +19,9 @@ The levels text (one record per line, fields split by |):
 from __future__ import annotations
 import re
 
-MAX_CHARS = 30000
-GEXP_RANGE_PCT = 8.0      # every strike with GEX within this % of spot goes in the G rows (the chart hides farther ones itself)
+MAX_CHARS = 36000       # 1.39.0: room for the whole GEX chain (TradingView strings hold up to 40,960 characters)
+GEXP_RANGE_PCT = 100.0    # 1.39.0: the whole chain (was 8%); the chart has its own "Show strikes within" setting
+GEXP_MAX_ROWS = 450       # at most this many G rows (about 11K characters): the lowest and highest strike always stay, then the biggest
 TIP_CHARS = 150
 HIST_PER_KIND = 4
 
@@ -194,9 +195,10 @@ def money(v: float) -> str:
     return ("+" if v >= 0 else "-") + t
 
 
-def gex_profile(strikes: list, spot: float, conv, range_pct: float = GEXP_RANGE_PCT) -> list:
+def gex_profile(strikes: list, spot: float, conv, range_pct: float = GEXP_RANGE_PCT, max_rows: int = GEXP_MAX_ROWS) -> list:
     """Every strike with GEX (not just the biggest few) for the GEX-by-strike bars: [{price, pct, text}] sorted by price.
-    pct is the strike's net GEX as a signed % of the biggest strike in range. conv: index price -> chart price."""
+    pct is the strike's net GEX as a signed % of the biggest strike in range. conv: index price -> chart price.
+    More than max_rows strikes: the lowest and the highest strike stay, then the biggest by size (1.39.0)."""
     rows = []
     for s in strikes or []:
         k, g = s.get("strike"), s.get("net_gex") or 0.0
@@ -209,7 +211,12 @@ def gex_profile(strikes: list, spot: float, conv, range_pct: float = GEXP_RANGE_
     mx = max((abs(g) for _p, g in rows), default=0.0)
     if not mx:
         return []
-    return [{"price": p, "pct": g / mx * 100, "text": money(g)} for p, g in sorted(rows)]
+    rows.sort()
+    if max_rows and len(rows) > max_rows:
+        ends = {0, len(rows) - 1}
+        rest = sorted((i for i in range(len(rows)) if i not in ends), key=lambda i: -abs(rows[i][1]))[:max_rows - 2]
+        rows = [rows[i] for i in sorted(ends | set(rest))]
+    return [{"price": p, "pct": g / mx * 100, "text": money(g)} for p, g in rows]
 
 
 def f(text, n=None) -> str:

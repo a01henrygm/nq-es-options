@@ -1,7 +1,8 @@
 """Q DATA Day Map (1.38.0): one clean paste-in TradingView indicator for the day.
 
 It reads the SAME text as Q DATA NDX / QQQ / SPX (Copy NDX combined), so no new copy button is needed, and draws only:
-  - GEX by strike: EVERY strike's net GEX as a bar on the left of the chart (blue positive, purple negative), biggest labeled;
+  - GEX by strike: EVERY strike's net GEX as a bar (blue positive, purple negative), biggest labeled; 1.39.0: pinned to the last
+    candle so it no longer slides when you scroll, the whole chain from the lowest to the highest strike;
   - the key levels of the day: the kinds Q DATA marks as key (gamma flips, call / put walls, 0DTE flip / walls, high / low of day
     so far, projected HOD / LOD, stacked areas, top setup entries, your own levels), GEX ones as zones, with a HOLD / BREAK / CHOP read;
     optionally the best GEX zones too;
@@ -58,6 +59,11 @@ stFill = input.bool(true, "Shade between the straddle edges", group = grpX)
 stT    = input.int(93, "Shade transparency", minval = 0, maxval = 100, group = grpX)
 stSd   = input.bool(false, "Also the 1 sd move (nearest expiry)", group = grpX)
 stCol  = input.color(#2563eb, "Straddle color", group = grpX)
+// added in 1.39.0 (last, so earlier settings keep their place)
+grpG2 = "GEX by strike: placement"
+gpWhere = input.string("Behind the candles (fixed)", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price: they start this many bars right of the last candle and grow to the right. Left edge of the screen: the old way, they follow the screen as you scroll.")
+gpOff   = input.int(60, "Bars right of price (Right of price)", minval = 0, maxval = 500, group = grpG2)
+gpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")
 
 // ---- backtest: levels copied for an earlier day carry that day's session end ----
 qdBtEnd(string txt) =>
@@ -336,19 +342,31 @@ nextKey(int dir) =>
     s
 
 // ---- GEX by strike: every strike's net GEX as a bar on the left of the chart ----
+// GEX by strike placement and range (1.39.0)
+gpIn(float p) =>
+    gpRange <= 0 or math.abs(p - refClose()) / refClose() * 100 <= gpRange
+
+// where the bars start: fixed at the last candle (growing back over the candles), right of price, or the left edge of the screen
+gpX0(int barMs) =>
+    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + gpOff * barMs : time
+
+gpDir() =>
+    gpWhere == "Behind the candles (fixed)" ? -1 : 1
+
 gpDraw() =>
     nG = array.size(gpP)
     int shown = 0
     if gpOn and nG > 0
         white = theme == "White chart"
         barMs = timeframe.in_seconds() * 1000
-        x0 = chart.left_visible_bar_time
+        x0 = gpX0(barMs)
+        dr = gpDir()
         ok = array.new<bool>(nG, false)
         float mx = 0.0
         for i = 0 to nG - 1
             p = array.get(gpP, i) + offsetPts
             v = math.abs(array.get(gpV, i))
-            if inRange(p) and v >= gpMin
+            if gpIn(p) and v >= gpMin
                 array.set(ok, i, true)
                 mx := math.max(mx, v)
         if mx > 0
@@ -362,7 +380,7 @@ gpDraw() =>
                     gDn = i > 0 ? array.get(gpP, i) - array.get(gpP, i - 1) : 0.0
                     gap = gUp > 0 and gDn > 0 ? math.min(gUp, gDn) : math.max(gUp, gDn)
                     hh = gap > 0 ? gap * 0.4 : refClose() * 0.0002
-                    x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                    x1 = x0 + dr * int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
                     pts = v > 0 ? ptsP : ptsN
                     array.push(pts, chart.point.from_time(x0, p - hh))
                     array.push(pts, chart.point.from_time(x1, p - hh))
@@ -386,8 +404,8 @@ gpDraw() =>
                         p = array.get(gpP, best) + offsetPts
                         v = array.get(gpV, best)
                         c = v > 0 ? gpPosC : gpNegC
-                        x1 = x0 + int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
-                        array.push(lbs, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
+                        x1 = x0 + dr * int(math.max(1.0, math.abs(v) / mx * gpLen) * barMs)
+                        array.push(lbs, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = dr < 0 ? label.style_label_right : label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
     shown
 
 // the biggest positive (dir 1) or negative (dir -1) GEX strike in range
@@ -398,7 +416,7 @@ bigGex(int dir) =>
     if nG > 0
         for i = 0 to nG - 1
             v = array.get(gpV, i)
-            if inRange(array.get(gpP, i) + offsetPts) and (dir > 0 ? v > 0 : v < 0)
+            if gpIn(array.get(gpP, i) + offsetPts) and (dir > 0 ? v > 0 : v < 0)
                 if best < 0 or math.abs(v) > math.abs(array.get(gpV, best))
                     best := i
     if best >= 0
@@ -469,7 +487,7 @@ if barstate.islast
         bg = white ? color.new(#ffffff, 0) : color.new(#111827, 0)
         tx = white ? color.new(#0f172a, 0) : color.new(#f1f5f9, 0)
         dim = white ? color.new(#64748b, 0) : color.new(#94a3b8, 0)
-        tb := table.new(__POS__, 2, 11, bgcolor = bg, border_color = white ? color.new(#e2e8f0, 0) : color.new(#334155, 0), border_width = 1, frame_color = white ? color.new(#cbd5e1, 0) : color.new(#334155, 0), frame_width = 1)
+        tb := table.new(__POS__, 2, 12, bgcolor = bg, border_color = white ? color.new(#e2e8f0, 0) : color.new(#334155, 0), border_width = 1, frame_color = white ? color.new(#cbd5e1, 0) : color.new(#334155, 0), frame_width = 1)
         table.cell(tb, 0, 0, "Q DATA Day Map", text_color = tx, text_size = size.small, text_halign = text.align_left)
         table.cell(tb, 1, 0, n == 0 ? "paste levels from Q DATA" : array.get(meta, 3), text_color = dim, text_size = size.small, text_halign = text.align_left)
         table.cell(tb, 0, 1, "Data as of", text_color = dim, text_size = size.tiny, text_halign = text.align_left)
@@ -498,6 +516,8 @@ if barstate.islast
         table.cell(tb, 1, 8, nextKey(1), text_color = tx, text_size = size.tiny, text_halign = text.align_left)
         table.cell(tb, 0, 9, "Next key below", text_color = dim, text_size = size.tiny, text_halign = text.align_left)
         table.cell(tb, 1, 9, nextKey(-1), text_color = tx, text_size = size.tiny, text_halign = text.align_left)
+        table.cell(tb, 0, 11, "GEX strikes", text_color = dim, text_size = size.tiny, text_halign = text.align_left)
+        table.cell(tb, 1, 11, array.size(gpP) > 0 ? str.tostring(array.size(gpP)) + " strikes, lowest " + fmtP(array.get(gpP, 0) + offsetPts) + ", highest " + fmtP(array.get(gpP, array.size(gpP) - 1) + offsetPts) : "-", text_color = tx, text_size = size.tiny, text_halign = text.align_left)
         today = str.format_time(time, "yyyy-MM-dd", "America/New_York")
         old = warnOld and btEnd == 0 and n > 0 and array.get(meta, 2) != "" and array.get(meta, 2) != today
         table.cell(tb, 0, 10, old ? "Old levels" : btEnd > 0 ? "Backtest" : "", text_color = color.new(#dc2626, 0), text_size = size.tiny, text_halign = text.align_left)

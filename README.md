@@ -33,6 +33,17 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.39.0
+
+- **GEX by strike stays put.** The bars no longer hang off the left edge of the screen (which made them slide every time you
+  scrolled). By default they now start at the last candle and grow back to the left over the candles ("Bars sit: Behind the
+  candles (fixed)"). You can also put them right of price, or back on the left edge, in the new "GEX by strike: placement" group
+  at the end of the settings (Q DATA Day Map, NDX / QQQ / SPX, GEX, Key levels, All Tabs).
+- **The whole GEX chain, lowest strike to highest.** Q DATA now sends every strike with GEX in the chain (was: within 8% of price;
+  past 450 strikes the lowest and highest always stay, then the biggest), and the chart shows them all by default: "Show strikes
+  within (% of price, 0 = every strike)" replaces the 2% limit the bars used to share with the levels. The info box says how many
+  strikes and the lowest and highest (Day Map: "GEX strikes" row). Re-copy the levels and re-add the indicator once.
+
 ## New in 1.38.0
 
 - **Q DATA Day Map**, a new clean paste-in indicator (TradingView tab, under the combined indicators: "Once: add Q DATA Day Map").
