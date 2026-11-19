@@ -61,8 +61,8 @@ stSd   = input.bool(false, "Also the 1 sd move (nearest expiry)", group = grpX)
 stCol  = input.color(#2563eb, "Straddle color", group = grpX)
 // added in 1.39.0 (last, so earlier settings keep their place)
 grpG2 = "GEX by strike: placement"
-gpWhere = input.string("Behind the candles (fixed)", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price: they start this many bars right of the last candle and grow to the right. Left edge of the screen: the old way, they follow the screen as you scroll.")
-gpOff   = input.int(60, "Bars right of price (Right of price)", minval = 0, maxval = 500, group = grpG2)
+gpWhere = input.string("Right of price", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price (default): they start past the level labels (Run past the last candle + this gap) and grow to the right, away from the candles. Left edge of the screen: the old way, they follow the screen as you scroll.")
+gpOff   = input.int(40, "Gap from the last candle (bars, Right of price)", minval = 0, maxval = 500, group = grpG2)
 gpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")
 
 // ---- backtest: levels copied for an earlier day carry that day's session end ----
@@ -348,7 +348,7 @@ gpIn(float p) =>
 
 // where the bars start: fixed at the last candle (growing back over the candles), right of price, or the left edge of the screen
 gpX0(int barMs) =>
-    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + gpOff * barMs : time
+    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + (extBars + gpOff) * barMs : time
 
 gpDir() =>
     gpWhere == "Behind the candles (fixed)" ? -1 : 1

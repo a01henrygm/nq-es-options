@@ -110,6 +110,36 @@ def is_live(name: str) -> bool:
     return any(k in n for k in LIVE_KINDS)
 
 
+def gex_band(value: float, strikes: list, keep: float = 0.6, reach: int = 1):
+    """The price area a GEX level really covers (1.40.0), from the GEX by strike profile instead of a fixed height.
+
+    A strike's gamma acts from halfway to the strike below to halfway to the strike above, so the zone starts as that slice.
+    Next-door strikes with the same sign and at least `keep` of the level's GEX are part of the same wall, so the zone grows
+    over them (at most `reach` strikes each side). A level between strikes (a gamma flip) gets the slice between the two
+    strikes around it. Index prices. None when there is no profile."""
+    ks = sorted((s["strike"], s.get("net_gex") or 0.0) for s in strikes or [] if s.get("strike"))
+    if len(ks) < 2 or not value:
+        return None
+    pr = [k for k, _g in ks]
+    i = min(range(len(pr)), key=lambda j: abs(pr[j] - value))
+    gap = lambda j: pr[j + 1] - pr[j]
+    half_dn = gap(i - 1) / 2 if i > 0 else gap(i) / 2
+    half_up = gap(i) / 2 if i < len(pr) - 1 else gap(i - 1) / 2
+    if abs(pr[i] - value) > min(half_dn, half_up) * 0.5:          # between strikes (a flip): the slice between its two strikes
+        j = i if pr[i] < value else i - 1
+        j = max(0, min(j, len(pr) - 2))
+        return pr[j], pr[j + 1]
+    g0 = ks[i][1]
+    a = b = i
+    while g0 and a > 0 and i - a < reach and ks[a - 1][1] * g0 > 0 and abs(ks[a - 1][1]) >= keep * abs(g0):
+        a -= 1
+    while g0 and b < len(ks) - 1 and b - i < reach and ks[b + 1][1] * g0 > 0 and abs(ks[b + 1][1]) >= keep * abs(g0):
+        b += 1
+    lo = pr[a] - ((pr[a] - pr[a - 1]) / 2 if a > 0 else half_dn)
+    hi = pr[b] + ((pr[b + 1] - pr[b]) / 2 if b < len(pr) - 1 else half_up)
+    return lo, hi
+
+
 def gex_section(name: str) -> int:
     n = (name or "").lower()
     if "flip" in n:

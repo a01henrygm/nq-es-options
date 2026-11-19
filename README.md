@@ -33,6 +33,19 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.40.0
+
+- **GEX by strike bars moved off the candles.** They now start past the level labels (Run past the last candle + a 40-bar gap)
+  and grow to the right. Change the gap in "GEX by strike: placement". If you update the script in place, set "Bars sit" to
+  "Right of price" (TradingView keeps your old choice).
+- **Activity stack (Q DATA NDX / QQQ / SPX).** The Activity heatmap's "All measures (combined)" hot spots (new positions, volume,
+  open interest, GEX, charm, vanna, dealer delta; calls + puts, strikes within 4%, next 8 expirations) as tight zones: the peak
+  strike plus up to 2 strikes each side that hold 85% of its heat. "Stack xN" = how many measures have their own level there.
+  New last section "Activity stack" (on by default). The Heatmap shading now blends every measure too.
+- **GEX zones sized by the data.** Every GEX level (flips, walls, GEX strikes) is now the price area its gamma covers: halfway to
+  the strike below to halfway to the strike above, grown over a next-door strike of the same sign with 60% or more of its GEX.
+  A gamma flip covers the gap between its two strikes. About 10-30 NQ points on NDX, wider on QQQ (dollar strikes).
+
 ## New in 1.39.0
 
 - **GEX by strike stays put.** The bars no longer hang off the left edge of the screen (which made them slide every time you

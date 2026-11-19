@@ -206,7 +206,7 @@ def test_combined_indicators_are_named_for_their_ticker_and_only_take_their_own_
         assert f'indicator("Q DATA {t}", shorttitle = "QD {t}"' in code and f'wantSym = "{t}"' in code
         assert [x for x in code.splitlines() if " input." in x and not x.startswith(" ")][0].startswith("dataTxt = input.text_area")
         assert 'sec16 = input.bool(true, "Your levels"' in code and 'input.bool(false, "Heatmap"' in code      # same place as in 1.34.0
-        assert f'sec{len(COMBO_SECTIONS) - 1} = input.bool(true, "IV walls"' in code
+        assert f'sec{len(COMBO_SECTIONS) - 2} = input.bool(true, "IV walls"' in code
         assert 'distZones = input.bool(true' in code and "superDist()" in code and "border_style = brk ? line.style_dashed" in code
         assert 'zoneFilter = input.string("Everything", "Show"' in code       # every section shows by default
     # the other indicators keep their old drawing: no distance zones, no ticker check, settings order unchanged
@@ -241,7 +241,7 @@ def test_combined_levels_merge_all_tabs_and_key_levels_without_duplicates():
         assert key not in seen, key                      # one level per section, kind and price
         seen.add(key)
     assert any(r[1] == "Key levels" for r in lines(j["text"], "R"))
-    assert j["key_levels"] > 0 and j["levels"] < a["levels"] + j["key_levels"]      # Key levels already on All Tabs were not added twice
+    assert j["key_levels"] > 0 and j["levels"] < a["levels"] + j["key_levels"] + j["activity_stack"]      # Key levels already on All Tabs were not added twice
 
 
 def test_time_cycle_slabs_are_gone_from_every_indicator():
@@ -325,10 +325,29 @@ def test_gex_profile_row_budget_keeps_the_lowest_and_highest_strike():
 
 def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
     for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
-        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ") and "Activity stack" not in x]
         assert inputs[-10].startswith("gpOn   = input.bool(true") and inputs[-4].startswith("gpNegC = input.color(")
-        assert inputs[-3].startswith('gpWhere = input.string("Behind the candles (fixed)"') and inputs[-1].startswith("gpRange = input.float(0.0")     # 1.39.0
+        assert inputs[-3].startswith('gpWhere = input.string("Right of price"') and inputs[-1].startswith("gpRange = input.float(0.0")     # 1.39.0
         assert "chart.left_visible_bar_time" not in code.split("gpX0(int barMs) =>")[0] and "x0 = gpX0(barMs)" in code
         assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "gpDraw()" in code and all(ord(ch) < 128 for ch in code)
     lv = build_script("lv")
     assert "gpOn = false" in lv and "gpOn   = input.bool" not in lv
+
+
+def test_combined_indicator_gets_activity_stack_zones_from_every_measure():
+    """1.40.0: the Activity heatmap's All measures (combined) hot spots as zones in Q DATA NDX / QQQ / SPX, in their own last section."""
+    from backend.services.tv_pine import COMBO_ACT, COMBO_SECTIONS
+    c, db, now = simulated_day()
+    for t in ("NDX",):                                   # QQQ is not in the test day's symbol list; it runs the same code
+        j = c.post("/api/tv/combo/levels", params={"ticker": t}, json={}).json()
+        assert j["activity_stack"] > 0, t
+        ks = [k for k in j["kinds"] if k["name"] == "Activity stack"]
+        assert ks and all(k["sec"] == COMBO_ACT for k in ks)
+        ls = [x for x in lines(j["text"], "L")]
+        assert any(r[1] == "Activity stack" for r in lines(j["text"], "R"))
+    assert COMBO_SECTIONS[COMBO_ACT] == "Activity stack" and COMBO_ACT == len(COMBO_SECTIONS) - 1
+    code = build_script("combo", "NDX")
+    inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+    assert inputs[-1].startswith(f'sec{COMBO_ACT} = input.bool(true, "Activity stack"')
+    assert f"sec{COMBO_ACT})" in code.split("secs = array.from(")[1].split("\n")[0]
+    assert "Activity stack" not in build_script("all") and "Activity stack" not in build_script("gex")

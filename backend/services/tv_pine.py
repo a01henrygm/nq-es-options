@@ -507,7 +507,7 @@ gpIn(float p) =>
 
 // where the bars start: fixed at the last candle (growing back over the candles), right of price, or the left edge of the screen
 gpX0(int barMs) =>
-    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + gpOff * barMs : time
+    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + (extBars + gpOff) * barMs : time
 
 gpDir() =>
     gpWhere == "Behind the candles (fixed)" ? -1 : 1
@@ -624,6 +624,13 @@ ALL_SECTIONS = GEX_SECTIONS + LV_SECTIONS
 ALL_IV = ALL_LV_OFFSET + LV_SECTIONS.index("IV walls")
 COMBO_SECTIONS = [s for i, s in enumerate(ALL_SECTIONS) if i != ALL_IV] + ["Your levels", "IV walls"]
 COMBO_YOURS, COMBO_IV = len(COMBO_SECTIONS) - 2, len(COMBO_SECTIONS) - 1
+# 1.40.0: the Activity heatmap's All measures (combined) hot spots as stacked zones. Last section; its switch is the last setting.
+COMBO_SECTIONS = COMBO_SECTIONS + ["Activity stack"]
+COMBO_ACT = len(COMBO_SECTIONS) - 1
+ACT_INPUT = ('// added in 1.40.0 (last, so earlier settings keep their place)\n'
+             f'sec{COMBO_ACT} = input.bool(true, "Activity stack", group = grpS, tooltip = "The Activity heatmap with All measures (combined): '
+             'zones where new positions, volume, open interest, GEX, charm, vanna and dealer delta pile up on the same strikes. '
+             'xN in the label = how many of those measures have their own hot spot there.")')
 assert ALL_IV == len(ALL_SECTIONS) - 1
 
 
@@ -660,8 +667,8 @@ GP_INPUT = ('// added in 1.37.0 (last, so earlier settings keep their place)\n'
             'gpT    = input.int(45, "Bar transparency", minval = 0, maxval = 100, group = grpG)\n'
             'gpPosC = input.color(#2563eb, "Positive GEX color", group = grpG)\n'
             'gpNegC = input.color(#7c3aed, "Negative GEX color", group = grpG)\n'
-            + '// added in 1.39.0 (last, so earlier settings keep their place)\ngrpG2 = "GEX by strike: placement"\ngpWhere = input.string("Behind the candles (fixed)", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price: they start this many bars right of the last candle and grow to the right. Left edge of the screen: the old way, they follow the screen as you scroll.")\ngpOff   = input.int(60, "Bars right of price (Right of price)", minval = 0, maxval = 500, group = grpG2)\ngpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")')
-NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed\ngpWhere = "Behind the candles (fixed)"\ngpOff = 60\ngpRange = 0.0'
+            + '// added in 1.39.0 (last, so earlier settings keep their place)\ngrpG2 = "GEX by strike: placement"\ngpWhere = input.string("Right of price", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price (default): they start past the level labels (Run past the last candle + this gap) and grow to the right, away from the candles. Left edge of the screen: the old way, they follow the screen as you scroll.")\ngpOff   = input.int(40, "Gap from the last candle (bars, Right of price)", minval = 0, maxval = 500, group = grpG2)\ngpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")')
+NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed\ngpWhere = "Right of price"\ngpOff = 40\ngpRange = 0.0'
 
 
 def build_script(ind: str, ticker: str | None = None) -> str:
@@ -675,6 +682,8 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     off = {heat_sec} if has_heat else set()
     si = []
     for i, nm in enumerate(secs):
+        if combo and i == COMBO_ACT:
+            continue                                          # declared last (ACT_INPUT), after every older setting
         tip = ', tooltip = "Off until you switch it on: shaded strike bands where the most options activity sits (volume, open interest, GEX)."' if (has_heat and i == heat_sec) else ""
         si.append(f'sec{i} = input.bool({"false" if i in off else "true"}, {_q(nm)}, group = grpS{tip})')
     sa = f'secs = array.from({", ".join(f"sec{i}" for i in range(len(secs)))})'
@@ -690,7 +699,7 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
-    code = code.replace("__GP_INPUT__", GP_INPUT if ind != "lv" else NO_GP)
+    code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else ""))
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first

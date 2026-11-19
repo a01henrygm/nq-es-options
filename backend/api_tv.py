@@ -29,7 +29,7 @@ from .services import quant as qt
 from .services import strat_qs
 from .services import tv_levels as tv
 from .services.level_kinds import CAT, help_for
-from .services.tv_pine import ALL_LV_OFFSET, COMBO_TICKERS, build_script, combo_sec_all, combo_sec_kl
+from .services.tv_pine import ALL_LV_OFFSET, COMBO_ACT, COMBO_TICKERS, build_script, combo_sec_all, combo_sec_kl
 from .services import tv_daymap
 from .services.mapping import SAME_SCALE, contract_expiry, implied_forward_ratio
 from .timeutil import ET, iso, parse_ts, to_et
@@ -132,16 +132,36 @@ def register(app, h, q, tab_parts):
                 lab = x["label"]
                 for a_, b_ in LABEL_SHORT:
                     lab = lab.replace(a_, b_)
+                lo_, hi_ = x.get("low"), x.get("high")
+                if ind == "gex" and (lo_ is None or hi_ is None or hi_ <= lo_):     # 1.40.0: GEX zones sized by the strikes that hold the gamma
+                    bd = tv.gex_band(v, strikes)
+                    if bd:
+                        lo_, hi_ = bd
                 out.append({"ind": ind, "sec": tv.gex_section(name) if ind == "gex" else tv.LV_TABS[tab], "kind": name, "label": lab, "value": float(v),
-                            "low": x.get("low"), "high": x.get("high"), "read": rd, "tip": tip, "short": g.get("short") or "", "style": g.get("style") or "solid"})
+                            "low": lo_, "high": hi_, "read": rd, "tip": tip, "short": g.get("short") or "", "style": g.get("style") or "solid"})
         return out
 
-    def heat_rows(c):
+    def act_all(u, snap, now, hot=8):
+        """The Activity heatmap's "All measures (combined)" view, same defaults as the tab (calls + puts, strikes within 4%, next 8
+        expirations): every measure (new positions, volume, open interest, GEX, charm, vanna, dealer delta) blended into one heat."""
+        try:
+            poi, _t = h.prev_oi_for(u, snap) if hasattr(h, "prev_oi_for") else ({}, None)
+        except Exception:
+            poi = {}
+        per = {}
+        for key in fl.ALL_ORDER:
+            if key == "oi_change" and not poi:
+                continue
+            per[key] = fl.activity_map(snap.contracts, snap.spot, now, key, "total", 0.04, 8, "standard", poi if key == "oi_change" else None, hot)
+        return fl.combined_activity(per, snap.spot, hot)
+
+    def heat_rows(c, u=None):
         snap, now = c["snap"], c["now"]
         try:
-            maps = {k: fl.activity_map(snap.contracts, snap.spot, now, k, "total", 0.03, 8, "standard", None, 5) for k in ("volume", "oi", "gex")}
-            comb = fl.combined_activity(maps, snap.spot, 5)
+            comb = act_all(u, snap, now, 5) if u else fl.combined_activity(
+                {k: fl.activity_map(snap.contracts, snap.spot, now, k, "total", 0.03, 8, "standard", None, 5) for k in ("volume", "oi", "gex")}, snap.spot, 5)
         except Exception:
+            log.exception("tv: activity heat failed")
             return []
         ks, pr = comb.get("strikes") or [], comb.get("profile") or []
         top = max(pr + [0.0]) or 1.0
@@ -468,7 +488,7 @@ def register(app, h, q, tab_parts):
         heat = []
         if ind in ("lv", "all"):
             c = q.context(u, "standard")
-            heat = [{**x, "price": conv(x["price"]), "low": conv(x["low"]), "high": conv(x["high"])} for x in heat_rows(c)]
+            heat = [{**x, "price": conv(x["price"]), "low": conv(x["low"]), "high": conv(x["high"])} for x in heat_rows(c, u)]
             heat = [x for x in heat if x["price"] is not None]
         gexp = []
         if ind in ("gex", "all"):                             # every strike's GEX, not just the biggest few (1.37.0)
@@ -555,8 +575,14 @@ def register(app, h, q, tab_parts):
             mem = "; ".join(f"{mm.get('label')} {mm.get('value', 0):,.0f}" for mm in (x.get("inputs") or {}).get("members", [])[:4]) if key_mode else ""
             tip = (why or "") + (f" Lines up here: {mem}." if mem else "")
             short, _long = help_for(name)
-            runs.append({"active": 1, "live": 0, "kind": name, "sec": tv.kl_section(cat, name), "label": x.get("label") or name, "value": float(v),
-                         "low": x.get("low"), "high": x.get("high"), "first_ts_ms": ms(x.get("first_seen")) or data_ms, "end_ts_ms": 0,
+            sec_ = tv.kl_section(cat, name)
+            lo_, hi_ = x.get("low"), x.get("high")
+            if sec_ < len(tv.GEX_SECTIONS) and (lo_ is None or hi_ is None or hi_ <= lo_):      # 1.40.0: GEX zones from the GEX profile
+                bd = tv.gex_band(v, strikes)
+                if bd:
+                    lo_, hi_ = bd
+            runs.append({"active": 1, "live": 0, "kind": name, "sec": sec_, "label": x.get("label") or name, "value": float(v),
+                         "low": lo_, "high": hi_, "first_ts_ms": ms(x.get("first_seen")) or data_ms, "end_ts_ms": 0,
                          "read": tv.READ.get(call, "-"), "prev": None, "tip": tip.strip() or x.get("label") or name, "short": short or "",
                          "style": CAT.get(cat, ("", "", "solid"))[2]})
         sel = j["selection"]
@@ -612,6 +638,55 @@ def register(app, h, q, tab_parts):
         """Q DATA Day Map (1.38.0): every GEX strike, the key levels of the day and the straddle. Takes the combined copy."""
         return {"code": tv_daymap.build_daymap_script(), "title": tv_daymap.NAME, "filename": tv_daymap.FILE}
 
+    def act_stack_runs(u, convention="standard"):
+        """Stacked levels from the Activity heatmap's All measures (combined) view (1.40.0): each hot spot where the measures pile up,
+        as a zone over its strikes, with how many measures have their own hot spot or center there. Index prices."""
+        snap = h.snapshot(u)
+        _m, _, now = h.meta(snap, {"convention": convention})
+        data_ms = ms(iso(snap.source_ts or snap.retrieved_at))
+        try:
+            comb = act_all(u, snap, now, 8)
+        except Exception:
+            log.exception("tv: activity stack failed")
+            return []
+        c = q.context(u, convention)
+        pb = qt.gamma_playbook(c["z"], snap.spot, c["open"], c["sig_open"], c["gamma_series"], c["sig_rem"])
+        gf = an.gamma_flip(snap.contracts, snap.spot, now, convention)
+        flips = [c["z"].get("flip") if c["z"].get("available") else None, gf["flip"] if gf["found"] else None]
+        strikes = an.gex_by_strike(snap.contracts, snap.spot, now, convention)["strikes"]
+        near_s = [s_ for s_ in strikes if abs(s_["strike"] - snap.spot) <= 0.03 * snap.spot]
+        scale = max((abs(bh.local_gex(near_s, s_["strike"], snap.spot)) for s_ in near_s), default=0.0)
+        prof = dict(zip(comb.get("strikes") or [], comb.get("profile") or []))
+        ks = sorted(prof)
+        step = min((b - a for a, b in zip(ks, ks[1:]) if b > a), default=5.0)
+
+        def core(k):
+            """The tight core of a hot spot: its peak strike, plus up to 2 strikes each side that still hold 85% of the peak's heat."""
+            pk = prof.get(k) or 0.0
+            i = ks.index(k) if k in prof else None
+            if i is None or pk <= 0:
+                return k, k
+            a = b = i
+            while a > 0 and i - a < 2 and prof[ks[a - 1]] >= 0.85 * pk:
+                a -= 1
+            while b < len(ks) - 1 and b - i < 2 and prof[ks[b + 1]] >= 0.85 * pk:
+                b += 1
+            return ks[a], ks[b]
+
+        out = []
+        for i, hs in enumerate(sorted(comb.get("hot_spots") or [], key=lambda x: -x["value"])):
+            lo, hi = core(hs["price"])
+            here = sorted({L["name"] for L in comb.get("levels") or [] if lo - step <= L["price"] <= hi + step})
+            n_ = len(here)
+            call, why, _s, _g = bh.call_for({"value": hs["price"], "category": "other", "members": []}, pb["state"], snap.spot, flips, strikes, scale)
+            tip = (f"Activity stack #{i + 1}: heat {hs.get('heat', 0)}/100, {hs['share'] * 100:.0f}% of all activity in view, {hs['meaning']}. "
+                   + (f"{n_} measures have a level here" if n_ != 1 else "1 measure has a level here") + (f" ({', '.join(here)})" if here else "") + ". " + (why or ""))
+            out.append({"active": 1, "live": 0, "kind": "Activity stack", "sec": COMBO_ACT, "label": f"Stack x{n_}" if n_ else "Stack",
+                        "value": float(hs["price"]), "low": float(lo - step / 2), "high": float(hi + step / 2), "first_ts_ms": data_ms, "end_ts_ms": 0,
+                        "read": tv.READ.get(call, "-"), "prev": None, "tip": tip.strip(), "short": "where every measure of the Activity heatmap piles up",
+                        "style": "solid"})
+        return out
+
     @app.post("/api/tv/combo/levels")
     def combo_levels(ticker: str, history: bool = True, convention: str = "standard", method: str = "auto", categories: str | None = None,
                      top: int = Query(2, ge=1, le=10), expiration: str | None = None, by_expiry: int = Query(0, ge=0, le=8),
@@ -628,8 +703,10 @@ def register(app, h, q, tab_parts):
         except HTTPException:
             kl, shown = [], "none (no Key levels yet)"
         kl = [dict(x, sec=combo_sec_kl(int(x["sec"]))) for x in kl]
-        j = levels(u, "all", (body or {}).get("prefs"), history, extra=kl, tag="combo", extra_rows=[("Key levels", shown)], sec_map=combo_sec_all)
-        j.update({"ind": "combo", "title": f"Q DATA {t}", "ticker": t, "key_levels": len(kl)})
+        act = act_stack_runs(u, convention)
+        j = levels(u, "all", (body or {}).get("prefs"), history, extra=kl + act, tag="combo",
+                   extra_rows=[("Key levels", shown), ("Activity stack", f"{len(act)} areas (all measures combined)")], sec_map=combo_sec_all)
+        j.update({"ind": "combo", "title": f"Q DATA {t}", "ticker": t, "key_levels": len(kl), "activity_stack": len(act)})
         return j
 
     @app.post("/api/tv/track")

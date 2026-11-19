@@ -918,7 +918,7 @@ def create_app(primary_settings: Settings, primary_db: Database, primary_collect
     from .api_quant import register as register_quant
     register_quant(app, SimpleNamespace(db=db, settings=settings, snapshot=snapshot, meta=meta, underlying_ok=underlying_ok,
                                         futures_mapper=futures_mapper, futures_converter=futures_converter, now_fn=now_fn, levels_payload=levels_payload, reactions=reactions,
-                                        as_of=as_of))
+                                        as_of=as_of, prev_oi_for=prev_oi_for))
     from .api_extras import register as register_extras
     register_extras(app, SimpleNamespace(db=db, primary_db=primary_db, extras=extras, snapshot=snapshot, futures_converter=futures_converter,
                                          now_fn=now_fn, underlying_ok=underlying_ok, settings=settings))
