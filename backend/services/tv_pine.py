@@ -409,8 +409,9 @@ qdDraw(int n, bool[] pick, int endX) =>
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 10 : 20), width = 1, style = line.style_dashed))
             else if near and array.size(bxs) < 480
                 sh = smallHalf()
-                zt = small ? p + sh : band ? hi + offsetPts : p + hh
-                zb = small ? p - sh : band ? lo + offsetPts : p - hh
+                gH = gexH > 0 and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
+                zt = small ? p + sh : gH ? p + gexH / 2 : band ? hi + offsetPts : p + hh
+                zb = small ? p - sh : gH ? p - gexH / 2 : band ? lo + offsetPts : p - hh
                 array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, border_style = brk ? line.style_dashed : line.style_solid, bgcolor = color.new(c, small ? math.max(zoneT - 12, 0) : zoneT)))
                 if band and not small
                     array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, 35), width = 1, style = line.style_dotted))
@@ -651,6 +652,11 @@ GEXZ_INPUT = ('grpZ = "GEX levels as zones"\n'
               'gexZones = input.string("Every GEX level", "GEX levels are drawn as", options = ["Every GEX level", "Only near price"], group = grpZ, '
               'tooltip = "Every GEX level (default): gamma flips, call / put walls, GEX strikes and GEX zones are see-through zones wherever they are. '
               'Only near price: like the other levels, zones only close to price and thin lines farther away.")')
+GEXH_INPUT = ('// added in 1.41.0 (last, so earlier settings keep their place)\n'
+              'grpGH = "GEX zone size"\n'
+              'gexH = input.float(0.0, "GEX zone height (points, 0 = Q DATA size)", minval = 0.0, step = 1.0, group = grpGH, '
+              'tooltip = "Every GEX zone (flips, walls, GEX strikes, GEX zones) is drawn this many points tall, centered on its level. '
+              '0 = the size Q DATA works out from the GEX by strike profile (at least about 16 NQ points).")')
 COMBO_INPUT = ('// added in 1.34.0 (last)\n'
                'grpC = "Distance zones"\n'
                'distZones = input.bool(true, "Zones by distance for every non-GEX level", group = grpC, tooltip = "Expected move, open interest, volume, HOD / LOD, charm / vanna and the rest: a see-through zone only when decently close (Quick setup > Zones within), a thin line when farther. Super close ones get a small, tight zone. GEX levels follow GEX levels as zones.")\n'
@@ -699,7 +705,7 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
-    code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else ""))
+    code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else "") + "\n" + (GEXH_INPUT if ind != "lv" else "gexH = 0.0"))
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first

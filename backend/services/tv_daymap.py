@@ -64,6 +64,9 @@ grpG2 = "GEX by strike: placement"
 gpWhere = input.string("Right of price", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price (default): they start past the level labels (Run past the last candle + this gap) and grow to the right, away from the candles. Left edge of the screen: the old way, they follow the screen as you scroll.")
 gpOff   = input.int(40, "Gap from the last candle (bars, Right of price)", minval = 0, maxval = 500, group = grpG2)
 gpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")
+// added in 1.41.0 (last, so earlier settings keep their place)
+grpGH = "GEX zone size"
+gexH = input.float(0.0, "GEX zone height (points, 0 = Q DATA size)", minval = 0.0, step = 1.0, group = grpGH, tooltip = "Every GEX zone is drawn this many points tall, centered on its level. 0 = the size Q DATA works out from the GEX by strike profile (at least about 16 NQ points).")
 
 // ---- backtest: levels copied for an earlier day carry that day's session end ----
 qdBtEnd(string txt) =>
@@ -292,8 +295,9 @@ keyDraw(int endX) =>
                 band = hi > lo and lo > 0
                 zone = isGex(g) or math.abs(p - refClose()) <= nd
                 if zone
-                    zt = band ? hi + offsetPts : p + hh * 2
-                    zb = band ? lo + offsetPts : p - hh * 2
+                    gH = gexH > 0 and isGex(g)
+                    zt = gH ? p + gexH / 2 : band ? hi + offsetPts : p + hh * 2
+                    zb = gH ? p - gexH / 2 : band ? lo + offsetPts : p - hh * 2
                     array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, bgcolor = color.new(c, zoneT)))
                     array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, 30), width = 1, style = line.style_dotted))
                 else

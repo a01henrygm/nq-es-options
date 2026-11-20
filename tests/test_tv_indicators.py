@@ -326,6 +326,8 @@ def test_gex_profile_row_budget_keeps_the_lowest_and_highest_strike():
 def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
     for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ") and "Activity stack" not in x]
+        assert inputs[-1].startswith("gexH = input.float(0.0")                          # 1.41.0: GEX zone height, after everything
+        inputs = inputs[:-1]
         assert inputs[-10].startswith("gpOn   = input.bool(true") and inputs[-4].startswith("gpNegC = input.color(")
         assert inputs[-3].startswith('gpWhere = input.string("Right of price"') and inputs[-1].startswith("gpRange = input.float(0.0")     # 1.39.0
         assert "chart.left_visible_bar_time" not in code.split("gpX0(int barMs) =>")[0] and "x0 = gpX0(barMs)" in code
@@ -348,6 +350,6 @@ def test_combined_indicator_gets_activity_stack_zones_from_every_measure():
     assert COMBO_SECTIONS[COMBO_ACT] == "Activity stack" and COMBO_ACT == len(COMBO_SECTIONS) - 1
     code = build_script("combo", "NDX")
     inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
-    assert inputs[-1].startswith(f'sec{COMBO_ACT} = input.bool(true, "Activity stack"')
+    assert inputs[-2].startswith(f'sec{COMBO_ACT} = input.bool(true, "Activity stack"') and inputs[-1].startswith("gexH = input.float")
     assert f"sec{COMBO_ACT})" in code.split("secs = array.from(")[1].split("\n")[0]
     assert "Activity stack" not in build_script("all") and "Activity stack" not in build_script("gex")

@@ -583,3 +583,12 @@ def test_gex_by_strike_keeps_the_strikes_next_to_price():
     ps = [r["price"] for r in rows]
     assert sum(1 for p in ps if p <= 20001) >= 15 + 1 and sum(1 for p in ps if p > 20001) >= 15
     assert all(p in ps for p in range(19930, 20080, 5))
+
+
+def test_gex_zone_height_setting():
+    """1.41.0: every indicator with GEX zones has a GEX zone height setting, declared after every older setting."""
+    from backend.services import tv_pine as t, tv_daymap as d
+    for code in [t.build_script(i) for i in ("gex", "kl", "all")] + [t.build_script("combo", "NDX"), d.build_daymap_script()]:
+        assert 'gexH = input.float(0.0, "GEX zone height' in code
+        assert code.index("gexH = input.float") > code.index("gpRange = input.float")
+        assert all(ord(ch) < 128 for ch in code)

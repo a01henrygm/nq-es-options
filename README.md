@@ -36,6 +36,7 @@ on the Levels tab are shared by both sources.
 ## New in 1.41.0
 
 - **GEX zones a bit bigger.** Every GEX zone (and GEX strike zone) is now at least 0.06% of price tall (about 16 NQ points), padded evenly around its level. Walls that already span several strikes keep their own shape. Applies to the GEX, Key levels and Q DATA NDX / QQQ / SPX indicators.
+- **GEX zone height setting.** New last setting "GEX zone size > GEX zone height (points, 0 = Q DATA size)" in the GEX, Key levels, All Tabs, Q DATA NDX / QQQ / SPX and Day Map indicators: type a number and every GEX zone is drawn that many points tall, centered on its level.
 - **GEX by strike: the strikes next to price always show.** At least 15 strikes above and 15 below price always go to the bars, even when they are small, on top of the lowest and highest strikes and the biggest ones.
 
 ## New in 1.40.0
