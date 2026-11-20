@@ -140,6 +140,29 @@ def gex_band(value: float, strikes: list, keep: float = 0.6, reach: int = 1):
     return lo, hi
 
 
+GEX_MIN_PCT = 0.001       # 1.41.0: a GEX zone is at least 0.1% of price tall (about 26 NQ points at 26,400)
+
+
+def gex_widen(value: float, lo, hi, strikes: list, min_pct: float = GEX_MIN_PCT):
+    """Makes a GEX zone a bit bigger (1.41.0) without losing where the gamma really sits.
+
+    The zone keeps the price area its strikes cover (gex_band or the zone's own band) and is padded evenly to at least
+    `min_pct` of price, and at least one full strike step above and below the level, so it is easy to see and trade around.
+    Index prices. Returns (lo, hi)."""
+    if not value or value <= 0:
+        return lo, hi
+    if lo is None or hi is None or hi <= lo:
+        lo = hi = float(value)
+    pr = sorted({float(s["strike"]) for s in strikes or [] if s.get("strike")})
+    near = [b - a for a, b in zip(pr, pr[1:]) if b > a and abs((a + b) / 2 - value) <= 0.02 * value]
+    step = min(near) if near else 0.0
+    lo, hi = min(lo, value - step), max(hi, value + step)
+    need = min_pct * value - (hi - lo)
+    if need > 0:
+        lo, hi = lo - need / 2, hi + need / 2
+    return float(lo), float(hi)
+
+
 def gex_section(name: str) -> int:
     n = (name or "").lower()
     if "flip" in n:

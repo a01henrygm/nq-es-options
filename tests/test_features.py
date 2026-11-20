@@ -561,3 +561,15 @@ def test_page_files_are_never_served_stale():
 
 
 # ---- 1.22: the paste-in Key levels indicator draws every level as a zone, and the app hands it out ----------------
+
+
+def test_gex_zones_are_a_bit_bigger():
+    """1.41.0: a GEX zone covers at least a strike each side of its level and 0.1% of price, and still holds its own band."""
+    from backend.services import tv_levels as t
+    S = [{"strike": k, "net_gex": 1.0} for k in range(26300, 26600, 10)]
+    lo, hi = t.gex_widen(26440.0, 26435.0, 26445.0, S)
+    assert lo <= 26430.0 and hi >= 26450.0
+    assert hi - lo >= 0.001 * 26440.0 - 1e-9
+    assert abs((lo + hi) / 2 - 26440.0) < 1e-6
+    lo2, hi2 = t.gex_widen(26440.0, 26380.0, 26500.0, S)          # a wide wall keeps its own shape
+    assert (lo2, hi2) == (26380.0, 26500.0)

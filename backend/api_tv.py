@@ -137,6 +137,8 @@ def register(app, h, q, tab_parts):
                     bd = tv.gex_band(v, strikes)
                     if bd:
                         lo_, hi_ = bd
+                if ind == "gex" and tv.gex_section(name) in (2, 3):                    # 1.41.0: GEX zones a bit bigger
+                    lo_, hi_ = tv.gex_widen(v, lo_, hi_, strikes)
                 out.append({"ind": ind, "sec": tv.gex_section(name) if ind == "gex" else tv.LV_TABS[tab], "kind": name, "label": lab, "value": float(v),
                             "low": lo_, "high": hi_, "read": rd, "tip": tip, "short": g.get("short") or "", "style": g.get("style") or "solid"})
         return out
@@ -581,6 +583,8 @@ def register(app, h, q, tab_parts):
                 bd = tv.gex_band(v, strikes)
                 if bd:
                     lo_, hi_ = bd
+            if sec_ in (2, 3):          # 1.41.0: GEX zones a bit bigger
+                lo_, hi_ = tv.gex_widen(v, lo_, hi_, strikes)
             runs.append({"active": 1, "live": 0, "kind": name, "sec": sec_, "label": x.get("label") or name, "value": float(v),
                          "low": lo_, "high": hi_, "first_ts_ms": ms(x.get("first_seen")) or data_ms, "end_ts_ms": 0,
                          "read": tv.READ.get(call, "-"), "prev": None, "tip": tip.strip() or x.get("label") or name, "short": short or "",

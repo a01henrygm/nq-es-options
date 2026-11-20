@@ -33,6 +33,10 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.41.0
+
+- **GEX zones a bit bigger.** Every GEX zone (and GEX strike zone) now covers at least one strike above and below its level and at least 0.1% of price (about 26 NQ points), padded evenly around the level. Walls that already span several strikes keep their own shape. Applies to the GEX, Key levels and Q DATA NDX / QQQ / SPX indicators.
+
 ## New in 1.40.0
 
 - **GEX by strike bars moved off the candles.** They now start past the level labels (Run past the last candle + a 40-bar gap)
