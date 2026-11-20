@@ -21,6 +21,7 @@ import re
 
 MAX_CHARS = 36000       # 1.39.0: room for the whole GEX chain (TradingView strings hold up to 40,960 characters)
 GEXP_RANGE_PCT = 100.0    # 1.39.0: the whole chain (was 8%); the chart has its own "Show strikes within" setting
+GEXP_NEAR_EACH_SIDE = 15  # 1.41.0: at least this many strikes above and below price always go to the GEX-by-strike bars
 GEXP_MAX_ROWS = 450       # at most this many G rows (about 11K characters): the lowest and highest strike always stay, then the biggest
 TIP_CHARS = 150
 HIST_PER_KIND = 4
@@ -140,23 +141,19 @@ def gex_band(value: float, strikes: list, keep: float = 0.6, reach: int = 1):
     return lo, hi
 
 
-GEX_MIN_PCT = 0.001       # 1.41.0: a GEX zone is at least 0.1% of price tall (about 26 NQ points at 26,400)
+GEX_MIN_PCT = 0.0006      # 1.41.0: a GEX zone is at least 0.06% of price tall (about 16 NQ points at 26,400)
 
 
 def gex_widen(value: float, lo, hi, strikes: list, min_pct: float = GEX_MIN_PCT):
     """Makes a GEX zone a bit bigger (1.41.0) without losing where the gamma really sits.
 
     The zone keeps the price area its strikes cover (gex_band or the zone's own band) and is padded evenly to at least
-    `min_pct` of price, and at least one full strike step above and below the level, so it is easy to see and trade around.
+    `min_pct` of price, so it is easy to see and trade around.
     Index prices. Returns (lo, hi)."""
     if not value or value <= 0:
         return lo, hi
     if lo is None or hi is None or hi <= lo:
         lo = hi = float(value)
-    pr = sorted({float(s["strike"]) for s in strikes or [] if s.get("strike")})
-    near = [b - a for a, b in zip(pr, pr[1:]) if b > a and abs((a + b) / 2 - value) <= 0.02 * value]
-    step = min(near) if near else 0.0
-    lo, hi = min(lo, value - step), max(hi, value + step)
     need = min_pct * value - (hi - lo)
     if need > 0:
         lo, hi = lo - need / 2, hi + need / 2
@@ -260,16 +257,19 @@ def gex_profile(strikes: list, spot: float, conv, range_pct: float = GEXP_RANGE_
         p = conv(k)
         if p is None or p <= 0:
             continue
-        rows.append((float(p), float(g)))
-    mx = max((abs(g) for _p, g in rows), default=0.0)
+        rows.append((float(p), float(g), float(k)))
+    mx = max((abs(g) for _p, g, _k in rows), default=0.0)
     if not mx:
         return []
     rows.sort()
     if max_rows and len(rows) > max_rows:
         ends = {0, len(rows) - 1}
-        rest = sorted((i for i in range(len(rows)) if i not in ends), key=lambda i: -abs(rows[i][1]))[:max_rows - 2]
-        rows = [rows[i] for i in sorted(ends | set(rest))]
-    return [{"price": p, "pct": g / mx * 100, "text": money(g)} for p, g in rows]
+        below = [i for i in range(len(rows)) if rows[i][2] <= spot][-GEXP_NEAR_EACH_SIDE:]   # 1.41.0: the strikes next to price always stay
+        above = [i for i in range(len(rows)) if rows[i][2] > spot][:GEXP_NEAR_EACH_SIDE]
+        keep = ends | set(below) | set(above)
+        rest = sorted((i for i in range(len(rows)) if i not in keep), key=lambda i: -abs(rows[i][1]))[:max(0, max_rows - len(keep))]
+        rows = [rows[i] for i in sorted(keep | set(rest))]
+    return [{"price": p, "pct": g / mx * 100, "text": money(g)} for p, g, _k in rows]
 
 
 def f(text, n=None) -> str:

@@ -564,12 +564,22 @@ def test_page_files_are_never_served_stale():
 
 
 def test_gex_zones_are_a_bit_bigger():
-    """1.41.0: a GEX zone covers at least a strike each side of its level and 0.1% of price, and still holds its own band."""
+    """1.41.0: a GEX zone is at least 0.06% of price, centered on its level, and still holds its own band."""
     from backend.services import tv_levels as t
     S = [{"strike": k, "net_gex": 1.0} for k in range(26300, 26600, 10)]
     lo, hi = t.gex_widen(26440.0, 26435.0, 26445.0, S)
-    assert lo <= 26430.0 and hi >= 26450.0
-    assert hi - lo >= 0.001 * 26440.0 - 1e-9
+    assert lo < 26435.0 and hi > 26445.0
+    assert abs((hi - lo) - 0.0006 * 26440.0) < 1e-6
     assert abs((lo + hi) / 2 - 26440.0) < 1e-6
     lo2, hi2 = t.gex_widen(26440.0, 26380.0, 26500.0, S)          # a wide wall keeps its own shape
     assert (lo2, hi2) == (26380.0, 26500.0)
+
+
+def test_gex_by_strike_keeps_the_strikes_next_to_price():
+    """1.41.0: with a big chain, the strikes right around price always go out even when they are small."""
+    from backend.services import tv_levels as t
+    S = [{"strike": k, "net_gex": (1e9 if abs(k - 20000) > 400 else 1e3)} for k in range(15000, 25000, 5)]
+    rows = t.gex_profile(S, 20001.0, lambda v: v, max_rows=100)
+    ps = [r["price"] for r in rows]
+    assert sum(1 for p in ps if p <= 20001) >= 15 + 1 and sum(1 for p in ps if p > 20001) >= 15
+    assert all(p in ps for p in range(19930, 20080, 5))
