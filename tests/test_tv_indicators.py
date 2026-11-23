@@ -132,6 +132,7 @@ def test_levels_start_setting_is_last_and_offers_open_and_chart_start():
     for ind in ("gex", "lv"):
         code = build_script(ind)
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+        inputs = inputs[:next((i for i, x in enumerate(inputs) if x.startswith("showAll ")), len(inputs))]   # 1.42.0 group goes after
         inputs = inputs[:next((i for i, x in enumerate(inputs) if x.startswith("gpOn ")), len(inputs))]   # 1.37.0 GEX bars go after
         assert inputs[-3].startswith("zoneFilter = input.string(") and inputs[-2].startswith("showStackN")   # 1.32.0
         assert inputs[-1].startswith('symTagIn = input.string("Auto"')                                          # 1.33.0, last
@@ -264,7 +265,7 @@ def test_day_map_reads_the_combined_copy_and_shows_gex_key_levels_and_the_stradd
     # parsing matches where build_text writes the fields
     assert 'array.push(kSec, int(num(a, 6)))' in code and 'array.push(kKey, fld(a, 7) == "1")' in code
     assert "p = num(a, 1)" in code and "array.push(lvG, int(num(a, 4)))" in code and "array.push(lvN, fld(a, 9))" in code
-    assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "keyDraw(endX)" in code and "Straddle high" in code
+    assert 'tag == "G"' in code and "polyline.new(ptsP" in code and "keyDraw(endX, labX)" in code and "Straddle high" in code
     # balanced parentheses / brackets on every line (a cheap syntax guard, the script is not compiled here)
     for ln in code.splitlines():
         t = re.sub(r'"[^"]*"', '""', ln.split("//")[0] if not ln.lstrip().startswith("//") else "")
@@ -326,7 +327,10 @@ def test_gex_profile_row_budget_keeps_the_lowest_and_highest_strike():
 def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
     for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ") and "Activity stack" not in x]
-        assert inputs[-1].startswith("gexH = input.float(0.0")                          # 1.41.0: GEX zone height, after everything
+        assert inputs[-7].startswith("showAll  = input.bool(true") and inputs[-2].startswith('gpAs = input.string("Zones"')   # 1.42.0, last
+        assert inputs[-1].startswith("gpZT = input.int(88")
+        inputs = inputs[:-7]
+        assert inputs[-1].startswith("gexH = input.float(0.0")                          # 1.41.0: GEX zone height
         inputs = inputs[:-1]
         assert inputs[-10].startswith("gpOn   = input.bool(true") and inputs[-4].startswith("gpNegC = input.color(")
         assert inputs[-3].startswith('gpWhere = input.string("Right of price"') and inputs[-1].startswith("gpRange = input.float(0.0")     # 1.39.0
@@ -350,6 +354,21 @@ def test_combined_indicator_gets_activity_stack_zones_from_every_measure():
     assert COMBO_SECTIONS[COMBO_ACT] == "Activity stack" and COMBO_ACT == len(COMBO_SECTIONS) - 1
     code = build_script("combo", "NDX")
     inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ")]
+    inputs = inputs[:next(i for i, x in enumerate(inputs) if x.startswith("showAll "))]       # 1.42.0 group goes last
     assert inputs[-2].startswith(f'sec{COMBO_ACT} = input.bool(true, "Activity stack"') and inputs[-1].startswith("gexH = input.float")
     assert f"sec{COMBO_ACT})" in code.split("secs = array.from(")[1].split("\n")[0]
     assert "Activity stack" not in build_script("all") and "Activity stack" not in build_script("gex")
+
+
+def test_every_level_shown_as_zones_with_labels_inside():
+    """1.42.0: no distance hiding for GEX / strikes / sd / HOD-LOD, every level a zone, labels inside the zone right of the
+    last candle, no center line by default, and GEX by strike drawn as zones instead of bars."""
+    from backend.services.tv_daymap import build_daymap_script
+    codes = [build_script(i) for i in ("gex", "kl", "all", "lv")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")] + [build_daymap_script()]
+    for code in codes:
+        assert 'showAll  = input.bool(true' in code and 'allZones = input.bool(true' in code and 'midLine  = input.bool(false' in code
+        assert "protName(string nm)" in code and "label.new(labX, p, txt" in code and "label.new(endX, p, txt" not in code
+        assert "runBars()" in code and "array.sort_indices(dists, order.ascending)" in code
+    for code in codes[:3] + codes[4:]:
+        assert 'gpAs = input.string("Zones"' in code and "gpZones(endX, labX)" in code and 'gpAs == "Bars"' in code
+    assert 'gpAs = "Off"' in codes[3]

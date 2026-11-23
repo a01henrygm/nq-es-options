@@ -116,6 +116,8 @@ var int[]    kSec = array.new<int>()
 var bool[]   kKey = array.new<bool>()
 var bool[]   kHide = array.new<bool>()
 var int[]    kCls = array.new<int>()
+var bool[]   kProt = array.new<bool>()
+var float[]  gzP = array.new<float>()
 var float[]  hmP = array.new<float>()
 var float[]  hmLo = array.new<float>()
 var float[]  hmHi = array.new<float>()
@@ -166,6 +168,11 @@ kindClass(string nm) =>
         c := 1
     c
 
+// 1.42.0: kinds that are never hidden by distance, Look or the zones filter: expected move / straddle / sd and HOD / LOD
+protName(string nm) =>
+    n = str.lower(nm)
+    str.contains(n, "expected move") or str.contains(n, "straddle") or str.contains(n, " sd") or str.startswith(n, "1 sd") or str.startswith(n, "2 sd") or str.contains(n, "of day") or str.contains(n, "hod") or str.contains(n, "lod") or str.contains(n, "typical day") or str.contains(n, "monte carlo")
+
 clsOf(int g) =>
     g >= 0 and g < array.size(kCls) ? array.get(kCls, g) : 2
 
@@ -183,6 +190,12 @@ kindOf(int g, int what) =>
     // what: 0 = section, 1 = width
     ok = g >= 0 and g < array.size(kSec)
     what == 0 ? (ok ? array.get(kSec, g) : -1) : (ok ? array.get(kW, g) : 1)
+
+// GEX levels (flips, walls, GEX strikes, GEX zones) and the kinds above: always shown wherever they are (1.42.0)
+protKind(int g) =>
+    s = kindOf(g, 0)
+    pr = g >= 0 and g < array.size(kProt) ? array.get(kProt, g) : false
+    pr or (s >= 0 and s <= __GEXMAX__)
 
 kindKey(int g) =>
     g >= 0 and g < array.size(kKey) ? array.get(kKey, g) : false
@@ -221,6 +234,10 @@ nearDist() =>
 halfH() =>
     (zoneH > 0 ? zoneH : refClose() * 0.0003) / 2
 
+// how far right of the last candle the zones run (1.42.0): room for the labels inside them
+runBars() =>
+    math.max(extBars, math.max(zoneRun, labOff + 25))
+
 // distance zones (combined indicators, 1.34.0): super close levels get a small, tight zone
 superDist() =>
     superNear > 0 ? superNear : refClose() * 0.001
@@ -257,6 +274,7 @@ qdParse(string txt) =>
     array.clear(kKey)
     array.clear(kHide)
     array.clear(kCls)
+    array.clear(kProt)
     array.clear(hmP)
     array.clear(hmLo)
     array.clear(hmHi)
@@ -281,6 +299,7 @@ qdParse(string txt) =>
             array.push(kKey, fld(a, 7) == "1")
             array.push(kHide, hiddenName(fld(a, 1)))
             array.push(kCls, kindClass(fld(a, 1)))
+            array.push(kProt, protName(fld(a, 1)))
         else if tag == "L" and array.size(a) >= 10
             p = num(a, 1)
             if p > 0
@@ -343,7 +362,8 @@ startX(float levelStart) =>
 visibleAt(int i) =>
     g = array.get(lvG, i)
     p = array.get(lvP, i) + offsetPts
-    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and classOk(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct
+    pk = protKind(g)
+    array.get(lvE, i) == 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and (classOk(g) or pk) and (showAll or pk or math.abs(p - refClose()) / refClose() * 100 <= maxPct)
 
 // which current levels get drawn: Clean = key levels + the nearest perSide on each side
 qdPick(int n) =>
@@ -355,7 +375,7 @@ qdPick(int n) =>
         if array.get(vis, i)
             g = array.get(lvG, i)
             k = kindKey(g)
-            if look == "Everything nearby" or k
+            if showAll or protKind(g) or look == "Everything nearby" or k
                 array.set(pick, i, true)
             else if look == "Clean"
                 pi = array.get(lvP, i) + offsetPts
@@ -369,7 +389,7 @@ qdPick(int n) =>
                 array.set(pick, i, closer < perSide)
     pick
 
-qdDraw(int n, bool[] pick, int endX) =>
+qdDraw(int n, bool[] pick, int endX, int labX) =>
     white = theme == "White chart"
     sz = sizeOf()
     nd = nearDist()
@@ -379,6 +399,7 @@ qdDraw(int n, bool[] pick, int endX) =>
     labTip = array.new<string>()
     labCnt = array.new<int>()
     labBase = array.new<string>()
+    array.clear(gzP)
     drawn = 0
     // faded history first, so current levels sit on top
     if showHist and dataStart()
@@ -386,10 +407,15 @@ qdDraw(int n, bool[] pick, int endX) =>
             e = array.get(lvE, i)
             g = array.get(lvG, i)
             p = array.get(lvP, i) + offsetPts
-            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and classOk(g) and math.abs(p - refClose()) / refClose() * 100 <= maxPct and array.size(lns) < 480
+            if e > 0 and secOn(kindOf(g, 0)) and not kindHidden(g) and (classOk(g) or protKind(g)) and (showAll or protKind(g) or math.abs(p - refClose()) / refClose() * 100 <= maxPct) and array.size(lns) < 480
                 c = kindColor(g)
                 array.push(lns, line.new(clampT(array.get(lvS, i)), p, clampT(e), p, xloc = xloc.bar_time, color = color.new(c, histT), width = 1, style = line.style_dotted))
+    // nearest to price first (1.42.0), so with every level on, the ones that matter most never run out of drawings
+    dists = array.new<float>(n, 0.0)
     for i = 0 to n - 1
+        array.set(dists, i, math.abs(array.get(lvP, i) + offsetPts - refClose()))
+    ix = array.sort_indices(dists, order.ascending)
+    for i in ix
         if array.get(pick, i) and array.size(lbs) < 480
             g = array.get(lvG, i)
             c = kindColor(g)
@@ -403,7 +429,7 @@ qdDraw(int n, bool[] pick, int endX) =>
             dist = math.abs(p - refClose())
             // distance zones: every non-GEX level (expected move, OI, HOD / LOD...) is a zone when decently close, a small tight zone when super close
             tiered = distZones and not gexZ
-            near = tiered ? dist <= nd : (dist <= nd or gexZ) and not brk
+            near = allZones or (tiered ? dist <= nd : (dist <= nd or gexZ) and not brk)
             small = tiered and dist <= superDist()
             if brk and not near
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 10 : 20), width = 1, style = line.style_dashed))
@@ -413,7 +439,9 @@ qdDraw(int n, bool[] pick, int endX) =>
                 zt = small ? p + sh : gH ? p + gexH / 2 : band ? hi + offsetPts : p + hh
                 zb = small ? p - sh : gH ? p - gexH / 2 : band ? lo + offsetPts : p - hh
                 array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, border_style = brk ? line.style_dashed : line.style_solid, bgcolor = color.new(c, small ? math.max(zoneT - 12, 0) : zoneT)))
-                if band and not small
+                if kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
+                    array.push(gzP, p)
+                if band and not small and midLine
                     array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, 35), width = 1, style = line.style_dotted))
             else
                 array.push(lns, line.new(x1, p, endX, p, xloc = xloc.bar_time, color = color.new(c, white ? 5 : 15), width = kindOf(g, 1), style = kindStyle(g)))
@@ -442,7 +470,8 @@ qdDraw(int n, bool[] pick, int endX) =>
                 label.set_tooltip(lb, jt)
             else
                 txt = symTag() + nm + " " + fmtP(p) + (brk ? "  BREAK LEVEL" : rd != "" ? "  " + rd : "")
-                array.push(lbs, label.new(endX, p, txt, xloc = xloc.bar_time, style = label.style_label_left, color = white ? color.new(c, 86) : color.new(c, 25), textcolor = white ? c : color.white, size = sz, tooltip = tip))
+                // 1.42.0: the label sits INSIDE its zone, a few bars right of the last candle, so it stays readable when price is in the zone
+                array.push(lbs, label.new(labX, p, txt, xloc = xloc.bar_time, style = labX >= endX ? label.style_label_right : label.style_label_left, color = white ? color.new(c, 80) : color.new(c, 35), textcolor = white ? c : color.white, size = sz, tooltip = tip))
                 array.push(labP, p)
                 array.push(labI, array.size(lbs) - 1)
                 array.push(labTip, tip)
@@ -508,7 +537,7 @@ gpIn(float p) =>
 
 // where the bars start: fixed at the last candle (growing back over the candles), right of price, or the left edge of the screen
 gpX0(int barMs) =>
-    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + (extBars + gpOff) * barMs : time
+    gpWhere == "Left edge of the screen" ? chart.left_visible_bar_time : gpWhere == "Right of price" ? time + (runBars() + gpOff) * barMs : time
 
 gpDir() =>
     gpWhere == "Behind the candles (fixed)" ? -1 : 1
@@ -522,7 +551,7 @@ gpDraw() =>
     array.clear(gpLb)
     nG = array.size(gpP)
     int shown = 0
-    if gpOn and nG > 0 and not wrongSym()
+    if gpOn and gpAs == "Bars" and nG > 0 and not wrongSym()
         white = theme == "White chart"
         barMs = timeframe.in_seconds() * 1000
         x0 = gpX0(barMs)
@@ -575,6 +604,76 @@ gpDraw() =>
                         array.push(gpLb, label.new(x1, p, fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = dr < 0 ? label.style_label_right : label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
     shown
 
+// ---- GEX by strike as zones (1.42.0): every strike Q DATA sent, a see-through zone at its price, labeled inside ----
+// Drawn with 8 filled polylines (4 strength steps x positive / negative), so even hundreds of strikes cost no boxes.
+openX() =>
+    op = timestamp("America/New_York", year(time, "America/New_York"), month(time, "America/New_York"), dayofmonth(time, "America/New_York"), 9, 30, 0)
+    clampT(float(op > time ? op - 86400000 : op))
+
+gpHalf(int i) =>
+    nG = array.size(gpP)
+    gUp = i < nG - 1 ? array.get(gpP, i + 1) - array.get(gpP, i) : 0.0
+    gDn = i > 0 ? array.get(gpP, i) - array.get(gpP, i - 1) : 0.0
+    gap = gUp > 0 and gDn > 0 ? math.min(gUp, gDn) : math.max(gUp, gDn)
+    base = gap > 0 ? gap * 0.4 : refClose() * 0.0002
+    gexH > 0 ? (gap > 0 ? math.min(gexH / 2, gap * 0.5) : gexH / 2) : base
+
+// a GEX level from the levels is already a zone at this strike
+gpCovered(float p, float hh) =>
+    bool cov = false
+    if array.size(gzP) > 0
+        for q in gzP
+            if math.abs(q - p) <= hh
+                cov := true
+    cov
+
+gpZones(int endX, int labX) =>
+    nG = array.size(gpP)
+    int shown = 0
+    if gpAs == "Zones" and nG > 0 and not wrongSym()
+        x0 = openX()
+        float mx = 0.0
+        for i = 0 to nG - 1
+            mx := math.max(mx, math.abs(array.get(gpV, i)))
+        if mx > 0
+            for b = 0 to 7
+                pos = b < 4
+                stp = b % 4
+                pts = array.new<chart.point>()
+                for i = 0 to nG - 1
+                    v = array.get(gpV, i)
+                    r = math.abs(v) / mx
+                    st = r >= 0.6 ? 3 : r >= 0.3 ? 2 : r >= 0.1 ? 1 : 0
+                    p = array.get(gpP, i) + offsetPts
+                    hh = gpHalf(i)
+                    if v != 0 and (v > 0) == pos and st == stp and math.abs(v) >= gpMin and not gpCovered(p, hh)
+                        array.push(pts, chart.point.from_time(x0, p - hh))
+                        array.push(pts, chart.point.from_time(endX, p - hh))
+                        array.push(pts, chart.point.from_time(endX, p + hh))
+                        array.push(pts, chart.point.from_time(x0, p + hh))
+                        shown += 1
+                if array.size(pts) >= 4
+                    c = pos ? gpPosC : gpNegC
+                    array.push(gpPl, polyline.new(pts, curved = false, closed = true, xloc = xloc.bar_time, line_color = color.new(c, 100), fill_color = color.new(c, int(math.max(0, math.min(100, gpZT - stp * 8)))), line_width = 1))
+            // labels inside the biggest strike zones
+            white = theme == "White chart"
+            used = array.new<bool>(nG, false)
+            nLab = math.min(gpLab, 495 - array.size(lbs) - array.size(gpLb))
+            for k = 1 to math.max(nLab, 1)
+                if k <= nLab
+                    best = -1
+                    for i = 0 to nG - 1
+                        if not array.get(used, i) and math.abs(array.get(gpV, i)) >= gpMin and (best < 0 or math.abs(array.get(gpV, i)) > math.abs(array.get(gpV, best)))
+                            best := i
+                    if best >= 0
+                        array.set(used, best, true)
+                        p = array.get(gpP, best) + offsetPts
+                        v = array.get(gpV, best)
+                        if not gpCovered(p, gpHalf(best))
+                            c = v > 0 ? gpPosC : gpNegC
+                            array.push(gpLb, label.new(labX, p, "GEX " + fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = labX >= endX ? label.style_label_right : label.style_label_left, color = white ? color.new(c, 85) : color.new(c, 40), textcolor = white ? c : color.white, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
+    shown
+
 // ---- draw everything on the last bar ----
 if barstate.islast
     for l in lns
@@ -587,7 +686,9 @@ if barstate.islast
     array.clear(lbs)
     array.clear(bxs)
     n = qdParse(dataTxt)
-    endX = btEnd > 0 ? int(math.min(btEnd, float(time))) : time + extBars * timeframe.in_seconds() * 1000
+    barMs = timeframe.in_seconds() * 1000
+    endX = btEnd > 0 ? int(math.min(btEnd, float(time))) : time + runBars() * barMs
+    labX = btEnd > 0 ? endX : time + labOff * barMs
     pick = array.new<bool>()
     if n == 0
         array.push(lbs, label.new(time, close, __NAME__ + ": open the settings and paste the levels from Q DATA (TradingView tab > __COPYBTN__)", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(#64748b, 70), textcolor = color.new(#0f172a, 0), size = size.small))
@@ -596,8 +697,9 @@ if barstate.islast
     else
 __HEAT_CALL__
         pick := qdPick(n)
-        qdDraw(n, pick, endX)
+        qdDraw(n, pick, endX, labX)
     gpDraw()
+    gpZones(endX, labX)
     if not na(tb)
         table.delete(tb)
     tb := qdTable(n, pick)
@@ -674,6 +776,16 @@ GP_INPUT = ('// added in 1.37.0 (last, so earlier settings keep their place)\n'
             'gpPosC = input.color(#2563eb, "Positive GEX color", group = grpG)\n'
             'gpNegC = input.color(#7c3aed, "Negative GEX color", group = grpG)\n'
             + '// added in 1.39.0 (last, so earlier settings keep their place)\ngrpG2 = "GEX by strike: placement"\ngpWhere = input.string("Right of price", "Bars sit", options = ["Behind the candles (fixed)", "Right of price", "Left edge of the screen"], group = grpG2, tooltip = "Behind the candles (fixed): the bars start at the last candle and grow back to the left over the candles, so they stay put when you scroll. Right of price (default): they start past the level labels (Run past the last candle + this gap) and grow to the right, away from the candles. Left edge of the screen: the old way, they follow the screen as you scroll.")\ngpOff   = input.int(40, "Gap from the last candle (bars, Right of price)", minval = 0, maxval = 500, group = grpG2)\ngpRange = input.float(0.0, "Show strikes within (% of price, 0 = every strike)", minval = 0.0, step = 0.5, group = grpG2, tooltip = "0 shows every strike Q DATA sent, from the lowest to the highest. The other levels still follow Hide levels farther than.")')
+V_INPUT = ('// added in 1.42.0 (last, so earlier settings keep their place)\n'
+           'grpV = "Show everything, labels inside zones"\n'
+           'showAll  = input.bool(true, "Show every level (no distance or per-side limit)", group = grpV, tooltip = "On: every level of every section you have on is drawn, however far from price (Look, Levels on each side and Hide levels farther than are ignored). Off: those settings apply again. GEX levels, GEX strikes, expected move / straddle / sd and HOD / LOD are never hidden by distance either way.")\n'
+           'allZones = input.bool(true, "Draw every level as a zone (no plain lines)", group = grpV, tooltip = "Every level is a see-through zone with its label inside it. Off: far levels go back to thin lines.")\n'
+           'midLine  = input.bool(false, "Line at the exact level inside each zone", group = grpV, tooltip = "Off: just the zone. On: a dotted line at the exact strike / level in the middle of each banded zone.")\n'
+           'labOff   = input.int(3, "Label offset past the last candle (bars)", minval = 0, maxval = 200, group = grpV, tooltip = "Labels sit inside their zone, this many bars right of the last candle, so you can still read them when price is in the zone.")\n'
+           'zoneRun  = input.int(60, "Zones run past the last candle (bars)", minval = 0, maxval = 500, group = grpV, tooltip = "Room for the labels inside the zones. The longer of this and Run past the last candle is used.")')
+GPZ_INPUT = ('\ngpAs = input.string("Zones", "GEX by strike drawn as", options = ["Zones", "Bars", "Off"], group = grpV, tooltip = "Zones: every strike Q DATA sent is a see-through zone at its own price (blue positive, purple negative, stronger color = more GEX), the biggest labeled inside (Label the biggest strikes). Bars: the old bars to the side. Off: neither.")\n'
+             'gpZT = input.int(88, "GEX strike zone transparency (smallest strikes)", minval = 0, maxval = 100, group = grpV, tooltip = "Bigger strikes are drawn up to 24 less see-through than this.")')
+NO_GPZ = '\ngpAs = "Off"\ngpZT = 88'
 NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed\ngpWhere = "Right of price"\ngpOff = 40\ngpRange = 0.0'
 
 
@@ -705,7 +817,8 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__ZF_DEFAULT__", _q("Best zones only") if ind in ("gex", "kl") else _q("Everything"))
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
-    code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else "") + "\n" + (GEXH_INPUT if ind != "lv" else "gexH = 0.0"))
+    code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else "") + "\n" + (GEXH_INPUT if ind != "lv" else "gexH = 0.0")
+                                          + "\n" + V_INPUT + (GPZ_INPUT if ind != "lv" else NO_GPZ))
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first

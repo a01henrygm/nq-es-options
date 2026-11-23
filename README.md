@@ -33,6 +33,19 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.42.0
+
+- **Every level shows, as a zone, with its label inside.** Q DATA NDX / QQQ / SPX, GEX, Key levels, All Tabs, Levels and Day Map
+  get a new last group "Show everything, labels inside zones": every level is drawn however far from price (Day Map: not just the
+  key kinds, and the 1 sd move too), every level is a see-through zone (no plain lines), and each label sits INSIDE its zone a few
+  bars right of the last candle, so you can still read it when price is in the zone. GEX levels, GEX strikes, expected move /
+  straddle / sd and HOD / LOD are never hidden by distance, even with "Show every level" off.
+- **No line at the strike.** The dotted line in the middle of each zone is gone (switch "Line at the exact level inside each zone"
+  back on if you want it).
+- **GEX by strike as zones.** Every strike Q DATA sends is now a zone at its own price (blue positive, purple negative, stronger
+  color = more GEX), the biggest labeled inside, instead of bars off to the side. "GEX by strike drawn as" brings the bars back.
+- With many levels on, the ones nearest price are drawn first, so they never lose out to TradingView's 500-drawing limit.
+
 ## New in 1.41.0
 
 - **GEX zones a bit bigger.** Every GEX zone (and GEX strike zone) is now at least 0.06% of price tall (about 16 NQ points), padded evenly around its level. Walls that already span several strikes keep their own shape. Applies to the GEX, Key levels and Q DATA NDX / QQQ / SPX indicators.
