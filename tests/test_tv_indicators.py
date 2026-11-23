@@ -327,7 +327,9 @@ def test_gex_profile_row_budget_keeps_the_lowest_and_highest_strike():
 def test_gex_by_strike_bars_are_the_last_settings_of_every_gex_indicator():
     for code in [build_script(i) for i in ("gex", "kl", "all")] + [build_script("combo", t) for t in ("NDX", "QQQ", "SPX")]:
         inputs = [x for x in code.splitlines() if " input." in x and not x.startswith(" ") and "Activity stack" not in x]
-        assert inputs[-7].startswith("showAll  = input.bool(true") and inputs[-2].startswith('gpAs = input.string("Zones"')   # 1.42.0, last
+        assert inputs[-1].startswith("zoneMax = input.float(0.0")                       # 1.42.1, last
+        inputs = inputs[:-1]
+        assert inputs[-7].startswith("showAll  = input.bool(true") and inputs[-2].startswith('gpAs = input.string("Zones"')   # 1.42.0
         assert inputs[-1].startswith("gpZT = input.int(88")
         inputs = inputs[:-7]
         assert inputs[-1].startswith("gexH = input.float(0.0")                          # 1.41.0: GEX zone height
@@ -372,3 +374,7 @@ def test_every_level_shown_as_zones_with_labels_inside():
     for code in codes[:3] + codes[4:]:
         assert 'gpAs = input.string("Zones"' in code and "gpZones(endX, labX)" in code and 'gpAs == "Bars"' in code
     assert 'gpAs = "Off"' in codes[3]
+    for code in codes:                                                               # 1.42.1: no big blocks
+        assert 'zoneMax = input.float(0.0' in code and "if zt - zb > zMax()" in code
+    for code in codes[:3] + codes[4:]:
+        assert "gpMedGap()" in code and "gpHalf(i, mg)" in code and "gpZT + (3 - stp) * 3" in code

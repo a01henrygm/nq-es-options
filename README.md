@@ -33,6 +33,14 @@ Symbols differ by source: Cboe uses `_NDX` and `_SPX`; Massive uses `QQQ` and `S
 index options). Set them with `CBOE_UNDERLYINGS` and `MASSIVE_UNDERLYINGS` in `.env`. Futures prices and the basis you type
 on the Levels tab are shared by both sources.
 
+## New in 1.42.1
+
+- **No more big blocks.** GEX strike zones are now thin (about a third of the normal strike spacing, so roughly 8 NQ points on
+  25-point strikes) and lighter; the biggest strikes are only a shade darker than the rest. Before, a strike far from price
+  took its height from the gap to the next strike sent, which could be huge.
+- **Biggest zone height.** New last setting in "Show everything, labels inside zones": no zone is drawn taller than this
+  (auto: 0.1% of price, about 25 NQ points), centered on its level.
+
 ## New in 1.42.0
 
 - **Every level shows, as a zone, with its label inside.** Q DATA NDX / QQQ / SPX, GEX, Key levels, All Tabs, Levels and Day Map

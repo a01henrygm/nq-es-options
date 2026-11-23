@@ -235,6 +235,10 @@ halfH() =>
     (zoneH > 0 ? zoneH : refClose() * 0.0003) / 2
 
 // how far right of the last candle the zones run (1.42.0): room for the labels inside them
+// 1.42.1: the tallest any zone is drawn, centered on its level (auto: 0.1% of price, about 25 NQ points)
+zMax() =>
+    zoneMax > 0 ? zoneMax : refClose() * 0.001
+
 runBars() =>
     math.max(extBars, math.max(zoneRun, labOff + 25))
 
@@ -438,6 +442,9 @@ qdDraw(int n, bool[] pick, int endX, int labX) =>
                 gH = gexH > 0 and kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
                 zt = small ? p + sh : gH ? p + gexH / 2 : band ? hi + offsetPts : p + hh
                 zb = small ? p - sh : gH ? p - gexH / 2 : band ? lo + offsetPts : p - hh
+                if zt - zb > zMax()
+                    zt := p + zMax() / 2
+                    zb := p - zMax() / 2
                 array.push(bxs, box.new(x1, zt, endX, zb, xloc = xloc.bar_time, border_color = color.new(c, 15), border_width = 1, border_style = brk ? line.style_dashed : line.style_solid, bgcolor = color.new(c, small ? math.max(zoneT - 12, 0) : zoneT)))
                 if kindOf(g, 0) >= 0 and kindOf(g, 0) <= __GEXMAX__
                     array.push(gzP, p)
@@ -610,13 +617,28 @@ openX() =>
     op = timestamp("America/New_York", year(time, "America/New_York"), month(time, "America/New_York"), dayofmonth(time, "America/New_York"), 9, 30, 0)
     clampT(float(op > time ? op - 86400000 : op))
 
-gpHalf(int i) =>
+// 1.42.1: thin strike zones. Height from the TYPICAL strike spacing (not the gap to the next strike sent, which is wide far
+// from price and made big blocks), never taller than Biggest zone height.
+gpHalf(int i, float medGap) =>
     nG = array.size(gpP)
     gUp = i < nG - 1 ? array.get(gpP, i + 1) - array.get(gpP, i) : 0.0
     gDn = i > 0 ? array.get(gpP, i) - array.get(gpP, i - 1) : 0.0
     gap = gUp > 0 and gDn > 0 ? math.min(gUp, gDn) : math.max(gUp, gDn)
-    base = gap > 0 ? gap * 0.4 : refClose() * 0.0002
-    gexH > 0 ? (gap > 0 ? math.min(gexH / 2, gap * 0.5) : gexH / 2) : base
+    sp = medGap > 0 ? (gap > 0 ? math.min(gap, medGap) : medGap) : gap
+    base = sp > 0 ? sp * 0.3 : refClose() * 0.0002
+    h = gexH > 0 ? (sp > 0 ? math.min(gexH / 2, sp * 0.5) : gexH / 2) : base
+    math.min(h, zMax() / 2)
+
+// typical distance between strikes
+gpMedGap() =>
+    nG = array.size(gpP)
+    gaps = array.new<float>()
+    if nG > 1
+        for i = 1 to nG - 1
+            d = array.get(gpP, i) - array.get(gpP, i - 1)
+            if d > 0
+                array.push(gaps, d)
+    array.size(gaps) > 0 ? array.median(gaps) : 0.0
 
 // a GEX level from the levels is already a zone at this strike
 gpCovered(float p, float hh) =>
@@ -632,6 +654,7 @@ gpZones(int endX, int labX) =>
     int shown = 0
     if gpAs == "Zones" and nG > 0 and not wrongSym()
         x0 = openX()
+        mg = gpMedGap()
         float mx = 0.0
         for i = 0 to nG - 1
             mx := math.max(mx, math.abs(array.get(gpV, i)))
@@ -645,7 +668,7 @@ gpZones(int endX, int labX) =>
                     r = math.abs(v) / mx
                     st = r >= 0.6 ? 3 : r >= 0.3 ? 2 : r >= 0.1 ? 1 : 0
                     p = array.get(gpP, i) + offsetPts
-                    hh = gpHalf(i)
+                    hh = gpHalf(i, mg)
                     if v != 0 and (v > 0) == pos and st == stp and math.abs(v) >= gpMin and not gpCovered(p, hh)
                         array.push(pts, chart.point.from_time(x0, p - hh))
                         array.push(pts, chart.point.from_time(endX, p - hh))
@@ -654,7 +677,7 @@ gpZones(int endX, int labX) =>
                         shown += 1
                 if array.size(pts) >= 4
                     c = pos ? gpPosC : gpNegC
-                    array.push(gpPl, polyline.new(pts, curved = false, closed = true, xloc = xloc.bar_time, line_color = color.new(c, 100), fill_color = color.new(c, int(math.max(0, math.min(100, gpZT - stp * 8)))), line_width = 1))
+                    array.push(gpPl, polyline.new(pts, curved = false, closed = true, xloc = xloc.bar_time, line_color = color.new(c, 100), fill_color = color.new(c, int(math.max(0, math.min(100, gpZT + (3 - stp) * 3)))), line_width = 1))
             // labels inside the biggest strike zones
             white = theme == "White chart"
             used = array.new<bool>(nG, false)
@@ -669,7 +692,7 @@ gpZones(int endX, int labX) =>
                         array.set(used, best, true)
                         p = array.get(gpP, best) + offsetPts
                         v = array.get(gpV, best)
-                        if not gpCovered(p, gpHalf(best))
+                        if not gpCovered(p, gpHalf(best, mg))
                             c = v > 0 ? gpPosC : gpNegC
                             array.push(gpLb, label.new(labX, p, "GEX " + fmtP(p) + "  " + array.get(gpTx, best), xloc = xloc.bar_time, style = labX >= endX ? label.style_label_right : label.style_label_left, color = white ? color.new(c, 85) : color.new(c, 40), textcolor = white ? c : color.white, size = size.tiny, tooltip = "GEX at " + fmtP(p) + ": " + array.get(gpTx, best) + " (" + str.tostring(math.round(math.abs(v))) + "% of the biggest strike). " + (v > 0 ? "Positive GEX: dealers dampen moves here." : "Negative GEX: dealers speed moves up here.")))
     shown
@@ -783,8 +806,10 @@ V_INPUT = ('// added in 1.42.0 (last, so earlier settings keep their place)\n'
            'midLine  = input.bool(false, "Line at the exact level inside each zone", group = grpV, tooltip = "Off: just the zone. On: a dotted line at the exact strike / level in the middle of each banded zone.")\n'
            'labOff   = input.int(3, "Label offset past the last candle (bars)", minval = 0, maxval = 200, group = grpV, tooltip = "Labels sit inside their zone, this many bars right of the last candle, so you can still read them when price is in the zone.")\n'
            'zoneRun  = input.int(60, "Zones run past the last candle (bars)", minval = 0, maxval = 500, group = grpV, tooltip = "Room for the labels inside the zones. The longer of this and Run past the last candle is used.")')
+ZMAX_INPUT = ('\n// added in 1.42.1 (last)\n'
+              'zoneMax = input.float(0.0, "Biggest zone height (points, 0 = auto)", minval = 0.0, step = 1.0, group = grpV, tooltip = "No zone is drawn taller than this, centered on its level. Auto: 0.1% of price (about 25 NQ points). GEX strike zones are thinner still.")')
 GPZ_INPUT = ('\ngpAs = input.string("Zones", "GEX by strike drawn as", options = ["Zones", "Bars", "Off"], group = grpV, tooltip = "Zones: every strike Q DATA sent is a see-through zone at its own price (blue positive, purple negative, stronger color = more GEX), the biggest labeled inside (Label the biggest strikes). Bars: the old bars to the side. Off: neither.")\n'
-             'gpZT = input.int(88, "GEX strike zone transparency (smallest strikes)", minval = 0, maxval = 100, group = grpV, tooltip = "Bigger strikes are drawn up to 24 less see-through than this.")')
+             'gpZT = input.int(88, "GEX strike zone transparency (biggest strikes)", minval = 0, maxval = 100, group = grpV, tooltip = "The biggest strikes use this; smaller ones are a bit lighter.")')
 NO_GPZ = '\ngpAs = "Off"\ngpZT = 88'
 NO_GP = 'gpOn = false\ngpLen = 40\ngpLab = 0\ngpMin = 0.0\ngpT = 45\ngpPosC = #2563eb\ngpNegC = #7c3aed\ngpWhere = "Right of price"\ngpOff = 40\ngpRange = 0.0'
 
@@ -818,7 +843,7 @@ def build_script(ind: str, ticker: str | None = None) -> str:
     code = code.replace("__GEXMAX__", str(len(GEX_SECTIONS) - 1) if ind != "lv" else "-1")
     code = code.replace("__COMBO_INPUT__", COMBO_INPUT.replace("__WANT__", _q(ticker)) if combo else NO_COMBO)
     code = code.replace("__GP_INPUT__", (GP_INPUT if ind != "lv" else NO_GP) + ("\n" + ACT_INPUT if combo else "") + "\n" + (GEXH_INPUT if ind != "lv" else "gexH = 0.0")
-                                          + "\n" + V_INPUT + (GPZ_INPUT if ind != "lv" else NO_GPZ))
+                                          + "\n" + V_INPUT + (GPZ_INPUT if ind != "lv" else NO_GPZ) + ZMAX_INPUT)
     rep = {"__TITLE__": _q(name), "__SHORT__": _q(short), "__NAME__": name, "__COPYBTN__": btn, "__KEYS__": keys,
            "__POSITIONS__": ", ".join(_q(p) for p in POSITIONS), "__SECTION_INPUTS__": "\n".join(si), "__SECTION_ARRAY__": sa, "__POS__": POS}
     # __NAME__ appears both in comments (bare) and as a Pine string; handle the string uses first
